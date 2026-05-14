@@ -46,10 +46,10 @@ const sizes = [2, 4, 6, 10, 16];
           stroke-width="1.6"
           stroke-linecap="round"
           stroke-linejoin="round"
+          aria-hidden="true"
         >
-          <path d="M12 19l7-7 3 3-7 7-3-3z" />
-          <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
-          <path d="M2 2l7.586 7.586" />
+          <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+          <path d="m15 5 4 4" />
         </svg>
         <svg
           v-else-if="t.icon === 'highlight'"
@@ -61,10 +61,10 @@ const sizes = [2, 4, 6, 10, 16];
           stroke-width="1.6"
           stroke-linecap="round"
           stroke-linejoin="round"
+          aria-hidden="true"
         >
-          <path d="M9 14l-4 4 1 3 3 1 4-4" />
-          <path d="M13 11l8-8 0 0 3 3-8 8" />
-          <path d="M5 18l-2 5 5-2" />
+          <path d="m9 11-6 6v3h9l3-3" />
+          <path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4" />
         </svg>
         <svg
           v-else
@@ -76,9 +76,11 @@ const sizes = [2, 4, 6, 10, 16];
           stroke-width="1.6"
           stroke-linecap="round"
           stroke-linejoin="round"
+          aria-hidden="true"
         >
-          <path d="M3 17l6 6 12-12-6-6L3 13z" />
-          <path d="M9 23h13" />
+          <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" />
+          <path d="M22 21H7" />
+          <path d="m5 11 9 9" />
         </svg>
       </button>
     </div>
@@ -120,16 +122,16 @@ const sizes = [2, 4, 6, 10, 16];
     <div class="group">
       <button class="tool" title="Undo" @click="editor.undo()" :disabled="editor.history.length === 0">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 7v6h6" />
-          <path d="M3 13a9 9 0 1 0 3-7.7L3 8" />
+          stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 14 4 9l5-5" />
+          <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11" />
         </svg>
       </button>
       <button class="tool" title="Redo" @click="editor.redo()" :disabled="editor.redoStack.length === 0">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 7v6h-6" />
-          <path d="M21 13a9 9 0 1 1-3-7.7L21 8" />
+          stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m15 14 5-5-5-5" />
+          <path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5v0A5.5 5.5 0 0 0 9.5 20H13" />
         </svg>
       </button>
     </div>

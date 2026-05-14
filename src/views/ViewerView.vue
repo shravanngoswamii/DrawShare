@@ -66,9 +66,9 @@ async function toggleFullscreen() {
       <div class="left">
         <button class="btn btn-ghost btn-icon leave-btn" @click="leave" aria-label="Leave">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m12 19-7-7 7-7" />
             <path d="M19 12H5" />
-            <path d="M12 19l-7-7 7-7" />
           </svg>
         </button>
         <span class="project-name">
@@ -84,15 +84,18 @@ async function toggleFullscreen() {
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="4" y="3" width="16" height="18" rx="2" />
-            <path d="M9 3v18" />
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <path d="M15 3v18" />
           </svg>
           <span class="btn-label">Pages</span>
         </button>
         <button class="btn btn-ghost" @click="toggleFullscreen" aria-label="Fullscreen">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 9V5a2 2 0 0 1 2-2h4M3 15v4a2 2 0 0 0 2 2h4M21 9V5a2 2 0 0 0-2-2h-4M21 15v4a2 2 0 0 1-2 2h-4" />
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+            <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+            <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+            <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
           </svg>
           <span class="btn-label">Fullscreen</span>
         </button>
