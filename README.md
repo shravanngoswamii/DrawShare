@@ -67,9 +67,11 @@ Output goes to `dist/`. The Vite `base` path can be overridden with the
 ## Deploy
 
 Pushing to `main` triggers `.github/workflows/deploy.yml`, which builds with
-`BASE_PATH=/<repo-name>/` and publishes to GitHub Pages.
+`BASE_PATH=/<repo-name>/` and publishes the `dist/` output to the `gh-pages`
+branch via [`JamesIves/github-pages-deploy-action`](https://github.com/JamesIves/github-pages-deploy-action).
 
-To enable: in repo settings → Pages → Source = "GitHub Actions".
+To enable: repo Settings → Pages → Source = "Deploy from a branch", Branch =
+`gh-pages` / `(root)`. The workflow needs `contents: write` (already declared).
 
 ## Data model
 
