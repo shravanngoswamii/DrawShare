@@ -181,5 +181,10 @@ onBeforeUnmount(() => {
   inset: 0;
   display: block;
   pointer-events: none;
+  background: transparent;
+}
+
+.stage > canvas:first-of-type {
+  background: var(--color-surface-2);
 }
 </style>

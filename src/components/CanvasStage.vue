@@ -260,6 +260,11 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   display: block;
+  background: transparent;
+}
+
+.base {
+  background: var(--color-surface-2);
 }
 
 .live {
