@@ -14,11 +14,13 @@ body,
 
 html {
   -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
   font-family: var(--font-sans);
   font-size: var(--text-md);
+  line-height: 1.45;
   color: var(--color-text);
   background: var(--color-bg);
   -webkit-font-smoothing: antialiased;
@@ -37,8 +39,10 @@ button {
 }
 
 input,
-textarea {
+textarea,
+select {
   font-family: inherit;
+  font-size: inherit;
   color: inherit;
 }
 
@@ -50,6 +54,7 @@ a {
 :focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 
 .btn {
@@ -57,7 +62,7 @@ a {
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  height: 32px;
+  height: 34px;
   padding: 0 var(--space-3);
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border-strong);
@@ -65,11 +70,19 @@ a {
   color: var(--color-text);
   font-size: var(--text-sm);
   font-weight: 500;
-  transition: background 80ms ease, border-color 80ms ease;
+  white-space: nowrap;
+  transition: background 80ms ease, border-color 80ms ease, color 80ms ease;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
-.btn:hover {
+.btn:hover:not(:disabled) {
   background: var(--color-surface-2);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .btn-primary {
@@ -78,7 +91,7 @@ a {
   color: #fff;
 }
 
-.btn-primary:hover {
+.btn-primary:hover:not(:disabled) {
   background: var(--color-accent-hover);
   border-color: var(--color-accent-hover);
 }
@@ -88,24 +101,41 @@ a {
   background: transparent;
 }
 
-.btn-ghost:hover {
-  background: var(--color-accent-soft);
+.btn-ghost:hover:not(:disabled) {
+  background: var(--color-surface-2);
+}
+
+.btn-icon {
+  width: 34px;
+  padding: 0;
+}
+
+.btn-sm {
+  height: 28px;
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
 }
 
 .input {
-  height: 32px;
+  height: 34px;
   padding: 0 var(--space-3);
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border-strong);
   background: var(--color-surface);
   color: var(--color-text);
   font-size: var(--text-sm);
+  width: 100%;
+  min-width: 0;
+}
+
+.input::placeholder {
+  color: var(--color-text-subtle);
 }
 
 .input:focus {
   outline: none;
   border-color: var(--color-focus);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  box-shadow: 0 0 0 3px var(--color-focus-ring);
 }
 
 .muted {
@@ -114,4 +144,29 @@ a {
 
 .subtle {
   color: var(--color-text-subtle);
+}
+
+/* Touch-friendly sizing on phones */
+@media (max-width: 767px) {
+  .btn {
+    height: 40px;
+    padding: 0 var(--space-4);
+    font-size: var(--text-md);
+  }
+
+  .btn-icon {
+    width: 40px;
+    padding: 0;
+  }
+
+  .btn-sm {
+    height: 32px;
+    padding: 0 var(--space-3);
+    font-size: var(--text-sm);
+  }
+
+  .input {
+    height: 40px;
+    font-size: var(--text-md);
+  }
 }

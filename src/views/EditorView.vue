@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, watch } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import CanvasStage from "@/components/CanvasStage.vue";
 import PagesPanel from "@/components/PagesPanel.vue";
@@ -14,6 +14,8 @@ const editor = useEditorStore();
 const live = useLiveStore();
 const projects = useProjectsStore();
 const router = useRouter();
+
+const panelOpen = ref(false);
 
 onMounted(async () => {
   if (!projects.loaded) await projects.load();
@@ -56,6 +58,7 @@ function onKey(e: KeyboardEvent) {
   } else if (e.key === "1") editor.setTool("pen");
   else if (e.key === "2") editor.setTool("highlighter");
   else if (e.key === "3") editor.setTool("eraser");
+  else if (e.key === "Escape") panelOpen.value = false;
 }
 
 onMounted(() => {
@@ -65,14 +68,14 @@ onMounted(() => {
 
 <template>
   <div class="editor">
-    <TopBar />
+    <TopBar @toggle-pages="panelOpen = !panelOpen" />
     <div class="body">
       <Toolbar />
       <main class="stage-wrap">
         <CanvasStage v-if="editor.currentPage" :page="editor.currentPage" />
         <div v-else class="loading muted">Loading.</div>
       </main>
-      <PagesPanel />
+      <PagesPanel :open="panelOpen" @close="panelOpen = false" />
     </div>
   </div>
 </template>
@@ -80,15 +83,18 @@ onMounted(() => {
 <style scoped>
 .editor {
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding-top: var(--safe-top);
 }
 
 .body {
   flex: 1;
   display: flex;
   min-height: 0;
+  position: relative;
 }
 
 .stage-wrap {
@@ -105,5 +111,11 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+@media (max-width: 767px) {
+  .body {
+    flex-direction: column-reverse;
+  }
 }
 </style>

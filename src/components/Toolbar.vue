@@ -146,6 +146,7 @@ const sizes = [2, 4, 6, 10, 16];
   align-items: center;
   padding: var(--space-3) 0;
   gap: var(--space-2);
+  flex-shrink: 0;
 }
 
 .group {
@@ -160,6 +161,7 @@ const sizes = [2, 4, 6, 10, 16];
   height: 1px;
   background: var(--color-border);
   margin: var(--space-2) 0;
+  flex-shrink: 0;
 }
 
 .tool {
@@ -171,6 +173,7 @@ const sizes = [2, 4, 6, 10, 16];
   border-radius: var(--radius-md);
   color: var(--color-text-muted);
   transition: background 80ms ease, color 80ms ease;
+  flex-shrink: 0;
 }
 
 .tool:hover:not(:disabled) {
@@ -195,6 +198,7 @@ const sizes = [2, 4, 6, 10, 16];
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-md);
+  flex-shrink: 0;
 }
 
 .size:hover {
@@ -208,15 +212,16 @@ const sizes = [2, 4, 6, 10, 16];
 .size-dot {
   display: block;
   background: var(--color-text);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .swatch {
   width: 22px;
   height: 22px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid rgba(15, 23, 42, 0.12);
   transition: transform 80ms ease, box-shadow 80ms ease;
+  flex-shrink: 0;
 }
 
 .swatch:hover {
@@ -225,5 +230,55 @@ const sizes = [2, 4, 6, 10, 16];
 
 .swatch.active {
   box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-accent);
+}
+
+/* Mobile - horizontal bottom bar */
+@media (max-width: 767px) {
+  .toolbar {
+    width: 100%;
+    height: var(--toolbar-h);
+    flex-direction: row;
+    border-right: none;
+    border-top: 1px solid var(--color-border);
+    padding: 0 var(--space-3);
+    padding-bottom: var(--safe-bottom);
+    gap: var(--space-2);
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    justify-content: flex-start;
+  }
+
+  .toolbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .group {
+    flex-direction: row;
+    gap: var(--space-1);
+    flex-shrink: 0;
+  }
+
+  .divider {
+    width: 1px;
+    height: 24px;
+    margin: 0 var(--space-1);
+  }
+
+  .tool {
+    width: 40px;
+    height: 40px;
+  }
+
+  .size {
+    width: 32px;
+    height: 40px;
+  }
+
+  .swatch {
+    width: 26px;
+    height: 26px;
+  }
 }
 </style>
