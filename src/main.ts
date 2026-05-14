@@ -6,6 +6,10 @@ import { storage } from "./adapters/storage/indexedDB";
 import "./styles/tokens.css";
 import "./styles/base.css";
 
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
+}
+
 async function bootstrap() {
   await storage.init();
   const app = createApp(App);
