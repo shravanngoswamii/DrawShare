@@ -13,10 +13,16 @@
     <meta name="theme-color" content="#0f172a" />
     <meta name="color-scheme" content="only light" />
     <meta name="supported-color-schemes" content="light" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <title>DrawShare</title>
   </head>
   <body>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("/sw.js");
+      }
+    </script>
   </body>
 </html>
