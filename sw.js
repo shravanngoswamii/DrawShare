@@ -1,4 +1,4 @@
-const CACHE = "drawshare-v2";
+const CACHE = "drawshare-v3";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -23,7 +23,8 @@ self.addEventListener("fetch", (event) => {
     caches.match(request).then((cached) => {
       const networkFetch = fetch(request).then((response) => {
         if (response.ok) {
-          caches.open(CACHE).then((cache) => cache.put(request, response.clone()));
+          const clone = response.clone();
+          caches.open(CACHE).then((cache) => cache.put(request, clone));
         }
         return response;
       });
