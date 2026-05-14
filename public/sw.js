@@ -1,4 +1,4 @@
-const CACHE = "drawshare-v3";
+const CACHE = "drawshare-v4";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -18,6 +18,7 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
+  if (request.mode === "navigate") return;
   if (new URL(request.url).origin !== self.location.origin) return;
   event.respondWith(
     caches.match(request).then((cached) => {
