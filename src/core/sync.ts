@@ -1,6 +1,7 @@
 import type { Page, Project, Stroke, StrokePoint } from "./types";
 
 export type SyncMessage =
+  | { t: "viewer-ready" }
   | {
       t: "hello";
       project: Project;

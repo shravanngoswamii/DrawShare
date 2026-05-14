@@ -49,7 +49,11 @@ export class PeerJSSession implements SessionAdapter {
     this.peer.on("connection", (conn) => {
       conn.on("open", () => {
         this.connections.set(conn.peer, conn);
-        handlers.onViewerJoin(conn.peer);
+      });
+      conn.on("data", (data) => {
+        if ((data as SyncMessage).t === "viewer-ready") {
+          handlers.onViewerJoin(conn.peer);
+        }
       });
       conn.on("close", () => {
         this.connections.delete(conn.peer);
@@ -75,6 +79,7 @@ export class PeerJSSession implements SessionAdapter {
       conn.on("open", () => {
         clearTimeout(t);
         this.connections.set(conn.peer, conn);
+        conn.send({ t: "viewer-ready" } satisfies SyncMessage);
         handlers.onConnected();
         resolve();
       });
@@ -86,6 +91,7 @@ export class PeerJSSession implements SessionAdapter {
     conn.on("data", (data) => {
       try {
         const msg = data as SyncMessage;
+        if (msg.t === "viewer-ready") return;
         handlers.onMessage(msg);
       } catch (err) {
         handlers.onError(err as Error);

@@ -240,6 +240,8 @@ export const useLiveStore = defineStore("live", {
           if (msg.pageId === this.viewerCurrentPageId) this.viewerStrokes = [];
           break;
         }
+        case "viewer-ready":
+          break;
       }
     },
   },
