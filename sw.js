@@ -1,1 +1,32 @@
-if(!self.define){let e,s={};const i=(i,r)=>(i=new URL(i+".js",r).href,s[i]||new Promise(s=>{if("document"in self){const e=document.createElement("script");e.src=i,e.onload=s,document.head.appendChild(e)}else e=i,importScripts(i),s()}).then(()=>{let e=s[i];if(!e)throw new Error(`Module ${i} didn’t register its module`);return e}));self.define=(r,l)=>{const n=e||("document"in self?document.currentScript.src:"")||location.href;if(s[n])return;let t={};const o=e=>i(e,n),u={module:{uri:n},exports:t,require:o};s[n]=Promise.all(r.map(e=>u[e]||o(e))).then(e=>(l(...e),t))}}define(["./workbox-9c191d2f"],function(e){"use strict";self.skipWaiting(),e.clientsClaim(),e.precacheAndRoute([{url:"registerSW.js",revision:"9b86f89c8c86ce0a191e4a61accddf9f"},{url:"index.html",revision:"97d464af18f23b407fc65452f6ac40ee"},{url:"favicon.svg",revision:"fe27e6ec70dffaae558ed92cb1330fb8"},{url:"assets/projects-D0o_829-.js",revision:null},{url:"assets/live-SBVk2e8_.js",revision:null},{url:"assets/index-DtGV3E8z.js",revision:null},{url:"assets/index-ChG7z6Ui.css",revision:null},{url:"assets/_plugin-vue_export-helper-DlAUqK2U.js",revision:null},{url:"assets/ViewerView-lAOMuz3j.js",revision:null},{url:"assets/ViewerView-DX6ER_Bc.css",revision:null},{url:"assets/ProjectsView-DbQT75Xj.css",revision:null},{url:"assets/ProjectsView-COSFN_g8.js",revision:null},{url:"assets/EditorView-qd20_GB0.css",revision:null},{url:"assets/EditorView-Pg3W4PG4.js",revision:null},{url:"favicon.svg",revision:"fe27e6ec70dffaae558ed92cb1330fb8"},{url:"manifest.webmanifest",revision:"73979a3d6540fdfc51a9d1b9a054d989"}],{}),e.cleanupOutdatedCaches(),e.registerRoute(new e.NavigationRoute(e.createHandlerBoundToURL("index.html")))});
+const CACHE = "drawshare-v1";
+
+self.addEventListener("install", () => {
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+      )
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") return;
+  event.respondWith(
+    caches.match(event.request).then((cached) => {
+      const networkFetch = fetch(event.request).then((response) => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      });
+      return cached || networkFetch;
+    })
+  );
+});
