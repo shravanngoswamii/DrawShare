@@ -1,4 +1,4 @@
-const CACHE = "drawshare-v1";
+const CACHE = "drawshare-v2";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -16,17 +16,22 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") return;
+  const { request } = event;
+  if (request.method !== "GET") return;
+  if (new URL(request.url).origin !== self.location.origin) return;
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const networkFetch = fetch(event.request).then((response) => {
+    caches.match(request).then((cached) => {
+      const networkFetch = fetch(request).then((response) => {
         if (response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE).then((cache) => cache.put(event.request, clone));
+          caches.open(CACHE).then((cache) => cache.put(request, response.clone()));
         }
         return response;
       });
-      return cached || networkFetch;
+      if (cached) {
+        networkFetch.catch(() => {});
+        return cached;
+      }
+      return networkFetch.catch(() => Response.error());
     })
   );
 });
