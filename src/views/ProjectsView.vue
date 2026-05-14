@@ -8,6 +8,13 @@ const router = useRouter();
 const query = ref("");
 const renamingId = ref<string | null>(null);
 const renameValue = ref("");
+const joinCode = ref("");
+
+function joinSession() {
+  const code = joinCode.value.trim().toUpperCase();
+  if (code.length < 4) return;
+  router.push({ name: "viewer", params: { code } });
+}
 
 onMounted(async () => {
   if (!projects.loaded) await projects.load();
@@ -75,6 +82,29 @@ function formatDate(ts: number): string {
     </header>
 
     <main class="main">
+      <div class="join-card">
+        <div class="join-text">
+          <div class="join-title">Join a live session</div>
+          <div class="muted join-sub">
+            Enter a code shared by the host device to watch live strokes.
+          </div>
+        </div>
+        <form class="join-form" @submit.prevent="joinSession">
+          <input
+            v-model="joinCode"
+            class="input join-input"
+            placeholder="Session code"
+            maxlength="8"
+            autocapitalize="characters"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button class="btn" type="submit" :disabled="joinCode.trim().length < 4">
+            Join
+          </button>
+        </form>
+      </div>
+
       <div class="page-header">
         <h1 class="page-title">Projects</h1>
         <div class="muted" v-if="projects.loaded">
@@ -181,6 +211,41 @@ function formatDate(ts: number): string {
   margin: 0 auto;
   width: 100%;
   flex: 1;
+}
+
+.join-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-6);
+}
+
+.join-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.join-sub {
+  font-size: var(--text-xs);
+  margin-top: 2px;
+}
+
+.join-form {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.join-input {
+  width: 160px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .page-header {

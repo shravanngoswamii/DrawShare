@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import ShareSessionModal from "@/components/ShareSessionModal.vue";
 import { useEditorStore } from "@/stores/editor";
+import { useLiveStore } from "@/stores/live";
 import { useProjectsStore } from "@/stores/projects";
 
 const editor = useEditorStore();
+const live = useLiveStore();
 const projects = useProjectsStore();
 const router = useRouter();
 
 const name = ref("");
+const shareOpen = ref(false);
 
 watch(
   () => editor.project?.name,
@@ -69,7 +73,16 @@ async function clearPage() {
     <div class="right">
       <span class="muted save">{{ saveStatus }}</span>
       <button class="btn btn-ghost" @click="clearPage">Clear page</button>
+      <button
+        class="btn"
+        :class="{ 'btn-live': live.isHosting }"
+        @click="shareOpen = true"
+      >
+        <span v-if="live.isHosting" class="live-dot"></span>
+        {{ live.isHosting ? `Live - ${live.code}` : "Share live" }}
+      </button>
     </div>
+    <ShareSessionModal :open="shareOpen" @close="shareOpen = false" />
   </header>
 </template>
 
@@ -122,5 +135,24 @@ async function clearPage() {
 .save {
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
+}
+
+.btn-live {
+  background: #ecfdf5;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.btn-live:hover {
+  background: #d1fae5;
+  border-color: #4ade80;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #16a34a;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
 }
 </style>

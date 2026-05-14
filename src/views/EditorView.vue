@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { onMounted, watch } from "vue";
+import { onBeforeUnmount, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import CanvasStage from "@/components/CanvasStage.vue";
 import PagesPanel from "@/components/PagesPanel.vue";
 import Toolbar from "@/components/Toolbar.vue";
 import TopBar from "@/components/TopBar.vue";
 import { useEditorStore } from "@/stores/editor";
+import { useLiveStore } from "@/stores/live";
 import { useProjectsStore } from "@/stores/projects";
 
 const props = defineProps<{ id: string }>();
 const editor = useEditorStore();
+const live = useLiveStore();
 const projects = useProjectsStore();
 const router = useRouter();
 
@@ -26,6 +28,7 @@ watch(
   () => props.id,
   async (next, prev) => {
     if (next !== prev) {
+      live.stop();
       try {
         await editor.open(next);
       } catch {
@@ -34,6 +37,11 @@ watch(
     }
   },
 );
+
+onBeforeUnmount(() => {
+  live.stop();
+  window.removeEventListener("keydown", onKey);
+});
 
 function onKey(e: KeyboardEvent) {
   const tag = (e.target as HTMLElement | null)?.tagName;

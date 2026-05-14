@@ -12,6 +12,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import("./views/EditorView.vue"),
     props: true,
   },
+  {
+    path: "/v/:code",
+    name: "viewer",
+    component: () => import("./views/ViewerView.vue"),
+    props: true,
+  },
 ];
 
 export const router = createRouter({

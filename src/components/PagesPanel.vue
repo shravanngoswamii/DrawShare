@@ -34,9 +34,7 @@ const backgrounds = [
 async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
   const page = editor.currentPage;
   if (!page) return;
-  page.background = value;
-  page.updatedAt = Date.now();
-  await editor.renamePage(page.id, page.name);
+  await editor.setPageBackground(page.id, value);
 }
 </script>
 

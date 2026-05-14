@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { storage } from "@/adapters/storage/indexedDB";
 import { newId } from "@/core/ids";
 import { DEFAULT_PAGE_SIZE, useProjectsStore } from "./projects";
+import { useLiveStore } from "./live";
 import type { Page, Project, Stroke, Tool } from "@/core/types";
 
 interface EditorState {
@@ -61,6 +62,12 @@ export const useEditorStore = defineStore("editor", {
       await this.loadStrokes(pageId);
       this.history = [];
       this.redoStack = [];
+      useLiveStore().broadcast({
+        t: "page-set",
+        pageId,
+        pages: [...this.pages],
+        strokes: [...this.strokes],
+      });
     },
     async createPageInternal(index: number): Promise<Page> {
       if (!this.project) throw new Error("No project");
@@ -86,6 +93,11 @@ export const useEditorStore = defineStore("editor", {
       this.project.pageOrder = this.pages.map((p) => p.id);
       this.project.updatedAt = Date.now();
       await storage.putProject({ ...this.project });
+      useLiveStore().broadcast({
+        t: "page-add",
+        page,
+        pages: [...this.pages],
+      });
       await this.selectPage(page.id);
       await useProjectsStore().touch(this.project.id);
     },
@@ -100,8 +112,15 @@ export const useEditorStore = defineStore("editor", {
       this.project.pageOrder = this.pages.map((p) => p.id);
       this.project.updatedAt = Date.now();
       await storage.putProject({ ...this.project });
+      const fallback = this.pages[0].id;
+      useLiveStore().broadcast({
+        t: "page-delete",
+        pageId,
+        pages: [...this.pages],
+        fallbackPageId: fallback,
+      });
       if (this.currentPageId === pageId) {
-        await this.selectPage(this.pages[0].id);
+        await this.selectPage(fallback);
       }
     },
     async renamePage(pageId: string, name: string) {
@@ -110,6 +129,15 @@ export const useEditorStore = defineStore("editor", {
       page.name = name.trim() || page.name;
       page.updatedAt = Date.now();
       await storage.putPage({ ...page });
+      useLiveStore().broadcast({ t: "page-rename", pageId, name: page.name });
+    },
+    async setPageBackground(pageId: string, background: Page["background"]) {
+      const page = this.pages.find((p) => p.id === pageId);
+      if (!page) return;
+      page.background = background;
+      page.updatedAt = Date.now();
+      await storage.putPage({ ...page });
+      useLiveStore().broadcast({ t: "page-background", pageId, background });
     },
     async commitStroke(stroke: Stroke) {
       this.saving++;
@@ -118,6 +146,7 @@ export const useEditorStore = defineStore("editor", {
         this.history = [...this.history, stroke];
         this.redoStack = [];
         await storage.putStroke(stroke);
+        useLiveStore().broadcast({ t: "stroke-commit", stroke });
         if (this.project) await useProjectsStore().touch(this.project.id);
       } finally {
         this.saving--;
@@ -130,6 +159,11 @@ export const useEditorStore = defineStore("editor", {
       this.redoStack = [...this.redoStack, last];
       this.strokes = this.strokes.filter((s) => s.id !== last.id);
       await storage.deleteStroke(last.id);
+      useLiveStore().broadcast({
+        t: "stroke-delete",
+        pageId: last.pageId,
+        strokeId: last.id,
+      });
     },
     async redo() {
       const next = this.redoStack[this.redoStack.length - 1];
@@ -138,13 +172,16 @@ export const useEditorStore = defineStore("editor", {
       this.history = [...this.history, next];
       this.strokes = [...this.strokes, next];
       await storage.putStroke(next);
+      useLiveStore().broadcast({ t: "stroke-commit", stroke: next });
     },
     async clearPage() {
       if (!this.currentPageId) return;
       await storage.deleteStrokesForPage(this.currentPageId);
+      const pageId = this.currentPageId;
       this.strokes = [];
       this.history = [];
       this.redoStack = [];
+      useLiveStore().broadcast({ t: "clear-page", pageId });
     },
     setTool(t: Tool) {
       this.tool = t;

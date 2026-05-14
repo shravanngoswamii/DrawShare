@@ -1,15 +1,10 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { PointerInputAdapter } from "@/adapters/input/pointerInput";
 import { Canvas2DRenderer } from "@/adapters/render/canvas2d";
-import { newId } from "@/core/ids";
-import type { InputSample } from "@/core/ports";
-import type { Page, Stroke, StrokePoint } from "@/core/types";
-import { useEditorStore } from "@/stores/editor";
+import type { Page } from "@/core/types";
 import { useLiveStore } from "@/stores/live";
 
 const props = defineProps<{ page: Page }>();
-const editor = useEditorStore();
 const live = useLiveStore();
 
 const wrap = ref<HTMLDivElement | null>(null);
@@ -18,10 +13,7 @@ const liveEl = ref<HTMLCanvasElement | null>(null);
 
 const baseRenderer = new Canvas2DRenderer();
 const liveRenderer = new Canvas2DRenderer();
-const input = new PointerInputAdapter();
 
-let currentStroke: Stroke | undefined;
-let liveSendCursor = 0;
 let frameQueued = false;
 let dirtyBase = true;
 
@@ -65,32 +57,23 @@ function render() {
   if (dirtyBase) {
     baseRenderer.clear();
     baseRenderer.beginFrame();
-    drawPageBackground(baseRenderer);
-    for (const s of editor.strokes) baseRenderer.drawStroke(s);
+    drawPageBackground();
+    for (const s of live.viewerStrokes) {
+      if (s.pageId === props.page.id) baseRenderer.drawStroke(s);
+    }
     baseRenderer.endFrame();
     dirtyBase = false;
   }
   liveRenderer.clear();
-  if (currentStroke && currentStroke.points.length > 0) {
+  if (live.viewerLive && live.viewerLive.points.length > 0) {
     liveRenderer.beginFrame();
-    liveRenderer.drawLive(currentStroke);
+    liveRenderer.drawLive(live.viewerLive);
     liveRenderer.endFrame();
-    if (live.mode === "host" && currentStroke.points.length > liveSendCursor) {
-      const newPoints = currentStroke.points.slice(liveSendCursor);
-      live.broadcast({
-        t: "stroke-points",
-        pageId: currentStroke.pageId,
-        strokeId: currentStroke.id,
-        points: newPoints,
-        from: liveSendCursor,
-      });
-      liveSendCursor = currentStroke.points.length;
-    }
   }
 }
 
-function drawPageBackground(r: Canvas2DRenderer) {
-  const ctx = (r as unknown as { ctx: CanvasRenderingContext2D }).ctx;
+function drawPageBackground() {
+  const ctx = (baseRenderer as unknown as { ctx: CanvasRenderingContext2D }).ctx;
   if (!ctx) return;
   const page = props.page;
   ctx.fillStyle = "#ffffff";
@@ -101,7 +84,6 @@ function drawPageBackground(r: Canvas2DRenderer) {
 
   if (page.background === "ruled") {
     ctx.strokeStyle = "#e5e7eb";
-    ctx.lineWidth = 1;
     for (let y = 64; y < page.height; y += 32) {
       ctx.beginPath();
       ctx.moveTo(0, y + 0.5);
@@ -110,7 +92,6 @@ function drawPageBackground(r: Canvas2DRenderer) {
     }
   } else if (page.background === "grid") {
     ctx.strokeStyle = "#eef2f6";
-    ctx.lineWidth = 1;
     for (let x = 32; x < page.width; x += 32) {
       ctx.beginPath();
       ctx.moveTo(x + 0.5, 0);
@@ -133,72 +114,18 @@ function drawPageBackground(r: Canvas2DRenderer) {
   }
 }
 
-function toPagePoint(s: InputSample): StrokePoint {
-  const cam = (baseRenderer as unknown as { camera: { x: number; y: number; zoom: number } }).camera;
-  return {
-    x: s.x / cam.zoom + cam.x,
-    y: s.y / cam.zoom + cam.y,
-    p: s.pressure,
-    t: s.t,
-  };
-}
-
-function handleDown(s: InputSample) {
-  if (editor.tool === "eraser") return;
-  const point = toPagePoint(s);
-  currentStroke = {
-    id: newId(),
-    pageId: props.page.id,
-    tool: editor.tool,
-    color: editor.color,
-    size: editor.size,
-    opacity: editor.tool === "highlighter" ? 0.35 : editor.opacity,
-    points: [point],
-    createdAt: Date.now(),
-  };
-  liveSendCursor = 0;
-  if (live.mode === "host") {
-    live.broadcast({ t: "stroke-begin", stroke: { ...currentStroke, points: [point] } });
-    liveSendCursor = 1;
-  }
-  schedule();
-}
-
-function handleMove(samples: InputSample[]) {
-  if (!currentStroke) return;
-  for (const s of samples) currentStroke.points.push(toPagePoint(s));
-  schedule();
-}
-
-async function handleUp() {
-  if (!currentStroke) return;
-  const finished = currentStroke;
-  currentStroke = undefined;
-  liveSendCursor = 0;
-  dirtyBase = true;
-  schedule();
-  await editor.commitStroke(finished);
-}
-
-function handleCancel() {
-  if (currentStroke && live.mode === "host") {
-    live.broadcast({
-      t: "stroke-cancel",
-      pageId: currentStroke.pageId,
-      strokeId: currentStroke.id,
-    });
-  }
-  currentStroke = undefined;
-  liveSendCursor = 0;
-  schedule();
-}
-
 watch(
-  () => editor.strokes.length,
+  () => live.viewerStrokes.length,
   () => {
     dirtyBase = true;
     schedule();
   },
+);
+
+watch(
+  () => live.viewerLive,
+  () => schedule(),
+  { deep: true },
 );
 
 watch(
@@ -224,26 +151,19 @@ onMounted(() => {
   baseRenderer.attach(baseEl.value);
   liveRenderer.attach(liveEl.value);
   fitCanvas();
-  input.start(liveEl.value, {
-    onDown: handleDown,
-    onMove: handleMove,
-    onUp: handleUp,
-    onCancel: handleCancel,
-  });
   resizeObserver = new ResizeObserver(() => fitCanvas());
   resizeObserver.observe(wrap.value);
 });
 
 onBeforeUnmount(() => {
-  input.stop();
   resizeObserver?.disconnect();
 });
 </script>
 
 <template>
   <div class="stage" ref="wrap">
-    <canvas ref="baseEl" class="layer base"></canvas>
-    <canvas ref="liveEl" class="layer live"></canvas>
+    <canvas ref="baseEl" class="layer"></canvas>
+    <canvas ref="liveEl" class="layer"></canvas>
   </div>
 </template>
 
@@ -260,9 +180,6 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   display: block;
-}
-
-.live {
-  touch-action: none;
+  pointer-events: none;
 }
 </style>
