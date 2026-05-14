@@ -7,6 +7,12 @@ export type SyncMessage =
       pages: Page[];
       currentPageId: string;
       strokes: Stroke[];
+      hostViewport: { width: number; height: number };
+    }
+  | {
+      t: "viewport";
+      width: number;
+      height: number;
     }
   | {
       t: "page-set";

@@ -24,6 +24,8 @@ let currentStroke: Stroke | undefined;
 let liveSendCursor = 0;
 let frameQueued = false;
 let dirtyBase = true;
+let viewW = 0;
+let viewH = 0;
 
 function dpr() {
   return window.devicePixelRatio || 1;
@@ -33,25 +35,15 @@ function fitCanvas() {
   if (!wrap.value || !baseEl.value || !liveEl.value) return;
   const rect = wrap.value.getBoundingClientRect();
   const ratio = dpr();
-  baseRenderer.setViewport(rect.width, rect.height, ratio);
-  liveRenderer.setViewport(rect.width, rect.height, ratio);
-  computeCamera(rect.width, rect.height);
+  viewW = rect.width;
+  viewH = rect.height;
+  baseRenderer.setViewport(viewW, viewH, ratio);
+  liveRenderer.setViewport(viewW, viewH, ratio);
+  baseRenderer.setCamera({ x: 0, y: 0, zoom: 1 });
+  liveRenderer.setCamera({ x: 0, y: 0, zoom: 1 });
+  live.setHostViewport(viewW, viewH);
   dirtyBase = true;
   schedule();
-}
-
-function computeCamera(viewW: number, viewH: number) {
-  const page = props.page;
-  const margin = 32;
-  const scale = Math.min(
-    (viewW - margin * 2) / page.width,
-    (viewH - margin * 2) / page.height,
-  );
-  const zoom = Math.max(0.1, Math.min(2, scale));
-  const x = (page.width * zoom - viewW) / 2 / zoom;
-  const y = (page.height * zoom - viewH) / 2 / zoom;
-  baseRenderer.setCamera({ x, y, zoom });
-  liveRenderer.setCamera({ x, y, zoom });
 }
 
 function schedule() {
@@ -92,41 +84,41 @@ function render() {
 function drawPageBackground(r: Canvas2DRenderer) {
   const ctx = (r as unknown as { ctx: CanvasRenderingContext2D }).ctx;
   if (!ctx) return;
-  const page = props.page;
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, page.width, page.height);
-  ctx.strokeStyle = "#e4e4e7";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(0.5, 0.5, page.width - 1, page.height - 1);
+  const w = viewW;
+  const h = viewH;
+  const bg = props.page.background;
 
-  if (page.background === "ruled") {
-    ctx.strokeStyle = "#e5e7eb";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, w, h);
+
+  if (bg === "ruled") {
+    ctx.strokeStyle = "#e2e8f0";
     ctx.lineWidth = 1;
-    for (let y = 64; y < page.height; y += 32) {
+    for (let y = 32; y < h; y += 32) {
       ctx.beginPath();
       ctx.moveTo(0, y + 0.5);
-      ctx.lineTo(page.width, y + 0.5);
+      ctx.lineTo(w, y + 0.5);
       ctx.stroke();
     }
-  } else if (page.background === "grid") {
+  } else if (bg === "grid") {
     ctx.strokeStyle = "#eef2f6";
     ctx.lineWidth = 1;
-    for (let x = 32; x < page.width; x += 32) {
+    for (let x = 32; x < w; x += 32) {
       ctx.beginPath();
       ctx.moveTo(x + 0.5, 0);
-      ctx.lineTo(x + 0.5, page.height);
+      ctx.lineTo(x + 0.5, h);
       ctx.stroke();
     }
-    for (let y = 32; y < page.height; y += 32) {
+    for (let y = 32; y < h; y += 32) {
       ctx.beginPath();
       ctx.moveTo(0, y + 0.5);
-      ctx.lineTo(page.width, y + 0.5);
+      ctx.lineTo(w, y + 0.5);
       ctx.stroke();
     }
-  } else if (page.background === "dotted") {
-    ctx.fillStyle = "#d4d4d8";
-    for (let y = 32; y < page.height; y += 32) {
-      for (let x = 32; x < page.width; x += 32) {
+  } else if (bg === "dotted") {
+    ctx.fillStyle = "#cbd5e1";
+    for (let y = 32; y < h; y += 32) {
+      for (let x = 32; x < w; x += 32) {
         ctx.fillRect(x, y, 1.5, 1.5);
       }
     }
@@ -134,10 +126,9 @@ function drawPageBackground(r: Canvas2DRenderer) {
 }
 
 function toPagePoint(s: InputSample): StrokePoint {
-  const cam = (baseRenderer as unknown as { camera: { x: number; y: number; zoom: number } }).camera;
   return {
-    x: s.x / cam.zoom + cam.x,
-    y: s.y / cam.zoom + cam.y,
+    x: s.x,
+    y: s.y,
     p: s.pressure,
     t: s.t,
   };
@@ -252,7 +243,7 @@ onBeforeUnmount(() => {
   position: relative;
   width: 100%;
   height: 100%;
-  background: var(--color-surface-2);
+  background: var(--color-surface);
   overflow: hidden;
 }
 
@@ -264,7 +255,7 @@ onBeforeUnmount(() => {
 }
 
 .base {
-  background: var(--color-surface-2);
+  background: #ffffff;
 }
 
 .live {

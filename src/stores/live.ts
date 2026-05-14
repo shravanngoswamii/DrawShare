@@ -19,11 +19,13 @@ interface LiveState {
   code: string;
   viewerCount: number;
   error: string;
+  hostViewport: { width: number; height: number };
   viewerProject: Project | undefined;
   viewerPages: Page[];
   viewerCurrentPageId: string | undefined;
   viewerStrokes: Stroke[];
   viewerLive: Stroke | undefined;
+  viewerHostViewport: { width: number; height: number };
 }
 
 let session: PeerJSSession | undefined;
@@ -35,11 +37,13 @@ export const useLiveStore = defineStore("live", {
     code: "",
     viewerCount: 0,
     error: "",
+    hostViewport: { width: 1920, height: 1080 },
     viewerProject: undefined,
     viewerPages: [],
     viewerCurrentPageId: undefined,
     viewerStrokes: [],
     viewerLive: undefined,
+    viewerHostViewport: { width: 1920, height: 1080 },
   }),
   getters: {
     viewerCurrentPage(state): Page | undefined {
@@ -76,6 +80,7 @@ export const useLiveStore = defineStore("live", {
               pages: snap.pages,
               currentPageId: snap.currentPageId,
               strokes: snap.strokes,
+              hostViewport: { ...this.hostViewport },
             };
             session?.send(msg);
             void id;
@@ -111,6 +116,15 @@ export const useLiveStore = defineStore("live", {
       this.viewerCurrentPageId = undefined;
       this.viewerStrokes = [];
       this.viewerLive = undefined;
+      this.viewerHostViewport = { width: 1920, height: 1080 };
+    },
+
+    setHostViewport(width: number, height: number) {
+      if (this.hostViewport.width === width && this.hostViewport.height === height) return;
+      this.hostViewport = { width, height };
+      if (this.mode === "host") {
+        session?.send({ t: "viewport", width, height });
+      }
     },
 
     async join(code: string) {
@@ -156,6 +170,11 @@ export const useLiveStore = defineStore("live", {
           this.viewerCurrentPageId = msg.currentPageId;
           this.viewerStrokes = msg.strokes;
           this.viewerLive = undefined;
+          this.viewerHostViewport = { ...msg.hostViewport };
+          break;
+        }
+        case "viewport": {
+          this.viewerHostViewport = { width: msg.width, height: msg.height };
           break;
         }
         case "page-set": {

@@ -43,4 +43,6 @@ jobs:
           branch: gh-pages
           folder: dist
           clean: true
-          single-commit: true
+          clean-exclude: |
+            pr-previews
+          commit-message: "Deploy production from ${{ github.sha }}"
