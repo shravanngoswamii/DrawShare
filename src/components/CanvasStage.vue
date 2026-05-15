@@ -21,6 +21,7 @@ const liveRenderer = new Canvas2DRenderer();
 const input = new PointerInputAdapter();
 
 let currentStroke: Stroke | undefined;
+let isErasing = false;
 let predictedPoints: StrokePoint[] = [];
 let liveSendCursor = 0;
 let frameQueued = false;
@@ -94,8 +95,38 @@ function toPagePoint(s: InputSample): StrokePoint {
   };
 }
 
+function distToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - ax, py - ay);
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+function eraseAt(x: number, y: number) {
+  const r = editor.size * 4 + 8;
+  const toDelete = editor.strokes.filter((stroke) => {
+    if (stroke.pageId !== props.page.id) return false;
+    const pts = stroke.points;
+    if (pts.length === 0) return false;
+    if (pts.length === 1) return Math.hypot(pts[0].x - x, pts[0].y - y) < r;
+    for (let i = 0; i < pts.length - 1; i++) {
+      if (distToSegment(x, y, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y) < r) return true;
+    }
+    return false;
+  });
+  if (toDelete.length === 0) return;
+  for (const stroke of toDelete) editor.eraseStroke(stroke.id);
+  dirtyBase = true;
+  schedule();
+}
+
 function handleDown(s: InputSample) {
-  if (editor.tool === "eraser") return;
+  if (editor.tool === "eraser") {
+    isErasing = true;
+    eraseAt(s.x, s.y);
+    return;
+  }
   const point = toPagePoint(s);
   currentStroke = {
     id: newId(),
@@ -116,6 +147,10 @@ function handleDown(s: InputSample) {
 }
 
 function handleMove(samples: InputSample[]) {
+  if (isErasing) {
+    for (const s of samples) eraseAt(s.x, s.y);
+    return;
+  }
   if (!currentStroke) return;
   predictedPoints = [];
   for (const s of samples) currentStroke.points.push(toPagePoint(s));
@@ -129,6 +164,7 @@ function handlePredict(samples: InputSample[]) {
 }
 
 async function handleUp() {
+  if (isErasing) { isErasing = false; return; }
   if (!currentStroke) return;
   predictedPoints = [];
   const finished = currentStroke;
@@ -140,6 +176,7 @@ async function handleUp() {
 }
 
 async function handleCancel() {
+  if (isErasing) { isErasing = false; return; }
   if (!currentStroke) return;
   predictedPoints = [];
   if (currentStroke.points.length >= 2) {

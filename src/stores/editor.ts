@@ -139,6 +139,15 @@ export const useEditorStore = defineStore("editor", {
       await storage.putPage({ ...page });
       useLiveStore().broadcast({ t: "page-background", pageId, background });
     },
+    async eraseStroke(strokeId: string) {
+      const stroke = this.strokes.find((s) => s.id === strokeId);
+      if (!stroke) return;
+      this.strokes = this.strokes.filter((s) => s.id !== strokeId);
+      this.history = this.history.filter((s) => s.id !== strokeId);
+      this.redoStack = this.redoStack.filter((s) => s.id !== strokeId);
+      await storage.deleteStroke(strokeId);
+      useLiveStore().broadcast({ t: "stroke-delete", pageId: stroke.pageId, strokeId });
+    },
     async commitStroke(stroke: Stroke) {
       this.saving++;
       try {
