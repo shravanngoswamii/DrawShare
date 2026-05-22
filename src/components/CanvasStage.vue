@@ -57,12 +57,16 @@ function dpr() {
 }
 
 function updateBg() {
-  // Grid stays at constant 32px screen density; position tracks world origin so lines follow pan.
-  const size = 32;
-  const ox = (((-cam.x * cam.zoom) % size) + size) % size;
-  const oy = (((-cam.y * cam.zoom) % size) + size) % size;
+  // Adaptive world-space grid: base cell = 40 world units, adapts by powers of 2
+  // to keep screen spacing in [20, 100] px — scales visually with zoom.
+  let worldStep = 40;
+  let screenStep = worldStep * cam.zoom;
+  while (screenStep < 20) { worldStep *= 2; screenStep *= 2; }
+  while (screenStep > 100) { worldStep /= 2; screenStep /= 2; }
+  const ox = (((-cam.x * cam.zoom) % screenStep) + screenStep) % screenStep;
+  const oy = (((-cam.y * cam.zoom) % screenStep) + screenStep) % screenStep;
   bgStyle.value = {
-    backgroundSize: `${size}px ${size}px`,
+    backgroundSize: `${screenStep}px ${screenStep}px`,
     backgroundPosition: `${ox}px ${oy}px`,
   };
 }
@@ -492,23 +496,20 @@ onBeforeUnmount(() => {
   background-image: linear-gradient(
     to bottom,
     transparent 0,
-    transparent 31px,
-    #e2e8f0 31px,
-    #e2e8f0 32px
+    transparent calc(100% - 1px),
+    #e2e8f0 calc(100% - 1px),
+    #e2e8f0 100%
   );
-  background-size: 32px 32px;
 }
 
 .bg-grid {
   background-image:
-    linear-gradient(to right, transparent 0, transparent 31px, #eef2f6 31px, #eef2f6 32px),
-    linear-gradient(to bottom, transparent 0, transparent 31px, #eef2f6 31px, #eef2f6 32px);
-  background-size: 32px 32px, 32px 32px;
+    linear-gradient(to right, transparent calc(100% - 1px), #eef2f6 calc(100% - 1px), #eef2f6 100%),
+    linear-gradient(to bottom, transparent calc(100% - 1px), #eef2f6 calc(100% - 1px), #eef2f6 100%);
 }
 
 .bg-dotted {
-  background-image: radial-gradient(circle at 16px 16px, #cbd5e1 0.9px, transparent 1.4px);
-  background-size: 32px 32px;
+  background-image: radial-gradient(circle at 50% 50%, #cbd5e1 1.5px, transparent 2.5px);
 }
 
 .layer {

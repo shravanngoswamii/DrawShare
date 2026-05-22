@@ -2,11 +2,10 @@
 import { ref } from "vue";
 import { useEditorStore } from "@/stores/editor";
 
-defineProps<{ open?: boolean }>();
-const emit = defineEmits<{ close: [] }>();
+defineProps<{ open?: boolean; collapsed?: boolean }>();
+const emit = defineEmits<{ close: []; toggle: [] }>();
 
 const editor = useEditorStore();
-const desktopCollapsed = ref(false);
 const renamingId = ref<string | null>(null);
 const renameValue = ref("");
 
@@ -50,15 +49,13 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
 <template>
   <div class="wrap" :class="{ 'is-open': open }">
     <div class="backdrop" @click="emit('close')"></div>
-    <aside class="panel" :class="{ 'is-collapsed': desktopCollapsed }" aria-label="Pages and background">
+    <aside class="panel" :class="{ 'is-collapsed': collapsed }" aria-label="Pages and background">
       <div class="panel-head">
-        <button class="desktop-toggle" @click="desktopCollapsed = !desktopCollapsed" :title="desktopCollapsed ? 'Expand panel' : 'Collapse panel'">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path v-if="desktopCollapsed" d="M15 18l-6-6 6-6"/>
-            <path v-else d="M9 18l6-6-6-6"/>
+        <button class="desktop-toggle" @click="emit('toggle')" title="Collapse panel">
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="currentColor" fill-rule="evenodd" d="M10 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-8zM9 7H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3zM4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" clip-rule="evenodd"/>
           </svg>
         </button>
-        <template v-if="!desktopCollapsed">
         <div class="panel-title">Pages</div>
         <div class="head-actions">
           <button class="btn btn-sm" @click="editor.addPage()" title="Add page">
@@ -81,10 +78,8 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
             </svg>
           </button>
         </div>
-        </template>
       </div>
 
-      <template v-if="!desktopCollapsed">
       <div class="section pages-section">
         <ul class="pages">
           <li
@@ -144,7 +139,6 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
           </button>
         </div>
       </div>
-      </template>
     </aside>
   </div>
 </template>
@@ -158,26 +152,64 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
   display: none;
 }
 
+/* ── Floating glass panel — desktop ── */
 .panel {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  bottom: 8px;
   width: var(--sidepanel-w);
-  background: var(--color-surface);
-  border-left: 1px solid var(--color-border);
+  z-index: 10;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  flex-shrink: 0;
+  scrollbar-width: thin;
+  transform-origin: top right;
+  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1), opacity 180ms ease;
+}
+
+.panel.is-collapsed {
+  transform: scale(0);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .panel-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--color-border);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
   position: sticky;
   top: 0;
-  background: var(--color-surface);
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 12px 12px 0 0;
   z-index: 1;
+}
+
+.desktop-toggle {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.desktop-toggle:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text);
 }
 
 .panel-title {
@@ -186,6 +218,7 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--color-text-muted);
+  flex: 1;
 }
 
 .head-actions {
@@ -198,13 +231,9 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
   display: none;
 }
 
-.desktop-toggle {
-  display: none;
-}
-
 .section {
   padding: var(--space-4);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
 }
 
 .section:last-child {
@@ -240,9 +269,7 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
   transition: background 80ms ease, border-color 80ms ease;
 }
 
-.page:hover {
-  background: var(--color-surface-2);
-}
+.page:hover { background: rgba(241, 245, 249, 0.8); }
 
 .page.active {
   background: var(--color-accent-soft);
@@ -282,9 +309,7 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
   white-space: nowrap;
 }
 
-.page-idx {
-  font-size: var(--text-xs);
-}
+.page-idx { font-size: var(--text-xs); }
 
 .page-rename {
   height: 26px;
@@ -312,13 +337,8 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
   color: var(--color-text);
 }
 
-.page-action.danger {
-  color: var(--color-danger);
-}
-
-.page-action.danger:hover {
-  background: var(--color-danger-soft);
-}
+.page-action.danger { color: var(--color-danger); }
+.page-action.danger:hover { background: var(--color-danger-soft); }
 
 .bg-grid {
   display: grid;
@@ -329,7 +349,7 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
 .bg-btn {
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
-  background: var(--color-surface);
+  background: rgba(255, 255, 255, 0.7);
   padding: var(--space-3) var(--space-2);
   font-size: var(--text-xs);
   font-weight: 500;
@@ -348,47 +368,7 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
   color: #fff;
 }
 
-/* Desktop - collapsible */
-@media (min-width: 768px) {
-  .desktop-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    border-radius: var(--radius-md);
-    color: var(--color-text-muted);
-    flex-shrink: 0;
-    transition: background 80ms ease, color 80ms ease;
-  }
-
-  .desktop-toggle:hover {
-    background: var(--color-surface-2);
-    color: var(--color-text);
-  }
-
-  .panel {
-    overflow: hidden;
-    transition: width 200ms cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .panel.is-collapsed {
-    width: 36px;
-  }
-
-  .panel-head {
-    min-height: 44px;
-  }
-}
-
-/* Tablet - keep panel inline but narrower */
-@media (min-width: 768px) and (max-width: 1023px) {
-  .panel:not(.is-collapsed) {
-    width: 220px;
-  }
-}
-
-/* Mobile - drawer */
+/* ── Mobile — slide-in drawer ── */
 @media (max-width: 767px) {
   .wrap {
     display: block;
@@ -414,33 +394,30 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
     right: 0;
     bottom: 0;
     width: min(320px, 90vw);
+    border-radius: 0;
+    background: var(--color-surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     border-left: 1px solid var(--color-border);
-    border-bottom: none;
     box-shadow: var(--shadow-lg);
-    transform: translateX(100%);
-    transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
+    transform: translateX(100%) !important;
+    transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+    opacity: 1 !important;
     pointer-events: auto;
     padding-top: var(--safe-top);
   }
 
-  .wrap.is-open {
-    pointer-events: auto;
-  }
+  .wrap.is-open { pointer-events: auto; }
+  .wrap.is-open .backdrop { opacity: 1; pointer-events: auto; }
+  .wrap.is-open .panel { transform: translateX(0) !important; }
 
-  .wrap.is-open .backdrop {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .wrap.is-open .panel {
-    transform: translateX(0);
-  }
-
-  .close-btn {
-    display: inline-flex;
-  }
+  .desktop-toggle { display: none; }
+  .close-btn { display: inline-flex; }
 
   .panel-head {
+    background: var(--color-surface);
+    backdrop-filter: none;
+    border-radius: 0;
     padding: var(--space-3) var(--space-4);
   }
 }

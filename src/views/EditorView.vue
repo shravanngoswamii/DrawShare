@@ -17,6 +17,7 @@ const router = useRouter();
 
 const panelOpen = ref(false);
 const toolbarCollapsed = ref(false);
+const pagesCollapsed = ref(false);
 
 onMounted(async () => {
   if (!projects.loaded) await projects.load();
@@ -59,7 +60,7 @@ function onKey(e: KeyboardEvent) {
   } else if (e.key === "1") editor.setTool("pen");
   else if (e.key === "2") editor.setTool("highlighter");
   else if (e.key === "3") editor.setTool("eraser");
-  else if (e.key === "Escape") panelOpen.value = false;
+  else if (e.key === "Escape") { panelOpen.value = false; }
 }
 
 onMounted(() => {
@@ -76,7 +77,20 @@ onMounted(() => {
         <CanvasStage v-if="editor.currentPage" :page="editor.currentPage" />
         <div v-else class="loading muted">Loading.</div>
       </main>
-      <PagesPanel :open="panelOpen" @close="panelOpen = false" />
+      <PagesPanel :open="panelOpen" :collapsed="pagesCollapsed" @close="panelOpen = false" @toggle="pagesCollapsed = !pagesCollapsed" />
+      <!-- Sidebar re-open pills -->
+      <button v-if="toolbarCollapsed" class="sidebar-pill pill-left" @click="toolbarCollapsed = false" title="Show toolbar">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="currentColor" fill-rule="evenodd" d="M10 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-8zM9 7H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3zM4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" clip-rule="evenodd"/>
+        </svg>
+        <span>Tools</span>
+      </button>
+      <button v-if="pagesCollapsed" class="sidebar-pill pill-right" @click="pagesCollapsed = false" title="Show pages">
+        <span>Pages</span>
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="currentColor" fill-rule="evenodd" d="M10 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-8zM9 7H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3zM4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" clip-rule="evenodd"/>
+        </svg>
+      </button>
     </div>
   </div>
 </template>
@@ -93,16 +107,13 @@ onMounted(() => {
 
 .body {
   flex: 1;
-  display: flex;
   min-height: 0;
   position: relative;
 }
 
 .stage-wrap {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  position: relative;
+  position: absolute;
+  inset: 0;
   background: var(--color-bg);
 }
 
@@ -114,9 +125,51 @@ onMounted(() => {
   justify-content: center;
 }
 
+.sidebar-pill {
+  position: absolute;
+  top: 16px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: box-shadow 150ms, color 80ms, background 80ms;
+}
+
+.sidebar-pill:hover {
+  box-shadow: var(--shadow-md);
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.pill-left { left: 8px; }
+.pill-right { right: 8px; }
+
+@media (max-width: 767px) {
+  .sidebar-pill { display: none; }
+
 @media (max-width: 767px) {
   .body {
+    display: flex;
     flex-direction: column-reverse;
   }
+
+  .stage-wrap {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    inset: auto;
+  }
+}
 }
 </style>

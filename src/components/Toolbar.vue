@@ -29,10 +29,9 @@ const sizes = [2, 4, 6, 10, 16];
 
 <template>
   <aside class="toolbar" :class="{ 'is-collapsed': collapsed }" aria-label="Drawing tools">
-    <button class="toggle-btn" @click="emit('toggle')" :title="collapsed ? 'Expand toolbar' : 'Collapse toolbar'">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path v-if="collapsed" d="M9 18l6-6-6-6"/>
-        <path v-else d="M15 18l-6-6 6-6"/>
+    <button class="toggle-btn" @click="emit('toggle')" title="Collapse toolbar">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="currentColor" fill-rule="evenodd" d="M10 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-8zM9 7H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3zM4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" clip-rule="evenodd"/>
       </svg>
     </button>
     <div class="toolbar-body">
@@ -150,22 +149,38 @@ const sizes = [2, 4, 6, 10, 16];
 </template>
 
 <style scoped>
+/* ── Floating glass panel — desktop ── */
 .toolbar {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  bottom: 8px;
   width: var(--toolbar-w);
-  background: var(--color-surface);
-  border-right: 1px solid var(--color-border);
+  z-index: 10;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: var(--space-2) 0;
   gap: 0;
-  flex-shrink: 0;
-  overflow: hidden;
-  transition: width 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  transform-origin: top left;
+  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1), opacity 180ms ease;
 }
 
+.toolbar::-webkit-scrollbar { display: none; }
+
 .toolbar.is-collapsed {
-  width: 36px;
+  transform: scale(0);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .toggle-btn {
@@ -190,16 +205,8 @@ const sizes = [2, 4, 6, 10, 16];
   flex-direction: column;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) 0;
-  width: var(--toolbar-w);
-  opacity: 1;
-  transition: opacity 150ms ease;
-}
-
-.toolbar.is-collapsed .toolbar-body {
-  opacity: 0;
-  pointer-events: none;
-  visibility: hidden;
+  padding: var(--space-1) 0;
+  width: 100%;
 }
 
 .group {
@@ -254,13 +261,8 @@ const sizes = [2, 4, 6, 10, 16];
   flex-shrink: 0;
 }
 
-.size:hover {
-  background: var(--color-surface-2);
-}
-
-.size.active {
-  background: var(--color-accent-soft);
-}
+.size:hover { background: var(--color-surface-2); }
+.size.active { background: var(--color-accent-soft); }
 
 .size-dot {
   display: block;
@@ -277,56 +279,43 @@ const sizes = [2, 4, 6, 10, 16];
   flex-shrink: 0;
 }
 
-.swatch:hover {
-  transform: scale(1.08);
-}
+.swatch:hover { transform: scale(1.08); }
 
 .swatch.active {
-  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-accent);
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.88), 0 0 0 4px var(--color-accent);
 }
 
-/* Mobile - horizontal bottom bar */
+/* ── Mobile — horizontal bottom bar ── */
 @media (max-width: 767px) {
   .toolbar {
+    position: static;
     width: 100%;
     height: var(--toolbar-h);
     flex-direction: row;
-    border-right: none;
+    background: var(--color-surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-radius: 0;
+    border: none;
     border-top: 1px solid var(--color-border);
+    box-shadow: none;
     padding: 0 var(--space-3);
     padding-bottom: var(--safe-bottom);
     gap: var(--space-2);
     overflow-x: auto;
     overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     justify-content: flex-start;
-    transition: none;
+    transform: none !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
   }
 
-  .toolbar.is-collapsed {
-    width: 100%;
-  }
-
-  .toolbar::-webkit-scrollbar {
-    display: none;
-  }
-
-  .toggle-btn {
-    display: none;
-  }
+  .toolbar::-webkit-scrollbar { display: none; }
+  .toggle-btn { display: none; }
 
   .toolbar-body {
     display: contents;
-    opacity: 1;
-    visibility: visible;
-    pointer-events: auto;
-  }
-
-  .toolbar.is-collapsed .toolbar-body {
-    opacity: 1;
-    visibility: visible;
-    pointer-events: auto;
   }
 
   .group {
@@ -341,14 +330,7 @@ const sizes = [2, 4, 6, 10, 16];
     margin: 0 var(--space-1);
   }
 
-  .tool {
-    width: 40px;
-    height: 40px;
-  }
-
-  .size {
-    width: 32px;
-    height: 40px;
-  }
+  .tool { width: 40px; height: 40px; }
+  .size { width: 32px; height: 40px; }
 }
 </style>
