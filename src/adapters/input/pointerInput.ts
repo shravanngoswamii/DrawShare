@@ -3,20 +3,20 @@ import type { InputAdapter, InputHandlers, InputSample } from "@/core/ports";
 export class PointerInputAdapter implements InputAdapter {
   private target: HTMLElement | undefined;
   private handlers: InputHandlers | undefined;
-  private activePointerId: number | undefined;
   private startTime = 0;
   private penWasUsedRecently = false;
   private penLockoutUntil = 0;
-  private strokeStartStamp = -1;
+
+  // Holds the teardown function for the in-progress stroke's window listeners.
+  // Called at the start of every new pointerdown to guarantee the previous
+  // stroke is committed even when iOS drops its pointerup.
+  private pendingUp: (() => void) | null = null;
 
   start(target: HTMLElement, handlers: InputHandlers): void {
     this.target = target;
     this.handlers = handlers;
     target.style.touchAction = "none";
     target.addEventListener("pointerdown", this.onDown, { passive: false });
-    target.addEventListener("pointermove", this.onMove, { passive: false });
-    target.addEventListener("pointerup", this.onUp, { passive: false });
-    target.addEventListener("pointercancel", this.onCancel, { passive: false });
     target.addEventListener("contextmenu", this.onContext);
   }
 
@@ -24,10 +24,8 @@ export class PointerInputAdapter implements InputAdapter {
     const t = this.target;
     if (!t) return;
     t.removeEventListener("pointerdown", this.onDown);
-    t.removeEventListener("pointermove", this.onMove);
-    t.removeEventListener("pointerup", this.onUp);
-    t.removeEventListener("pointercancel", this.onCancel);
     t.removeEventListener("contextmenu", this.onContext);
+    this.pendingUp?.();
     this.target = undefined;
     this.handlers = undefined;
   }
@@ -54,79 +52,78 @@ export class PointerInputAdapter implements InputAdapter {
     };
   }
 
-  private beginStroke(e: PointerEvent): void {
-    if (e.pointerType === "pen") {
-      this.penWasUsedRecently = true;
-      this.penLockoutUntil = performance.now() + 1500;
-    }
-    this.activePointerId = e.pointerId;
-    this.strokeStartStamp = e.timeStamp;
-    this.startTime = performance.now();
-    this.target?.setPointerCapture(e.pointerId);
-    this.handlers?.onDown(this.toSample(e));
-  }
-
-  private endStroke(): void {
-    this.target?.releasePointerCapture(this.activePointerId!);
-    this.activePointerId = undefined;
-    this.handlers?.onUp();
-  }
-
   private onDown = (e: PointerEvent) => {
     if (e.defaultPrevented) return;
     if (this.shouldIgnore(e)) return;
     if (e.pointerType !== "touch" && e.button !== 0) return;
-    if (this.activePointerId !== undefined) {
-      this.endStroke();
-    }
-    e.preventDefault();
-    this.beginStroke(e);
-  };
 
-  private onMove = (e: PointerEvent) => {
-    if (e.defaultPrevented) return;
-    if (e.pointerType === "pen" && e.buttons > 0 && this.activePointerId === undefined) {
-      e.preventDefault();
-      this.beginStroke(e);
-      return;
-    }
-    if (this.activePointerId !== e.pointerId) return;
-    if (this.shouldIgnore(e)) return;
+    // Force-commit any previous stroke whose pointerup was dropped by iOS.
+    // This is the core of Excalidraw's approach: structural cleanup rather
+    // than trying to filter stale events by ID or timestamp.
+    this.pendingUp?.();
+
     e.preventDefault();
-    const events = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [];
-    const list = events.length > 0 ? events : [e];
-    const samples = list.map((ev) => this.toSample(ev));
-    this.handlers?.onMove(samples);
-    if (this.handlers?.onPredict) {
-      const predicted = typeof e.getPredictedEvents === "function" ? e.getPredictedEvents() : [];
-      if (predicted.length > 0) {
-        this.handlers.onPredict(predicted.map((ev) => this.toSample(ev)));
-      }
-    }
+
     if (e.pointerType === "pen") {
+      this.penWasUsedRecently = true;
       this.penLockoutUntil = performance.now() + 1500;
     }
-  };
 
-  private onUp = (e: PointerEvent) => {
-    if (e.defaultPrevented) return;
-    if (this.activePointerId !== e.pointerId) return;
-    if (e.timeStamp < this.strokeStartStamp) return;
-    e.preventDefault();
-    this.target?.releasePointerCapture(e.pointerId);
-    this.activePointerId = undefined;
-    this.handlers?.onUp();
-  };
+    this.startTime = performance.now();
+    this.target?.setPointerCapture(e.pointerId);
+    this.handlers?.onDown(this.toSample(e));
 
-  private onCancel = (e: PointerEvent) => {
-    if (this.activePointerId !== e.pointerId) return;
-    if (e.timeStamp < this.strokeStartStamp) return;
-    this.target?.releasePointerCapture(e.pointerId);
-    this.activePointerId = undefined;
-    if (e.pointerType === "pen") {
-      this.handlers?.onUp();
-    } else {
-      this.handlers?.onCancel();
-    }
+    const pointerId = e.pointerId;
+
+    const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      if (this.shouldIgnore(ev)) return;
+      const events = typeof ev.getCoalescedEvents === "function" ? ev.getCoalescedEvents() : [];
+      const list = events.length > 0 ? events : [ev];
+      this.handlers?.onMove(list.map((x) => this.toSample(x)));
+      if (this.handlers?.onPredict) {
+        const predicted = typeof ev.getPredictedEvents === "function" ? ev.getPredictedEvents() : [];
+        if (predicted.length > 0) {
+          this.handlers.onPredict(predicted.map((x) => this.toSample(x)));
+        }
+      }
+      if (ev.pointerType === "pen") {
+        this.penLockoutUntil = performance.now() + 1500;
+      }
+    };
+
+    const teardown = (isCancel = false) => {
+      this.pendingUp = null;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("blur", onBlur);
+      this.target?.releasePointerCapture(pointerId);
+      if (isCancel && e.pointerType !== "pen") {
+        this.handlers?.onCancel();
+      } else {
+        this.handlers?.onUp();
+      }
+    };
+
+    const onUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      teardown(false);
+    };
+
+    const onCancel = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      teardown(true);
+    };
+
+    // If the window loses focus (e.g. user switches app), commit the stroke.
+    const onBlur = () => teardown(false);
+
+    this.pendingUp = () => teardown(false);
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    window.addEventListener("blur", onBlur);
   };
 }
