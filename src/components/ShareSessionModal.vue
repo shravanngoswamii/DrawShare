@@ -497,3 +497,4 @@ async function connect() {
   .url-row { flex-direction: column; }
   .copy-btn { width: 100%; }
 }
+</style>
