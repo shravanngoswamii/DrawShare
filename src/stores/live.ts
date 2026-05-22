@@ -1,5 +1,11 @@
 import { defineStore } from "pinia";
 import { WebRTCSession } from "@/adapters/sync/webrtc";
+import {
+  relayPublishOffer,
+  relayFetchOffer,
+  relayPublishAnswer,
+  relayFetchAnswer,
+} from "@/adapters/sync/relay";
 import { makeSessionCode } from "@/core/sync";
 import type { SyncMessage } from "@/core/sync";
 import type { Page, Project, Stroke } from "@/core/types";
@@ -19,6 +25,8 @@ interface LiveState {
   code: string;
   viewerCount: number;
   error: string;
+  relayAvailable: boolean;
+  relayChecked: boolean;
   hostViewport: { width: number; height: number };
   offerToken: string;
   viewerResponseToken: string;
@@ -31,6 +39,7 @@ interface LiveState {
 }
 
 let session: WebRTCSession | undefined;
+let activePollCode: string | null = null;
 
 export const useLiveStore = defineStore("live", {
   state: (): LiveState => ({
@@ -39,6 +48,8 @@ export const useLiveStore = defineStore("live", {
     code: "",
     viewerCount: 0,
     error: "",
+    relayAvailable: false,
+    relayChecked: false,
     hostViewport: { width: 1920, height: 1080 },
     offerToken: "",
     viewerResponseToken: "",
@@ -106,6 +117,19 @@ export const useLiveStore = defineStore("live", {
         if (session !== activeSession) return;
         this.offerToken = offerToken;
         this.status = "waiting";
+
+        // Try relay (non-blocking) — falls back to manual if unavailable
+        relayPublishOffer(this.code, offerToken)
+          .then(() => {
+            if (session !== activeSession) return;
+            this.relayAvailable = true;
+            this.relayChecked = true;
+            void this.startPollingForAnswer(this.code);
+          })
+          .catch(() => {
+            if (session !== activeSession) return;
+            this.relayChecked = true;
+          });
       } catch (err) {
         if (session === activeSession) {
           this.error = (err as Error).message;
@@ -118,6 +142,7 @@ export const useLiveStore = defineStore("live", {
     },
 
     stop() {
+      activePollCode = null;
       session?.close();
       session = undefined;
       this.mode = "off";
@@ -125,6 +150,8 @@ export const useLiveStore = defineStore("live", {
       this.code = "";
       this.viewerCount = 0;
       this.error = "";
+      this.relayAvailable = false;
+      this.relayChecked = false;
       this.viewerProject = undefined;
       this.viewerPages = [];
       this.viewerCurrentPageId = undefined;
@@ -133,6 +160,20 @@ export const useLiveStore = defineStore("live", {
       this.viewerHostViewport = { width: 1920, height: 1080 };
       this.offerToken = "";
       this.viewerResponseToken = "";
+    },
+
+    async startPollingForAnswer(code: string) {
+      activePollCode = code;
+      for (let i = 0; i < 90; i++) {
+        await new Promise<void>((r) => setTimeout(r, 2_000));
+        if (activePollCode !== code || this.mode !== "host") return;
+        if (this.status === "connected") return;
+        const answer = await relayFetchAnswer(code).catch(() => null);
+        if (!answer) continue;
+        if (activePollCode !== code) return;
+        await this.applyViewerResponse(answer);
+        return;
+      }
     },
 
     setHostViewport(width: number, height: number) {
@@ -153,10 +194,22 @@ export const useLiveStore = defineStore("live", {
       this.error = "";
       this.viewerResponseToken = "";
       try {
-        if (!offerToken.trim()) {
-          throw new Error("Missing host connection token.");
+        let resolvedOffer = offerToken.trim();
+        if (!resolvedOffer) {
+          // Relay mode — fetch offer using the session code
+          const fetched = await relayFetchOffer(code).catch(() => null);
+          if (session !== activeSession) return;
+          if (!fetched) {
+            this.error = "Session not found. Make sure the host has started sharing.";
+            this.status = "error";
+            session.close();
+            session = undefined;
+            this.mode = "off";
+            return;
+          }
+          resolvedOffer = fetched;
         }
-        const responseToken = await activeSession.join(this.code, offerToken, {
+        const responseToken = await activeSession.join(this.code, resolvedOffer, {
           onConnected: () => {
             if (session !== activeSession) return;
             this.status = "connected";
@@ -180,6 +233,8 @@ export const useLiveStore = defineStore("live", {
         if (this.status === "connecting") {
           this.status = "waiting";
         }
+        // Publish answer to relay so host auto-connects (fire-and-forget)
+        relayPublishAnswer(code, responseToken).catch(() => null);
       } catch (err) {
         if (session === activeSession) {
           this.error = (err as Error).message;

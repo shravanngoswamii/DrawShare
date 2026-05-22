@@ -139,10 +139,7 @@ async function copyResponse() {
         <div v-else class="connecting">
           <div class="connecting-spinner" aria-hidden="true"></div>
           <div class="muted">
-            {{ live.status === "connecting" ? "Connecting to " + props.code + "…" : "" }}
-          </div>
-          <div class="wifi-hint muted" v-if="live.status === 'connecting'">
-            Make sure the viewer link includes the offer token
+            {{ live.status === "connecting" ? "Connecting to " + props.code + "…" : "Fetching session…" }}
           </div>
           <div class="field response-field" v-if="live.viewerResponseToken">
             <label class="label">Viewer response</label>

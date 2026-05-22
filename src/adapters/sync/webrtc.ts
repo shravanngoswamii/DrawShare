@@ -122,7 +122,9 @@ export class WebRTCSession implements SessionAdapter {
   }
 
   private createPeerConnection(): RTCPeerConnection {
-    const peer = new RTCPeerConnection({ iceServers: [] });
+    const peer = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    });
     peer.onconnectionstatechange = () => {
       if (peer.connectionState === "failed" || peer.connectionState === "disconnected") {
         this.notifyDisconnect();
