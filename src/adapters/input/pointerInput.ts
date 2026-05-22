@@ -112,8 +112,14 @@ export class PointerInputAdapter implements InputAdapter {
 
   private onUp = (e: PointerEvent) => {
     if (this.stalePointerId !== undefined && this.stalePointerId === e.pointerId) {
+      if (e.timeStamp <= this.strokeStartStamp) {
+        // This up belongs to the previous stroke — discard it.
+        this.stalePointerId = undefined;
+        return;
+      }
+      // Timestamp is newer than the current stroke start: iOS sent only one
+      // pointerup for two rapid strokes. Fall through as the real up.
       this.stalePointerId = undefined;
-      return;
     }
     if (e.defaultPrevented) return;
     if (this.activePointerId !== e.pointerId) return;
@@ -126,8 +132,11 @@ export class PointerInputAdapter implements InputAdapter {
 
   private onCancel = (e: PointerEvent) => {
     if (this.stalePointerId !== undefined && this.stalePointerId === e.pointerId) {
+      if (e.timeStamp <= this.strokeStartStamp) {
+        this.stalePointerId = undefined;
+        return;
+      }
       this.stalePointerId = undefined;
-      return;
     }
     if (this.activePointerId !== e.pointerId) return;
     if (e.timeStamp < this.strokeStartStamp) return;
