@@ -108,12 +108,28 @@ export class PointerInputAdapter implements InputAdapter {
 
     const onUp = (ev: PointerEvent) => {
       if (ev.pointerId !== pointerId) return;
-      teardown(false);
+      this.pendingUp = null;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("blur", onBlur);
+      this.target?.releasePointerCapture(pointerId);
+      this.handlers?.onUp(this.toSample(ev));
     };
 
     const onCancel = (ev: PointerEvent) => {
       if (ev.pointerId !== pointerId) return;
-      teardown(true);
+      this.pendingUp = null;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("blur", onBlur);
+      this.target?.releasePointerCapture(pointerId);
+      if (e.pointerType === "pen") {
+        this.handlers?.onUp(this.toSample(ev));
+      } else {
+        this.handlers?.onCancel(this.toSample(ev));
+      }
     };
 
     // If the window loses focus (e.g. user switches app), commit the stroke.

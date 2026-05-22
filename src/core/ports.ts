@@ -26,8 +26,8 @@ export interface InputAdapter {
 export interface InputHandlers {
   onDown(s: InputSample): void;
   onMove(samples: InputSample[]): void;
-  onUp(): void;
-  onCancel(): void;
+  onUp(s?: InputSample): void;
+  onCancel(s?: InputSample): void;
   onPredict?(samples: InputSample[]): void;
 }
 

@@ -253,11 +253,29 @@ function handlePredict(samples: InputSample[]) {
   schedule();
 }
 
-async function handleUp() {
+function appendFinalPoint(stroke: Stroke, sample?: InputSample) {
+  if (!sample) return;
+  const point = toPagePoint(sample);
+  const last = stroke.points[stroke.points.length - 1];
+  if (!last) {
+    stroke.points.push(point);
+    return;
+  }
+  if (last.x !== point.x || last.y !== point.y) {
+    stroke.points.push(point);
+    return;
+  }
+  if (stroke.points.length === 1) {
+    stroke.points.push({ ...point, x: point.x + 0.0001, y: point.y + 0.0001 });
+  }
+}
+
+async function handleUp(sample?: InputSample) {
   editor.setDrawing(false);
   if (isErasing) { isErasing = false; return; }
   if (!currentStroke) return;
   predictedPoints = [];
+  appendFinalPoint(currentStroke, sample);
   const finished = currentStroke;
   currentStroke = undefined;
   liveSendCursor = 0;
@@ -266,11 +284,12 @@ async function handleUp() {
   await editor.commitStroke(finished);
 }
 
-async function handleCancel() {
+async function handleCancel(sample?: InputSample) {
   editor.setDrawing(false);
   if (isErasing) { isErasing = false; return; }
   if (!currentStroke) return;
   predictedPoints = [];
+  appendFinalPoint(currentStroke, sample);
   if (currentStroke.points.length >= 2) {
     const partial = currentStroke;
     currentStroke = undefined;
