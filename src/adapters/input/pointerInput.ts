@@ -7,6 +7,7 @@ export class PointerInputAdapter implements InputAdapter {
   private startTime = 0;
   private penWasUsedRecently = false;
   private penLockoutUntil = 0;
+  private strokeStartStamp = -1;
 
   start(target: HTMLElement, handlers: InputHandlers): void {
     this.target = target;
@@ -68,6 +69,7 @@ export class PointerInputAdapter implements InputAdapter {
       this.penLockoutUntil = performance.now() + 1500;
     }
     this.activePointerId = e.pointerId;
+    this.strokeStartStamp = e.timeStamp;
     this.startTime = performance.now();
     this.target?.setPointerCapture(e.pointerId);
     this.handlers?.onDown(this.toSample(e));
@@ -104,8 +106,13 @@ export class PointerInputAdapter implements InputAdapter {
 
   private onCancel = (e: PointerEvent) => {
     if (this.activePointerId !== e.pointerId) return;
+    if (e.timeStamp <= this.strokeStartStamp) return;
     this.target?.releasePointerCapture(e.pointerId);
     this.activePointerId = undefined;
-    this.handlers?.onCancel();
+    if (e.pointerType === "pen") {
+      this.handlers?.onUp();
+    } else {
+      this.handlers?.onCancel();
+    }
   };
 }

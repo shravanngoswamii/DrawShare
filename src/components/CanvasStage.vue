@@ -306,6 +306,7 @@ function onWheel(e: WheelEvent) {
 function onNavPointerDown(e: PointerEvent) {
   if (e.pointerType === "touch") {
     if (!wrap.value) return;
+    if (e.width > 25 || e.height > 25) return;
     const rect = wrap.value.getBoundingClientRect();
     touchPoints.set(e.pointerId, { x: e.clientX - rect.left, y: e.clientY - rect.top });
     if (touchPoints.size >= 2) {
@@ -326,6 +327,11 @@ function onNavPointerDown(e: PointerEvent) {
       }
     }
     return;
+  }
+  if (e.pointerType === "pen" && pinchActive) {
+    pinchActive = false;
+    pinchLastDist = 0;
+    touchPoints.clear();
   }
   // Middle mouse or space + left drag
   if (e.button === 1 || (e.button === 0 && spaceHeld)) {
