@@ -187,9 +187,12 @@ function formatDate(ts: number): string {
 
 <style scoped>
 .page {
-  min-height: 100%;
+  height: 100dvh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding-top: var(--safe-top);
 }
 

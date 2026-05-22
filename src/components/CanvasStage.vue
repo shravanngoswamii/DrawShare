@@ -76,6 +76,7 @@ function syncCamera() {
   liveRenderer.setCamera({ ...cam });
   zoomLabel.value = `${Math.round(cam.zoom * 100)}%`;
   updateBg();
+  live.setHostCamera(cam.x, cam.y, cam.zoom);
   dirtyBase = true;
   schedule();
 }

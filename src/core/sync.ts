@@ -9,11 +9,15 @@ export type SyncMessage =
       currentPageId: string;
       strokes: Stroke[];
       hostViewport: { width: number; height: number };
+      hostCamera: { x: number; y: number; zoom: number };
     }
   | {
       t: "viewport";
       width: number;
       height: number;
+      camX: number;
+      camY: number;
+      camZoom: number;
     }
   | {
       t: "page-set";

@@ -28,6 +28,7 @@ interface LiveState {
   relayAvailable: boolean;
   relayChecked: boolean;
   hostViewport: { width: number; height: number };
+  hostCamera: { x: number; y: number; zoom: number };
   offerToken: string;
   viewerResponseToken: string;
   viewerProject: Project | undefined;
@@ -36,6 +37,7 @@ interface LiveState {
   viewerStrokes: Stroke[];
   viewerLive: Stroke | undefined;
   viewerHostViewport: { width: number; height: number };
+  viewerHostCamera: { x: number; y: number; zoom: number };
 }
 
 let session: WebRTCSession | undefined;
@@ -51,6 +53,7 @@ export const useLiveStore = defineStore("live", {
     relayAvailable: false,
     relayChecked: false,
     hostViewport: { width: 1920, height: 1080 },
+    hostCamera: { x: 0, y: 0, zoom: 1 },
     offerToken: "",
     viewerResponseToken: "",
     viewerProject: undefined,
@@ -59,6 +62,7 @@ export const useLiveStore = defineStore("live", {
     viewerStrokes: [],
     viewerLive: undefined,
     viewerHostViewport: { width: 1920, height: 1080 },
+    viewerHostCamera: { x: 0, y: 0, zoom: 1 },
   }),
   getters: {
     viewerCurrentPage(state): Page | undefined {
@@ -100,6 +104,7 @@ export const useLiveStore = defineStore("live", {
               currentPageId: snap.currentPageId,
               strokes: snap.strokes,
               hostViewport: { ...this.hostViewport },
+              hostCamera: { ...this.hostCamera },
             };
             session?.send(msg);
             void id;
@@ -158,6 +163,7 @@ export const useLiveStore = defineStore("live", {
       this.viewerStrokes = [];
       this.viewerLive = undefined;
       this.viewerHostViewport = { width: 1920, height: 1080 };
+      this.viewerHostCamera = { x: 0, y: 0, zoom: 1 };
       this.offerToken = "";
       this.viewerResponseToken = "";
     },
@@ -180,7 +186,18 @@ export const useLiveStore = defineStore("live", {
       if (this.hostViewport.width === width && this.hostViewport.height === height) return;
       this.hostViewport = { width, height };
       if (this.mode === "host") {
-        session?.send({ t: "viewport", width, height });
+        const { x, y, zoom } = this.hostCamera;
+        session?.send({ t: "viewport", width, height, camX: x, camY: y, camZoom: zoom });
+      }
+    },
+
+    setHostCamera(x: number, y: number, zoom: number) {
+      const c = this.hostCamera;
+      if (Math.abs(c.x - x) < 0.5 && Math.abs(c.y - y) < 0.5 && Math.abs(c.zoom - zoom) < 0.0005) return;
+      this.hostCamera = { x, y, zoom };
+      if (this.mode === "host") {
+        const { width, height } = this.hostViewport;
+        session?.send({ t: "viewport", width, height, camX: x, camY: y, camZoom: zoom });
       }
     },
 
@@ -272,10 +289,12 @@ export const useLiveStore = defineStore("live", {
           this.viewerStrokes = msg.strokes;
           this.viewerLive = undefined;
           this.viewerHostViewport = { ...msg.hostViewport };
+          this.viewerHostCamera = { ...msg.hostCamera };
           break;
         }
         case "viewport": {
           this.viewerHostViewport = { width: msg.width, height: msg.height };
+          this.viewerHostCamera = { x: msg.camX, y: msg.camY, zoom: msg.camZoom };
           break;
         }
         case "page-set": {

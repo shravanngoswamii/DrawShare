@@ -40,20 +40,27 @@ function fitCanvas() {
 
 function computeCamera() {
   const host = live.viewerHostViewport;
+  const hc = live.viewerHostCamera;
   if (!host.width || !host.height || !viewW || !viewH) {
     baseRenderer.setCamera({ x: 0, y: 0, zoom: 1 });
     liveRenderer.setCamera({ x: 0, y: 0, zoom: 1 });
     pageBgStyle.value = { width: `${viewW}px`, height: `${viewH}px`, left: "0px", top: "0px" };
     return;
   }
+  // Fit the host's screen into the viewer's screen (letterboxed)
   const scale = Math.min(viewW / host.width, viewH / host.height);
-  const zoom = Math.max(0.01, scale);
-  const drawnW = host.width * zoom;
-  const drawnH = host.height * zoom;
-  const x = (drawnW - viewW) / 2 / zoom;
-  const y = (drawnH - viewH) / 2 / zoom;
+  // Mirror host zoom scaled by the fit factor
+  const zoom = Math.max(0.01, hc.zoom * scale);
+  // Offset so the host's top-left world coordinate maps to the letterbox edge
+  const padX = (viewW - host.width * scale) / 2;
+  const padY = (viewH - host.height * scale) / 2;
+  const x = hc.x - padX / zoom;
+  const y = hc.y - padY / zoom;
   baseRenderer.setCamera({ x, y, zoom });
   liveRenderer.setCamera({ x, y, zoom });
+  // Page background covers the host-canvas area, letterboxed
+  const drawnW = host.width * scale;
+  const drawnH = host.height * scale;
   pageBgStyle.value = {
     width: `${drawnW}px`,
     height: `${drawnH}px`,
@@ -118,7 +125,13 @@ watch(
 );
 
 watch(
-  () => [live.viewerHostViewport.width, live.viewerHostViewport.height],
+  () => [
+    live.viewerHostViewport.width,
+    live.viewerHostViewport.height,
+    live.viewerHostCamera.x,
+    live.viewerHostCamera.y,
+    live.viewerHostCamera.zoom,
+  ],
   () => {
     computeCamera();
     dirtyBase = true;
