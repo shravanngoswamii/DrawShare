@@ -76,8 +76,6 @@ export class PointerInputAdapter implements InputAdapter {
     if (e.defaultPrevented) return;
     if (this.shouldIgnore(e)) return;
     if (e.pointerType !== "touch" && e.button !== 0) return;
-    // If a previous stroke is still active (pointerup was missed or arrived
-    // out-of-order), commit it before starting the new one.
     if (this.activePointerId !== undefined) {
       this.endStroke();
     }
@@ -87,7 +85,6 @@ export class PointerInputAdapter implements InputAdapter {
 
   private onMove = (e: PointerEvent) => {
     if (e.defaultPrevented) return;
-    // iOS can drop pointerdown on rapid pen re-place; recover from first move.
     if (e.pointerType === "pen" && e.buttons > 0 && this.activePointerId === undefined) {
       e.preventDefault();
       this.beginStroke(e);
@@ -114,8 +111,6 @@ export class PointerInputAdapter implements InputAdapter {
   private onUp = (e: PointerEvent) => {
     if (e.defaultPrevented) return;
     if (this.activePointerId !== e.pointerId) return;
-    // A pointerup with a timestamp before the current stroke started is a
-    // stale event from the previous stroke arriving out-of-order — discard it.
     if (e.timeStamp < this.strokeStartStamp) return;
     e.preventDefault();
     this.target?.releasePointerCapture(e.pointerId);
@@ -135,145 +130,3 @@ export class PointerInputAdapter implements InputAdapter {
     }
   };
 }
-
-
-  start(target: HTMLElement, handlers: InputHandlers): void {
-    this.target = target;
-    this.handlers = handlers;
-    target.style.touchAction = "none";
-    target.addEventListener("pointerdown", this.onDown, { passive: false });
-    target.addEventListener("pointermove", this.onMove, { passive: false });
-    target.addEventListener("pointerup", this.onUp, { passive: false });
-    target.addEventListener("pointercancel", this.onCancel, { passive: false });
-    target.addEventListener("contextmenu", this.onContext);
-  }
-
-  stop(): void {
-    const t = this.target;
-    if (!t) return;
-    t.removeEventListener("pointerdown", this.onDown);
-    t.removeEventListener("pointermove", this.onMove);
-    t.removeEventListener("pointerup", this.onUp);
-    t.removeEventListener("pointercancel", this.onCancel);
-    t.removeEventListener("contextmenu", this.onContext);
-    this.target = undefined;
-    this.handlers = undefined;
-  }
-
-  private onContext = (e: Event) => e.preventDefault();
-
-  private shouldIgnore(e: PointerEvent): boolean {
-    if (e.pointerType !== "touch") return false;
-    if (this.penWasUsedRecently || performance.now() < this.penLockoutUntil) return true;
-    if (e.width > 25 || e.height > 25) return true;
-    if (!e.isPrimary) return true;
-    return false;
-  }
-
-  private toSample(e: PointerEvent): InputSample {
-    const rect = this.target!.getBoundingClientRect();
-    const pressure = e.pressure > 0 ? e.pressure : 0.5;
-    return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-      pressure,
-      t: performance.now() - this.startTime,
-      pointerType: e.pointerType as InputSample["pointerType"],
-    };
-  }
-
-  private beginStroke(e: PointerEvent): void {
-    if (e.pointerType === "pen") {
-      this.penWasUsedRecently = true;
-      this.penLockoutUntil = performance.now() + 1500;
-    }
-    this.activePointerId = e.pointerId;
-    this.strokeStartStamp = e.timeStamp;
-    this.startTime = performance.now();
-    this.target?.setPointerCapture(e.pointerId);
-    this.handlers?.onDown(this.toSample(e));
-  }
-
-  private onDown = (e: PointerEvent) => {
-    if (e.defaultPrevented) return;
-    if (this.shouldIgnore(e)) return;
-    if (e.pointerType !== "touch" && e.button !== 0) return;
-    if (this.activePointerId !== undefined) {
-      this.stalePointerId = this.activePointerId;
-      this.target?.releasePointerCapture(this.activePointerId);
-      this.activePointerId = undefined;
-      this.handlers?.onUp();
-    } else {
-      this.stalePointerId = undefined;
-    }
-    e.preventDefault();
-    this.beginStroke(e);
-  };
-
-  private onMove = (e: PointerEvent) => {
-    if (e.defaultPrevented) return;
-    // Pen is pressing but pointerdown was missed (iOS can drop it on rapid re-place)
-    if (e.pointerType === "pen" && e.buttons > 0 && this.activePointerId === undefined) {
-      this.stalePointerId = undefined;
-      e.preventDefault();
-      this.beginStroke(e);
-      return;
-    }
-    if (this.activePointerId !== e.pointerId) return;
-    if (this.shouldIgnore(e)) return;
-    e.preventDefault();
-    const events = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [];
-    const list = events.length > 0 ? events : [e];
-    const samples = list.map((ev) => this.toSample(ev));
-    this.handlers?.onMove(samples);
-    if (this.handlers?.onPredict) {
-      const predicted = typeof e.getPredictedEvents === "function" ? e.getPredictedEvents() : [];
-      if (predicted.length > 0) {
-        this.handlers.onPredict(predicted.map((ev) => this.toSample(ev)));
-      }
-    }
-    if (e.pointerType === "pen") {
-      this.penLockoutUntil = performance.now() + 1500;
-    }
-  };
-
-  private onUp = (e: PointerEvent) => {
-    if (this.stalePointerId !== undefined && this.stalePointerId === e.pointerId) {
-      if (e.timeStamp <= this.strokeStartStamp) {
-        // This up belongs to the previous stroke — discard it.
-        this.stalePointerId = undefined;
-        return;
-      }
-      // Timestamp is newer than the current stroke start: iOS sent only one
-      // pointerup for two rapid strokes. Fall through as the real up.
-      this.stalePointerId = undefined;
-    }
-    if (e.defaultPrevented) return;
-    if (this.activePointerId !== e.pointerId) return;
-    if (e.timeStamp < this.strokeStartStamp) return;
-    e.preventDefault();
-    this.target?.releasePointerCapture(e.pointerId);
-    this.activePointerId = undefined;
-    this.handlers?.onUp();
-  };
-
-  private onCancel = (e: PointerEvent) => {
-    if (this.stalePointerId !== undefined && this.stalePointerId === e.pointerId) {
-      if (e.timeStamp <= this.strokeStartStamp) {
-        this.stalePointerId = undefined;
-        return;
-      }
-      this.stalePointerId = undefined;
-    }
-    if (this.activePointerId !== e.pointerId) return;
-    if (e.timeStamp < this.strokeStartStamp) return;
-    this.target?.releasePointerCapture(e.pointerId);
-    this.activePointerId = undefined;
-    if (e.pointerType === "pen") {
-      this.handlers?.onUp();
-    } else {
-      this.handlers?.onCancel();
-    }
-  };
-}
-
