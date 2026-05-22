@@ -98,6 +98,7 @@ export class PointerInputAdapter implements InputAdapter {
   private onUp = (e: PointerEvent) => {
     if (e.defaultPrevented) return;
     if (this.activePointerId !== e.pointerId) return;
+    if (e.timeStamp <= this.strokeStartStamp) return;
     e.preventDefault();
     this.target?.releasePointerCapture(e.pointerId);
     this.activePointerId = undefined;

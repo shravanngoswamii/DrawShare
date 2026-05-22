@@ -306,10 +306,10 @@ function onWheel(e: WheelEvent) {
 function onNavPointerDown(e: PointerEvent) {
   if (e.pointerType === "touch") {
     if (!wrap.value) return;
-    if (e.width > 25 || e.height > 25) return;
     const rect = wrap.value.getBoundingClientRect();
     touchPoints.set(e.pointerId, { x: e.clientX - rect.left, y: e.clientY - rect.top });
     if (touchPoints.size >= 2) {
+      if (currentStroke || isErasing) return;
       e.preventDefault();
       const pts = Array.from(touchPoints.values());
       pinchLastDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
@@ -317,12 +317,6 @@ function onNavPointerDown(e: PointerEvent) {
       pinchLastMy = (pts[0].y + pts[1].y) / 2;
       if (!pinchActive) {
         pinchActive = true;
-        if (currentStroke) {
-          if (currentStroke.points.length >= 2) editor.commitStroke(currentStroke);
-          currentStroke = undefined;
-          predictedPoints = [];
-          schedule();
-        }
         isErasing = false;
       }
     }
