@@ -10,7 +10,7 @@ export class PointerInputAdapter implements InputAdapter {
   // Holds the teardown function for the in-progress stroke's window listeners.
   // Called at the start of every new pointerdown to guarantee the previous
   // stroke is committed even when iOS drops its pointerup.
-  private pendingUp: (() => void) | null = null;
+  private pendingUp: ((ev?: PointerEvent) => void) | null = null;
 
   start(target: HTMLElement, handlers: InputHandlers): void {
     this.target = target;
@@ -60,7 +60,7 @@ export class PointerInputAdapter implements InputAdapter {
     // Force-commit any previous stroke whose pointerup was dropped by iOS.
     // This is the core of Excalidraw's approach: structural cleanup rather
     // than trying to filter stale events by ID or timestamp.
-    this.pendingUp?.();
+    this.pendingUp?.(e);
 
     e.preventDefault();
 
@@ -92,39 +92,24 @@ export class PointerInputAdapter implements InputAdapter {
       }
     };
 
-    const teardown = (isCancel = false) => {
+    const cleanup = () => {
       this.pendingUp = null;
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
       window.removeEventListener("blur", onBlur);
       this.target?.releasePointerCapture(pointerId);
-      if (isCancel && e.pointerType !== "pen") {
-        this.handlers?.onCancel();
-      } else {
-        this.handlers?.onUp();
-      }
     };
 
     const onUp = (ev: PointerEvent) => {
       if (ev.pointerId !== pointerId) return;
-      this.pendingUp = null;
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onCancel);
-      window.removeEventListener("blur", onBlur);
-      this.target?.releasePointerCapture(pointerId);
+      cleanup();
       this.handlers?.onUp(this.toSample(ev));
     };
 
     const onCancel = (ev: PointerEvent) => {
       if (ev.pointerId !== pointerId) return;
-      this.pendingUp = null;
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onCancel);
-      window.removeEventListener("blur", onBlur);
-      this.target?.releasePointerCapture(pointerId);
+      cleanup();
       if (e.pointerType === "pen") {
         this.handlers?.onUp(this.toSample(ev));
       } else {
@@ -133,9 +118,15 @@ export class PointerInputAdapter implements InputAdapter {
     };
 
     // If the window loses focus (e.g. user switches app), commit the stroke.
-    const onBlur = () => teardown(false);
+    const onBlur = () => {
+      cleanup();
+      this.handlers?.onUp();
+    };
 
-    this.pendingUp = () => teardown(false);
+    this.pendingUp = (ev) => {
+      cleanup();
+      this.handlers?.onUp(ev ? this.toSample(ev) : undefined);
+    };
 
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
