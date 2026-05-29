@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import ShareSessionModal from "@/components/ShareSessionModal.vue";
+import { devMode, setDevMode } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
 import { useProjectsStore } from "@/stores/projects";
@@ -137,6 +138,20 @@ async function clearPage() {
         </svg>
       </button>
       <button
+        class="btn btn-ghost btn-icon"
+        :class="{ 'dev-on': devMode }"
+        @click="setDevMode(!devMode)"
+        :title="devMode ? 'Dev mode on — tap to disable' : 'Dev mode (debug terminal)'"
+        aria-label="Toggle dev mode"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m8 9-3 3 3 3" />
+          <path d="m16 9 3 3-3 3" />
+          <path d="M13.5 7.5 10 17" />
+        </svg>
+      </button>
+      <button
         class="btn btn-ghost btn-icon pages-btn"
         @click="$emit('toggle-pages')"
         title="Pages"
@@ -233,6 +248,11 @@ async function clearPage() {
   border-radius: var(--radius-pill);
   background: var(--color-success);
   box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.2);
+}
+
+.dev-on {
+  color: var(--color-success-strong);
+  background: var(--color-success-soft);
 }
 
 .pages-btn {
