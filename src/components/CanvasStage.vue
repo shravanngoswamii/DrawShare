@@ -231,6 +231,18 @@ function updateEditStyle() {
     fontSize: `${e.size * cam.zoom}px`,
     color: e.color,
   };
+  requestAnimationFrame(autosizeText);
+}
+
+// Grow the editing box to fit its content so multiline text (shift+enter) is
+// fully visible while typing instead of being clipped to one line.
+function autosizeText() {
+  const el = textInput.value;
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.width = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+  el.style.width = `${el.scrollWidth + 4}px`;
 }
 
 function hitText(t: TextItem, wx: number, wy: number): boolean {
@@ -254,7 +266,10 @@ function beginTextAt(wx: number, wy: number, existing?: TextItem) {
   updateEditStyle();
   dirtyBase = true;
   schedule();
-  nextTick(() => textInput.value?.focus());
+  nextTick(() => {
+    textInput.value?.focus();
+    autosizeText();
+  });
 }
 
 function commitEditing() {
@@ -605,6 +620,7 @@ onBeforeUnmount(() => {
       rows="1"
       spellcheck="false"
       placeholder="Type..."
+      @input="autosizeText"
       @blur="commitEditing"
       @keydown.escape.prevent="commitEditing"
       @keydown.enter.exact.prevent="commitEditing"
@@ -712,33 +728,39 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 2px;
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  border-radius: 8px;
-  padding: 3px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 12px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
   z-index: 5;
+  transition: opacity 150ms ease;
 }
 
 .cam-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 5px;
-  color: #334155;
-  transition: background 80ms;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  color: var(--color-text-muted);
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.cam-btn:active {
+  transform: scale(0.94);
 }
 
 .cam-zoom-label {
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
-  min-width: 46px;
+  min-width: 52px;
   letter-spacing: 0.02em;
-  color: #475569;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
 }
 
 .cam-btn:hover {

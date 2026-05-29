@@ -1,13 +1,63 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRouter } from "vue-router";
+import ShareSessionModal from "@/components/ShareSessionModal.vue";
+import { devMode, setDevMode } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
+import { useLiveStore } from "@/stores/live";
+import { useProjectsStore } from "@/stores/projects";
 
 defineProps<{ open?: boolean; collapsed?: boolean }>();
 const emit = defineEmits<{ close: []; toggle: [] }>();
 
 const editor = useEditorStore();
+const live = useLiveStore();
+const projects = useProjectsStore();
+const router = useRouter();
+
 const renamingId = ref<string | null>(null);
 const renameValue = ref("");
+
+// Project header (moved here from the old top bar)
+const projectName = ref("");
+watch(
+  () => editor.project?.name,
+  (n) => { projectName.value = n ?? ""; },
+  { immediate: true },
+);
+
+const saveStatus = computed(() => (editor.saving > 0 ? "Saving" : "Saved"));
+
+async function commitName() {
+  if (!editor.project) return;
+  const trimmed = projectName.value.trim();
+  if (!trimmed) {
+    projectName.value = editor.project.name;
+    return;
+  }
+  if (trimmed !== editor.project.name) {
+    editor.project.name = trimmed;
+    await projects.rename(editor.project.id, trimmed);
+  }
+}
+
+const shareOpen = ref(false);
+const isFullscreen = ref(false);
+function onFullscreenChange() {
+  isFullscreen.value = !!document.fullscreenElement;
+}
+onMounted(() => document.addEventListener("fullscreenchange", onFullscreenChange));
+onBeforeUnmount(() => document.removeEventListener("fullscreenchange", onFullscreenChange));
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  else document.documentElement.requestFullscreen().catch(() => {});
+}
+
+async function clearPage() {
+  if (!confirm("Clear all strokes on this page?")) return;
+  await editor.clearPage();
+}
 
 function startRename(id: string, current: string) {
   renamingId.value = id;
@@ -51,36 +101,74 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
     <div class="backdrop" @click="emit('close')"></div>
     <aside class="panel" :class="{ 'is-collapsed': collapsed, quiet: editor.isDrawing }" aria-label="Pages and background">
       <div class="panel-head">
-        <button class="desktop-toggle" @click="emit('toggle')" title="Collapse panel">
-          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-            <path fill="currentColor" fill-rule="evenodd" d="M10 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-8zM9 7H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3zM4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" clip-rule="evenodd"/>
+        <button class="head-icon" @click="router.push({ name: 'projects' })" title="Back to projects" aria-label="Back to projects">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m12 19-7-7 7-7" /><path d="M19 12H5" />
           </svg>
         </button>
-        <div class="panel-title">Pages</div>
-        <div class="head-actions">
-          <button class="btn btn-sm" @click="editor.addPage()" title="Add page">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M5 12h14" />
-              <path d="M12 5v14" />
-            </svg>
-            Add
-          </button>
-          <button
-            class="btn btn-ghost btn-icon close-btn"
-            @click="emit('close')"
-            aria-label="Close pages panel"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M18 6 6 18" />
-              <path d="m6 6 12 12" />
-            </svg>
-          </button>
-        </div>
+        <input
+          v-model="projectName"
+          class="project-name"
+          @blur="commitName"
+          @keydown.enter="commitName"
+          :placeholder="editor.project?.name ?? 'Untitled'"
+        />
+        <button class="head-icon desktop-toggle" @click="emit('toggle')" title="Collapse panel" aria-label="Collapse panel">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m9 18 6-6-6-6" />
+          </svg>
+        </button>
+        <button class="head-icon close-btn" @click="emit('close')" aria-label="Close panel">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="actions-row">
+        <button class="action" :class="{ live: live.isHosting }" @click="shareOpen = true" :title="live.isHosting ? `Live ${live.code}` : 'Share'">
+          <span v-if="live.isHosting" class="live-dot" aria-hidden="true"></span>
+          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><path d="M16 6l-4-4-4 4" /><path d="M12 2v13" />
+          </svg>
+          <span class="action-label">{{ live.isHosting ? live.code : "Share" }}</span>
+        </button>
+        <button class="action" @click="toggleFullscreen" :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M21 8V5a2 2 0 0 0-2-2h-3" /><path d="M3 16v3a2 2 0 0 0 2 2h3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+          </svg>
+        </button>
+        <button class="action" @click="clearPage" title="Clear page">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+          </svg>
+        </button>
+        <button class="action" :class="{ 'dev-on': devMode }" @click="setDevMode(!devMode)" title="Dev mode">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m8 9-3 3 3 3" /><path d="m16 9 3 3-3 3" /><path d="M13.5 7.5 10 17" />
+          </svg>
+        </button>
+        <span class="save-status" :class="{ saving: editor.saving > 0 }">{{ saveStatus }}</span>
       </div>
 
       <div class="section pages-section">
+        <div class="section-title pages-head">
+          <span>Pages</span>
+          <button class="add-page" @click="editor.addPage()" title="Add page">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M5 12h14" /><path d="M12 5v14" />
+            </svg>
+            Add
+          </button>
+        </div>
         <ul class="pages">
           <li
             v-for="page in editor.pages"
@@ -139,6 +227,7 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
           </button>
         </div>
       </div>
+      <ShareSessionModal :open="shareOpen" @close="shareOpen = false" />
     </aside>
   </div>
 </template>
@@ -201,7 +290,7 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
   z-index: 1;
 }
 
-.desktop-toggle {
+.head-icon {
   width: 32px;
   height: 32px;
   display: flex;
@@ -213,29 +302,97 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
   transition: background 80ms ease, color 80ms ease;
 }
 
-.desktop-toggle:hover {
+.head-icon:hover {
   background: var(--color-surface-2);
   color: var(--color-text);
 }
 
-.panel-title {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--color-text-muted);
+.project-name {
   flex: 1;
+  min-width: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  padding: 5px var(--space-2);
+  border-radius: var(--radius-md);
 }
 
-.head-actions {
+.project-name:hover { background: var(--color-surface-2); }
+.project-name:focus {
+  outline: none;
+  background: var(--color-surface);
+  border-color: var(--color-focus);
+  box-shadow: 0 0 0 3px var(--color-focus-ring);
+}
+
+.close-btn { display: none; }
+
+.actions-row {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
 }
 
-.close-btn {
-  display: none;
+.action {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  transition: background 80ms ease, color 80ms ease;
 }
+
+.action:hover { background: var(--color-surface-2); color: var(--color-text); }
+.action-label { display: none; }
+.action.live {
+  background: var(--color-success-soft);
+  color: var(--color-success-strong);
+}
+.action.live .action-label { display: inline; font-family: var(--font-mono); letter-spacing: 0.06em; }
+.action.dev-on { background: var(--color-success-soft); color: var(--color-success-strong); }
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-success);
+  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.2);
+}
+
+.save-status {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.save-status.saving { color: var(--color-accent); }
+
+.pages-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.add-page {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-accent);
+}
+.add-page:hover { background: var(--color-accent-soft); }
 
 .section {
   padding: var(--space-4);

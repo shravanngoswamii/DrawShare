@@ -5,7 +5,6 @@ import CanvasStage from "@/components/CanvasStage.vue";
 import DebugConsole from "@/components/DebugConsole.vue";
 import PagesPanel from "@/components/PagesPanel.vue";
 import Toolbar from "@/components/Toolbar.vue";
-import TopBar from "@/components/TopBar.vue";
 import { installPointerProbe } from "@/adapters/input/pointerDebug";
 import { devMode } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
@@ -87,8 +86,12 @@ onBeforeUnmount(() => removeProbe?.());
 
 <template>
   <div class="editor">
-    <TopBar @toggle-pages="panelOpen = !panelOpen" />
     <div class="body">
+      <button class="hub-btn" :class="{ quiet: editor.isDrawing }" @click="panelOpen = !panelOpen" title="Menu" aria-label="Open menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+          <path d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
       <Toolbar :collapsed="toolbarCollapsed" @toggle="toolbarCollapsed = !toolbarCollapsed" />
       <main class="stage-wrap">
         <CanvasStage v-if="editor.currentPage" :page="editor.currentPage" />
@@ -193,8 +196,34 @@ onBeforeUnmount(() => removeProbe?.());
 .pill-left { left: 8px; }
 .pill-right { right: 8px; }
 
+.hub-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 20;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  color: var(--color-text-muted);
+  transition: opacity 150ms ease;
+}
+
+.hub-btn.quiet {
+  opacity: 0.06;
+  pointer-events: none;
+}
+
 @media (max-width: 767px) {
   .sidebar-pill { display: none; }
+  .hub-btn { display: flex; }
 }
 
 @media (max-width: 767px) {
