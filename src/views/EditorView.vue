@@ -2,9 +2,12 @@
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import CanvasStage from "@/components/CanvasStage.vue";
+import DebugConsole from "@/components/DebugConsole.vue";
 import PagesPanel from "@/components/PagesPanel.vue";
 import Toolbar from "@/components/Toolbar.vue";
 import TopBar from "@/components/TopBar.vue";
+import { installPointerProbe } from "@/adapters/input/pointerDebug";
+import { DEBUG } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
 import { useProjectsStore } from "@/stores/projects";
@@ -63,9 +66,12 @@ function onKey(e: KeyboardEvent) {
   else if (e.key === "Escape") { panelOpen.value = false; }
 }
 
+let removeProbe: (() => void) | undefined;
 onMounted(() => {
   window.addEventListener("keydown", onKey);
+  removeProbe = installPointerProbe();
 });
+onBeforeUnmount(() => removeProbe?.());
 </script>
 
 <template>
@@ -93,6 +99,7 @@ onMounted(() => {
         </svg>
       </button>
     </div>
+    <DebugConsole v-if="DEBUG" />
   </div>
 </template>
 

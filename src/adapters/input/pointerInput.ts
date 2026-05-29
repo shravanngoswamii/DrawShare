@@ -1,4 +1,5 @@
 import type { InputAdapter, InputHandlers, InputSample } from "@/core/ports";
+import { dlog } from "@/debug";
 
 // Persistent window-level pointer tracking. iPadOS Safari intermittently drops
 // the pointerdown (and sometimes the pointerup) between rapid strokes; relying
@@ -14,6 +15,7 @@ export class PointerInputAdapter implements InputAdapter {
   private activeId: number | undefined;
   private penWasUsedRecently = false;
   private penLockoutUntil = 0;
+  private moveCount = 0;
 
   start(target: HTMLElement, handlers: InputHandlers): void {
     this.target = target;
@@ -71,11 +73,13 @@ export class PointerInputAdapter implements InputAdapter {
     }
     this.activeId = e.pointerId;
     this.startTime = e.timeStamp;
+    this.moveCount = 0;
     this.handlers?.onDown(this.toSample(e));
   }
 
   private end(e?: PointerEvent, cancel = false): void {
     if (this.activeId === undefined) return;
+    dlog(`END id${this.activeId} ${cancel ? "cancel" : "up"} moves=${this.moveCount}`);
     this.activeId = undefined;
     const sample = e ? this.toSample(e) : undefined;
     if (cancel) this.handlers?.onCancel(sample);
@@ -83,12 +87,13 @@ export class PointerInputAdapter implements InputAdapter {
   }
 
   private onDown = (e: PointerEvent) => {
-    if (e.defaultPrevented) return;
-    if (this.shouldIgnore(e)) return;
-    if (e.pointerType !== "touch" && e.button !== 0) return;
+    if (e.defaultPrevented) return dlog(`onDown SKIP defaultPrevented id${e.pointerId}`);
+    if (this.shouldIgnore(e)) return dlog(`onDown SKIP ignore id${e.pointerId} ${e.pointerType}`);
+    if (e.pointerType !== "touch" && e.button !== 0) return dlog(`onDown SKIP button${e.button}`);
     // Finalise a previous stroke whose pointerup iOS dropped.
     if (this.activeId !== undefined) this.end(e);
     e.preventDefault();
+    dlog(`BEGIN via=down id${e.pointerId} ${e.pointerType}`);
     this.begin(e);
   };
 
@@ -99,9 +104,11 @@ export class PointerInputAdapter implements InputAdapter {
       const penDown = e.pointerType === "pen" && (e.buttons > 0 || e.pressure > 0);
       if (!penDown || this.shouldIgnore(e)) return;
       if (this.activeId !== undefined) this.end();
+      dlog(`BEGIN via=move(recover) id${e.pointerId} b${e.buttons} p${e.pressure.toFixed(2)}`);
       this.begin(e);
     }
     if (this.shouldIgnore(e)) return;
+    this.moveCount++;
     const coalesced = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [];
     const list = coalesced.length > 0 ? coalesced : [e];
     this.handlers?.onMove(list.map((x) => this.toSample(x)));
@@ -113,12 +120,12 @@ export class PointerInputAdapter implements InputAdapter {
   };
 
   private onUp = (e: PointerEvent) => {
-    if (e.pointerId !== this.activeId) return;
+    if (e.pointerId !== this.activeId) return dlog(`onUp NOMATCH id${e.pointerId} active=${this.activeId}`);
     this.end(e);
   };
 
   private onCancel = (e: PointerEvent) => {
-    if (e.pointerId !== this.activeId) return;
+    if (e.pointerId !== this.activeId) return dlog(`onCancel NOMATCH id${e.pointerId} active=${this.activeId}`);
     // Pen: commit what we have rather than discard a real stroke.
     this.end(e, e.pointerType !== "pen");
   };
