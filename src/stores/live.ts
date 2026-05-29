@@ -356,6 +356,18 @@ export const useLiveStore = defineStore("live", {
           this.viewerStrokes = this.viewerStrokes.filter((s) => s.id !== msg.strokeId);
           break;
         }
+        case "text-commit": {
+          const page = this.viewerPages.find((p) => p.id === msg.text.pageId);
+          if (page) {
+            page.texts = [...(page.texts ?? []).filter((t) => t.id !== msg.text.id), msg.text];
+          }
+          break;
+        }
+        case "text-delete": {
+          const page = this.viewerPages.find((p) => p.id === msg.pageId);
+          if (page?.texts) page.texts = page.texts.filter((t) => t.id !== msg.textId);
+          break;
+        }
         case "clear-page": {
           if (msg.pageId === this.viewerCurrentPageId) this.viewerStrokes = [];
           break;

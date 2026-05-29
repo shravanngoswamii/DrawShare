@@ -4,7 +4,7 @@ import { storage } from "@/adapters/storage/indexedDB";
 import { newId } from "@/core/ids";
 import { DEFAULT_PAGE_SIZE, useProjectsStore } from "./projects";
 import { useLiveStore } from "./live";
-import type { Page, Project, Stroke, Tool } from "@/core/types";
+import type { Page, Project, Stroke, TextItem, Tool } from "@/core/types";
 
 interface EditorState {
   project: Project | undefined;
@@ -166,6 +166,28 @@ export const useEditorStore = defineStore("editor", {
       } finally {
         this.saving--;
       }
+    },
+    async commitText(text: TextItem) {
+      const page = this.pages.find((p) => p.id === text.pageId);
+      if (!page) return;
+      this.saving++;
+      try {
+        page.texts = [...(page.texts ?? []).filter((t) => t.id !== text.id), text];
+        page.updatedAt = Date.now();
+        await storage.putPage({ ...page });
+        useLiveStore().broadcast({ t: "text-commit", text });
+        if (this.project) await useProjectsStore().touch(this.project.id);
+      } finally {
+        this.saving--;
+      }
+    },
+    async deleteText(pageId: string, textId: string) {
+      const page = this.pages.find((p) => p.id === pageId);
+      if (!page?.texts) return;
+      page.texts = page.texts.filter((t) => t.id !== textId);
+      page.updatedAt = Date.now();
+      await storage.putPage({ ...page });
+      useLiveStore().broadcast({ t: "text-delete", pageId, textId });
     },
     async undo() {
       const last = this.history[this.history.length - 1];

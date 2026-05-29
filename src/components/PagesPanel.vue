@@ -158,6 +158,7 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
   right: 8px;
   top: 8px;
   width: var(--sidepanel-w);
+  height: fit-content;
   max-height: calc(100% - 16px);
   z-index: 10;
   background: rgba(255, 255, 255, 0.88);
@@ -266,6 +267,9 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  max-height: 42vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .page {

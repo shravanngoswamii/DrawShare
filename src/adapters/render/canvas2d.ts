@@ -1,6 +1,6 @@
 import { getStroke } from "perfect-freehand";
 import type { Camera, Renderer } from "@/core/ports";
-import type { Stroke, StrokePoint } from "@/core/types";
+import type { Stroke, StrokePoint, TextItem } from "@/core/types";
 
 type DrawCtx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -78,6 +78,21 @@ export class Canvas2DRenderer implements Renderer {
   drawStroke(stroke: Stroke): void {
     if (!this.ctx || stroke.points.length === 0) return;
     this.renderToCtx(this.ctx, stroke.points, stroke.color, stroke.opacity, stroke.size, true);
+  }
+
+  drawText(item: TextItem): void {
+    const ctx = this.ctx;
+    if (!ctx || !item.text) return;
+    ctx.save();
+    ctx.fillStyle = item.color;
+    ctx.font = `${item.size}px ui-sans-serif, system-ui, -apple-system, sans-serif`;
+    ctx.textBaseline = "top";
+    const lineHeight = item.size * 1.3;
+    const lines = item.text.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      ctx.fillText(lines[i], item.x, item.y + i * lineHeight);
+    }
+    ctx.restore();
   }
 
   drawLive(stroke: Stroke): void {

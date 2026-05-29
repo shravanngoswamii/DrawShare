@@ -10,6 +10,7 @@ const editor = useEditorStore();
 const tools: { id: Tool; label: string; icon: string }[] = [
   { id: "pen", label: "Pen", icon: "pen" },
   { id: "highlighter", label: "Highlighter", icon: "highlight" },
+  { id: "text", label: "Text", icon: "text" },
   { id: "eraser", label: "Eraser", icon: "eraser" },
 ];
 
@@ -74,6 +75,22 @@ const sizes = [2, 4, 6, 10, 16];
         >
           <path d="m9 11-6 6v3h9l3-3" />
           <path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4" />
+        </svg>
+        <svg
+          v-else-if="t.icon === 'text'"
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M4 7V5h16v2" />
+          <path d="M12 5v14" />
+          <path d="M9 19h6" />
         </svg>
         <svg
           v-else

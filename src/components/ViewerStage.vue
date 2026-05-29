@@ -83,6 +83,7 @@ function render() {
     for (const s of live.viewerStrokes) {
       if (s.pageId === props.page.id) baseRenderer.drawStroke(s);
     }
+    for (const t of props.page.texts ?? []) baseRenderer.drawText(t);
     baseRenderer.endFrame();
     dirtyBase = false;
   }
@@ -114,6 +115,15 @@ watch(
     dirtyBase = true;
     schedule();
   },
+);
+
+watch(
+  () => props.page.texts,
+  () => {
+    dirtyBase = true;
+    schedule();
+  },
+  { deep: true },
 );
 
 watch(

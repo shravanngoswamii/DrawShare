@@ -1,6 +1,6 @@
 export type ID = string;
 
-export type Tool = "pen" | "highlighter" | "eraser";
+export type Tool = "pen" | "highlighter" | "eraser" | "text";
 
 export interface StrokePoint {
   x: number;
@@ -20,6 +20,17 @@ export interface Stroke {
   createdAt: number;
 }
 
+export interface TextItem {
+  id: ID;
+  pageId: ID;
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  size: number;
+  createdAt: number;
+}
+
 export interface Page {
   id: ID;
   projectId: ID;
@@ -28,6 +39,7 @@ export interface Page {
   width: number;
   height: number;
   background: "blank" | "ruled" | "grid" | "dotted";
+  texts?: TextItem[];
   createdAt: number;
   updatedAt: number;
 }

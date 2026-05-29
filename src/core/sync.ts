@@ -1,4 +1,4 @@
-import type { Page, Project, Stroke, StrokePoint } from "./types";
+import type { Page, Project, Stroke, StrokePoint, TextItem } from "./types";
 
 export type SyncMessage =
   | { t: "viewer-ready" }
@@ -40,6 +40,8 @@ export type SyncMessage =
   | { t: "stroke-commit"; stroke: Stroke }
   | { t: "stroke-cancel"; pageId: string; strokeId: string }
   | { t: "stroke-delete"; pageId: string; strokeId: string }
+  | { t: "text-commit"; text: TextItem }
+  | { t: "text-delete"; pageId: string; textId: string }
   | { t: "clear-page"; pageId: string };
 
 export interface SessionHostHandlers {

@@ -1,4 +1,4 @@
-import type { ID, Page, Project, Stroke } from "./types";
+import type { ID, Page, Project, Stroke, TextItem } from "./types";
 
 export interface StorageAdapter {
   init(): Promise<void>;
@@ -46,6 +46,7 @@ export interface Renderer {
   clear(): void;
   drawStroke(s: Stroke): void;
   drawLive(s: Stroke): void;
+  drawText(item: TextItem): void;
   beginFrame(): void;
   endFrame(): void;
 }
