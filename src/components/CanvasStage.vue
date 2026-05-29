@@ -202,8 +202,18 @@ function distToSegment(px: number, py: number, ax: number, ay: number, bx: numbe
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
+let areaErased = false;
+
 function eraseAt(wx: number, wy: number) {
-  const r = (editor.size * 4 + 8) / cam.zoom;
+  const r = editor.size / cam.zoom;
+  if (editor.eraserMode === "area") {
+    if (editor.eraseArea(props.page.id, wx, wy, r)) {
+      areaErased = true;
+      dirtyBase = true;
+      schedule();
+    }
+    return;
+  }
   const toDelete = editor.strokes.filter((stroke) => {
     if (stroke.pageId !== props.page.id) return false;
     const pts = stroke.points;
@@ -243,6 +253,39 @@ function autosizeText() {
   el.style.width = "auto";
   el.style.height = `${el.scrollHeight}px`;
   el.style.width = `${el.scrollWidth + 4}px`;
+}
+
+// Drag the text box while editing by grabbing near its dashed border. Clicks in
+// the middle still place the caret for typing.
+function onEditPointerDown(e: PointerEvent) {
+  const el = textInput.value;
+  const ed = editing.value;
+  if (!el || !ed) return;
+  const rect = el.getBoundingClientRect();
+  const edge = 16;
+  const nearBorder =
+    e.clientX - rect.left < edge ||
+    rect.right - e.clientX < edge ||
+    e.clientY - rect.top < edge ||
+    rect.bottom - e.clientY < edge;
+  if (!nearBorder) return;
+  e.preventDefault();
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const origX = ed.x;
+  const origY = ed.y;
+  const onMove = (ev: PointerEvent) => {
+    if (!editing.value) return;
+    editing.value.x = origX + (ev.clientX - startX) / cam.zoom;
+    editing.value.y = origY + (ev.clientY - startY) / cam.zoom;
+    updateEditStyle();
+  };
+  const onUp = () => {
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+  };
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
 }
 
 function hitText(t: TextItem, wx: number, wy: number): boolean {
@@ -297,6 +340,12 @@ function commitEditing() {
 
 function handleDown(s: InputSample) {
   if (panActive || pinchActive) return;
+  // Commit a focused field (e.g. the project name) when drawing starts; the
+  // canvas swallows the focus change otherwise so its blur never fires.
+  const active = document.activeElement as HTMLElement | null;
+  if (active && active !== textInput.value && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) {
+    active.blur();
+  }
   if (editor.tool === "text") {
     const w = toWorld(s.x, s.y);
     if (editing.value) commitEditing();
@@ -401,7 +450,11 @@ async function handleUp(sample?: InputSample) {
     return;
   }
   editor.setDrawing(false);
-  if (isErasing) { isErasing = false; return; }
+  if (isErasing) {
+    isErasing = false;
+    if (areaErased) { areaErased = false; editor.flushPage(props.page.id); }
+    return;
+  }
   if (!currentStroke) return;
   predictedPoints = [];
   appendFinalPoint(currentStroke, sample);
@@ -422,7 +475,11 @@ async function handleCancel(sample?: InputSample) {
     return;
   }
   editor.setDrawing(false);
-  if (isErasing) { isErasing = false; return; }
+  if (isErasing) {
+    isErasing = false;
+    if (areaErased) { areaErased = false; editor.flushPage(props.page.id); }
+    return;
+  }
   if (!currentStroke) return;
   predictedPoints = [];
   appendFinalPoint(currentStroke, sample);
@@ -621,6 +678,7 @@ onBeforeUnmount(() => {
       spellcheck="false"
       placeholder="Type..."
       @input="autosizeText"
+      @pointerdown="onEditPointerDown"
       @blur="commitEditing"
       @keydown.escape.prevent="commitEditing"
       @keydown.enter.exact.prevent="commitEditing"
@@ -706,10 +764,12 @@ onBeforeUnmount(() => {
 .text-edit {
   position: absolute;
   z-index: 6;
-  margin: 0;
-  padding: 0;
-  border: 1px dashed var(--color-accent, #3b82f6);
-  background: rgba(255, 255, 255, 0.4);
+  margin: -4px 0 0 -6px;
+  padding: 2px 5px;
+  border: 1.5px dashed var(--color-accent, #3b82f6);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.1);
   outline: none;
   resize: none;
   overflow: hidden;

@@ -99,11 +99,11 @@ onBeforeUnmount(() => removeProbe?.());
       </main>
       <PagesPanel :open="panelOpen" :collapsed="pagesCollapsed" @close="panelOpen = false" @toggle="pagesCollapsed = !pagesCollapsed" />
       <!-- Sidebar re-open pills -->
-      <button v-if="toolbarCollapsed" class="sidebar-pill pill-left" :class="{ quiet: editor.isDrawing }" @click="toolbarCollapsed = false" title="Show toolbar">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-          <path fill="currentColor" fill-rule="evenodd" d="M10 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-8zM9 7H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3zM4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" clip-rule="evenodd"/>
+      <button v-if="toolbarCollapsed" class="pencil-fab" :class="{ quiet: editor.isDrawing }" @click="toolbarCollapsed = false" title="Show tools" aria-label="Show tools">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+          <path d="m15 5 4 4" />
         </svg>
-        <span>Tools</span>
       </button>
       <button v-if="pagesCollapsed" class="sidebar-pill pill-right" :class="{ quiet: editor.isDrawing }" @click="pagesCollapsed = false" title="Show pages">
         <span>{{ editor.currentPage?.name ?? 'Pages' }}</span>
@@ -193,8 +193,35 @@ onBeforeUnmount(() => removeProbe?.());
   pointer-events: none;
 }
 
-.pill-left { left: 8px; }
 .pill-right { right: 8px; }
+
+.pencil-fab {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12), 0 1px 2px rgba(15, 23, 42, 0.06);
+  color: var(--color-accent);
+  transition: transform 100ms ease, box-shadow 150ms ease, opacity 150ms ease;
+}
+
+.pencil-fab:hover { transform: scale(1.05); box-shadow: var(--shadow-md); }
+.pencil-fab:active { transform: scale(0.96); }
+
+.pencil-fab.quiet {
+  opacity: 0.06;
+  pointer-events: none;
+}
 
 .hub-btn {
   position: absolute;

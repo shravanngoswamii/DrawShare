@@ -59,6 +59,11 @@ async function clearPage() {
   await editor.clearPage();
 }
 
+// Blurring fires commitName, so Enter just needs to drop focus.
+function onNameEnter(e: KeyboardEvent) {
+  (e.target as HTMLInputElement).blur();
+}
+
 function startRename(id: string, current: string) {
   renamingId.value = id;
   renameValue.value = current;
@@ -111,13 +116,12 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
           v-model="projectName"
           class="project-name"
           @blur="commitName"
-          @keydown.enter="commitName"
+          @keydown.enter="onNameEnter"
           :placeholder="editor.project?.name ?? 'Untitled'"
         />
         <button class="head-icon desktop-toggle" @click="emit('toggle')" title="Collapse panel" aria-label="Collapse panel">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="m9 18 6-6-6-6" />
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="currentColor" fill-rule="evenodd" d="M10 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-8zM9 7H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3zM4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" clip-rule="evenodd"/>
           </svg>
         </button>
         <button class="head-icon close-btn" @click="emit('close')" aria-label="Close panel">
@@ -177,7 +181,7 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
             :class="{ active: editor.currentPageId === page.id }"
           >
             <button class="page-main" @click="select(page.id)">
-              <div class="page-thumb"></div>
+              <div class="page-thumb">{{ page.index + 1 }}</div>
               <div class="page-meta">
                 <input
                   v-if="renamingId === page.id"
@@ -189,7 +193,6 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
                   @click.stop
                 />
                 <span v-else class="page-name">{{ page.name }}</span>
-                <span class="muted page-idx">Page {{ page.index + 1 }}</span>
               </div>
             </button>
             <div class="page-actions">
@@ -227,8 +230,10 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
           </button>
         </div>
       </div>
-      <ShareSessionModal :open="shareOpen" @close="shareOpen = false" />
     </aside>
+    <Teleport to="body">
+      <ShareSessionModal :open="shareOpen" @close="shareOpen = false" />
+    </Teleport>
   </div>
 </template>
 
@@ -448,20 +453,25 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
 }
 
 .page-thumb {
-  width: 36px;
-  height: 48px;
+  width: 32px;
+  height: 42px;
   background: #fff;
   border: 1px solid var(--color-border-strong);
-  border-radius: 3px;
+  border-radius: 4px;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text-muted);
 }
 
 .page-meta {
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
 }
 
 .page-name {
