@@ -83,8 +83,15 @@ function onGripDown(e: PointerEvent) {
   const rect = aside.getBoundingClientRect();
   const offX = e.clientX - rect.left;
   const offY = e.clientY - rect.top;
-  dragging.value = true;
+  const startX = e.clientX;
+  const startY = e.clientY;
+  let moved = false;
   const move = (ev: PointerEvent) => {
+    if (!moved && Math.hypot(ev.clientX - startX, ev.clientY - startY) > 6) {
+      moved = true;
+      dragging.value = true;
+    }
+    if (!moved) return;
     dragStyle.value = {
       position: "fixed",
       left: `${ev.clientX - offX}px`,
@@ -100,6 +107,10 @@ function onGripDown(e: PointerEvent) {
   const up = (ev: PointerEvent) => {
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", up);
+    if (!moved) {
+      emit("toggle"); // a tap (no drag) collapses the toolbar
+      return;
+    }
     dragging.value = false;
     dragStyle.value = {};
     const dl = ev.clientX;
@@ -138,17 +149,11 @@ onMounted(() => {
     :style="dragStyle"
     aria-label="Drawing tools"
   >
-    <button class="grip" @pointerdown="onGripDown" title="Drag to move" aria-label="Move toolbar">
+    <button class="grip" @pointerdown="onGripDown" title="Drag to move, tap to collapse" aria-label="Move or collapse toolbar">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
         <circle cx="9" cy="6" r="1.4" /><circle cx="15" cy="6" r="1.4" />
         <circle cx="9" cy="12" r="1.4" /><circle cx="15" cy="12" r="1.4" />
         <circle cx="9" cy="18" r="1.4" /><circle cx="15" cy="18" r="1.4" />
-      </svg>
-    </button>
-
-    <button class="toggle-btn" @click="emit('toggle')" title="Collapse toolbar" aria-label="Collapse toolbar">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="m15 18-6-6 6-6" />
       </svg>
     </button>
 
@@ -191,6 +196,11 @@ onMounted(() => {
             <div class="seg">
               <button :class="{ active: editor.eraserMode === 'stroke' }" @click="editor.setEraserMode('stroke')">Whole</button>
               <button :class="{ active: editor.eraserMode === 'area' }" @click="editor.setEraserMode('area')">Area</button>
+            </div>
+            <div class="pop-sub">Shape</div>
+            <div class="seg">
+              <button :class="{ active: editor.eraserShape === 'circle' }" @click="editor.setEraserShape('circle')">Circle</button>
+              <button :class="{ active: editor.eraserShape === 'square' }" @click="editor.setEraserShape('square')">Square</button>
             </div>
           </div>
         </div>
@@ -269,7 +279,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: var(--space-2) 0;
+  padding: 6px;
   overflow: visible;
   /* Magnetic snap easing */
   transition:
@@ -311,18 +321,6 @@ onMounted(() => {
   flex-shrink: 0;
 }
 .grip:hover { opacity: 1; }
-
-.toggle-btn {
-  width: 36px;
-  height: 26px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-md);
-  color: var(--color-text-muted);
-  flex-shrink: 0;
-}
-.toggle-btn:hover { background: var(--color-surface-2); color: var(--color-text); }
 
 .toolbar-body {
   display: flex;

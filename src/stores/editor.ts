@@ -16,6 +16,7 @@ interface EditorState {
   toolSizes: Record<Tool, number>;
   opacity: number;
   eraserMode: "stroke" | "area";
+  eraserShape: "circle" | "square";
   saving: number;
   history: Stroke[];
   redoStack: Stroke[];
@@ -34,6 +35,7 @@ export const useEditorStore = defineStore("editor", {
     toolSizes: { pen: 4, highlighter: 20, eraser: 24, text: 4 },
     opacity: 1,
     eraserMode: "stroke",
+    eraserShape: "circle",
     saving: 0,
     history: [],
     redoStack: [],
@@ -237,11 +239,15 @@ export const useEditorStore = defineStore("editor", {
     setEraserMode(mode: "stroke" | "area") {
       this.eraserMode = mode;
     },
+    setEraserShape(shape: "circle" | "square") {
+      this.eraserShape = shape;
+    },
     // Area eraser: drop points within `radius` of (wx, wy) and split each
     // affected stroke into the surviving runs of points. In-memory only and
     // synchronous (called rapidly during a drag); persist once via flushPage.
     eraseArea(pageId: string, wx: number, wy: number, radius: number): boolean {
       const r2 = radius * radius;
+      const square = this.eraserShape === "square";
       const survivors: Stroke[] = [];
       let changed = false;
       for (const stroke of this.strokes) {
@@ -255,7 +261,10 @@ export const useEditorStore = defineStore("editor", {
         for (const p of stroke.points) {
           const dx = p.x - wx;
           const dy = p.y - wy;
-          if (dx * dx + dy * dy <= r2) {
+          const inside = square
+            ? Math.abs(dx) <= radius && Math.abs(dy) <= radius
+            : dx * dx + dy * dy <= r2;
+          if (inside) {
             hit = true;
             if (run.length) { runs.push(run); run = []; }
           } else {

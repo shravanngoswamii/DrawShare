@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import CanvasStage from "@/components/CanvasStage.vue";
 import DebugConsole from "@/components/DebugConsole.vue";
 import PagesPanel from "@/components/PagesPanel.vue";
+import ShareSessionModal from "@/components/ShareSessionModal.vue";
 import Toolbar from "@/components/Toolbar.vue";
 import { installPointerProbe } from "@/adapters/input/pointerDebug";
 import { devMode } from "@/debug";
@@ -20,6 +21,7 @@ const router = useRouter();
 const panelOpen = ref(false);
 const toolbarCollapsed = ref(false);
 const pagesCollapsed = ref(false);
+const shareOpen = ref(false);
 
 onMounted(async () => {
   if (!projects.loaded) await projects.load();
@@ -97,7 +99,7 @@ onBeforeUnmount(() => removeProbe?.());
         <CanvasStage v-if="editor.currentPage" :page="editor.currentPage" />
         <div v-else class="loading muted">Loading.</div>
       </main>
-      <PagesPanel :open="panelOpen" :collapsed="pagesCollapsed" @close="panelOpen = false" @toggle="pagesCollapsed = !pagesCollapsed" />
+      <PagesPanel :open="panelOpen" :collapsed="pagesCollapsed" @close="panelOpen = false" @toggle="pagesCollapsed = !pagesCollapsed" @share="shareOpen = true" />
       <!-- Sidebar re-open pills -->
       <button v-if="toolbarCollapsed" class="pencil-fab" :class="{ quiet: editor.isDrawing }" @click="toolbarCollapsed = false" title="Show tools" aria-label="Show tools">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -113,6 +115,7 @@ onBeforeUnmount(() => removeProbe?.());
         </svg>
       </button>
     </div>
+    <ShareSessionModal :open="shareOpen" @close="shareOpen = false" />
     <DebugConsole v-if="devMode" />
   </div>
 </template>

@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import ShareSessionModal from "@/components/ShareSessionModal.vue";
 import { devMode, setDevMode } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
 import { useProjectsStore } from "@/stores/projects";
 
 defineProps<{ open?: boolean; collapsed?: boolean }>();
-const emit = defineEmits<{ close: []; toggle: [] }>();
+const emit = defineEmits<{ close: []; toggle: []; share: [] }>();
 
 const editor = useEditorStore();
 const live = useLiveStore();
@@ -41,7 +40,6 @@ async function commitName() {
   }
 }
 
-const shareOpen = ref(false);
 const isFullscreen = ref(false);
 function onFullscreenChange() {
   isFullscreen.value = !!document.fullscreenElement;
@@ -133,7 +131,7 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
       </div>
 
       <div class="actions-row">
-        <button class="action" :class="{ live: live.isHosting }" @click="shareOpen = true" :title="live.isHosting ? `Live ${live.code}` : 'Share'">
+        <button class="action" :class="{ live: live.isHosting }" @click="emit('share')" :title="live.isHosting ? `Live ${live.code}` : 'Share'">
           <span v-if="live.isHosting" class="live-dot" aria-hidden="true"></span>
           <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -231,9 +229,6 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
         </div>
       </div>
     </aside>
-    <Teleport to="body">
-      <ShareSessionModal :open="shareOpen" @close="shareOpen = false" />
-    </Teleport>
   </div>
 </template>
 

@@ -40,6 +40,9 @@ const editing = ref<
 >(null);
 const editStyle = ref<Record<string, string>>({});
 
+// Eraser cursor overlay (screen coords relative to the stage)
+const eraseCursor = ref<{ x: number; y: number } | null>(null);
+
 let currentStroke: Stroke | undefined;
 let isErasing = false;
 let textDrag: { item: TextItem; downX: number; downY: number; origX: number; origY: number; moved: boolean } | null = null;
@@ -361,6 +364,7 @@ function handleDown(s: InputSample) {
   editor.setDrawing(true);
   if (editor.tool === "eraser") {
     isErasing = true;
+    eraseCursor.value = { x: s.x, y: s.y };
     const w = toWorld(s.x, s.y);
     eraseAt(w.x, w.y);
     return;
@@ -401,6 +405,8 @@ function handleMove(samples: InputSample[]) {
     return;
   }
   if (isErasing) {
+    const last = samples[samples.length - 1];
+    eraseCursor.value = { x: last.x, y: last.y };
     for (const s of samples) {
       const w = toWorld(s.x, s.y);
       eraseAt(w.x, w.y);
@@ -452,6 +458,7 @@ async function handleUp(sample?: InputSample) {
   editor.setDrawing(false);
   if (isErasing) {
     isErasing = false;
+    eraseCursor.value = null;
     if (areaErased) { areaErased = false; editor.flushPage(props.page.id); }
     return;
   }
@@ -477,6 +484,7 @@ async function handleCancel(sample?: InputSample) {
   editor.setDrawing(false);
   if (isErasing) {
     isErasing = false;
+    eraseCursor.value = null;
     if (areaErased) { areaErased = false; editor.flushPage(props.page.id); }
     return;
   }
@@ -683,6 +691,12 @@ onBeforeUnmount(() => {
       @keydown.escape.prevent="commitEditing"
       @keydown.enter.exact.prevent="commitEditing"
     ></textarea>
+    <div
+      v-if="eraseCursor"
+      class="eraser-cursor"
+      :class="editor.eraserShape"
+      :style="{ left: `${eraseCursor.x}px`, top: `${eraseCursor.y}px`, width: `${editor.size * 2}px`, height: `${editor.size * 2}px` }"
+    ></div>
     <div class="cam-controls">
       <button class="cam-btn" title="Zoom out" @click="zoomOut">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
@@ -760,6 +774,17 @@ onBeforeUnmount(() => {
 .live {
   touch-action: none;
 }
+
+.eraser-cursor {
+  position: absolute;
+  z-index: 6;
+  transform: translate(-50%, -50%);
+  border: 1.5px solid rgba(15, 23, 42, 0.55);
+  background: rgba(15, 23, 42, 0.06);
+  pointer-events: none;
+}
+.eraser-cursor.circle { border-radius: 50%; }
+.eraser-cursor.square { border-radius: 3px; }
 
 .text-edit {
   position: absolute;
