@@ -177,13 +177,14 @@ export class WebRTCSession implements SessionAdapter {
   }
 
   private flushPendingMessages(): void {
-    if (!this.channel || this.channel.readyState !== "open" || this.pendingMessages.length === 0) {
+    const channel = this.channel;
+    if (channel?.readyState !== "open" || this.pendingMessages.length === 0) {
       return;
     }
     const pending = this.pendingMessages;
     this.pendingMessages = [];
     for (const msg of pending) {
-      this.channel.send(JSON.stringify(msg));
+      channel.send(JSON.stringify(msg));
     }
   }
 

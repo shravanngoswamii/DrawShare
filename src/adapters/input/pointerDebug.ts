@@ -7,7 +7,7 @@ export function installPointerProbe(): () => void {
   let lastT = 0;
   const targetOf = (e: Event) => {
     const t = e.target as HTMLElement | null;
-    if (!t || !t.tagName) return "?";
+    if (!t?.tagName) return "?";
     const cls = typeof t.className === "string" ? t.className.split(" ")[0] : "";
     return t.tagName.toLowerCase() + (cls ? `.${cls}` : "");
   };

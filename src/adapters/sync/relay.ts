@@ -35,7 +35,7 @@ export async function relayFetchOffer(code: string): Promise<string | null> {
   const resp = await fetch(`${BASE}/${offerTopic(code)}/json?poll=1&since=${since}`, {
     signal: abortAfter(8_000),
   }).catch(() => null);
-  if (!resp || !resp.ok) return null;
+  if (!resp?.ok) return null;
   return parseLastMessage(await resp.text());
 }
 
@@ -54,7 +54,7 @@ export async function relayFetchAnswer(code: string): Promise<string | null> {
   const resp = await fetch(`${BASE}/${answerTopic(code)}/json?poll=1&since=${since}`, {
     signal: abortAfter(5_000),
   }).catch(() => null);
-  if (!resp || !resp.ok) return null;
+  if (!resp?.ok) return null;
   return parseLastMessage(await resp.text());
 }
 
