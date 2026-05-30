@@ -3,6 +3,14 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "description": "Local-first collaborative whiteboard that streams your live writing to any screen over the local network.",
+  "author": "Shravan Goswami",
+  "license": "MIT",
+  "homepage": "https://shravangoswami.com/DrawShare/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shravanngoswamii/DrawShare.git"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",

@@ -1,60 +1,26 @@
 # DrawShare
 
-Local-first collaborative whiteboard for streaming live writing from an iPad to a
-laptop without screen mirroring. The teacher writes; the laptop renders the
-strokes locally as they arrive. No pixel streaming, no AirPlay lag.
+A local-first collaborative whiteboard. Write with a pen, stylus, or mouse on any device and another screen renders your strokes live over the local network, no screen mirroring or AirPlay lag. Everything is saved on-device, so it works offline too.
 
-This is the **web** implementation (PWA). The architecture is layered so the
-domain logic, wire format, and rendering contracts can be reused by a native
-iPad app (PencilKit + Metal) later without rewriting the data model or the
-laptop viewer.
-
-## Status
-
-Phase 1 — single-device editor with full autosave, project/page management, and browser-native local sharing.
-The current share flow works without internet, but host and viewer still exchange offer/answer tokens manually.
-Drive sync lands in subsequent phases.
+Live: https://shravangoswami.com/DrawShare/
 
 ## Stack
 
-- Vue 3 + TypeScript + Vite
-- Pinia for state, vue-router for navigation
+- Vue 3, TypeScript, Vite
+- Pinia for state, vue-router for routing
 - `perfect-freehand` for stroke smoothing
 - `idb` for IndexedDB persistence
-- `vite-plugin-pwa` for service worker / installable app
+- WebRTC for live sharing
+- A small hand-written service worker for offline/PWA support
 
-## Architecture
-
-The code is split into three concentric rings:
-
-```
-src/
-  core/        pure TypeScript domain. zero framework or DOM imports.
-    types.ts       wire-format data shapes
-    ports.ts       interfaces an adapter must implement
-    strokeMath.ts  geometry helpers
-    ids.ts         id generation
-  adapters/    platform-specific implementations of the ports.
-    input/         PointerInputAdapter  (web)
-    render/        Canvas2DRenderer     (web)
-    storage/       IndexedDBStorage     (web)
-  stores/      pinia stores. orchestrate adapters.
-  components/  vue UI primitives.
-  views/       vue routed pages.
-```
-
-To target native iPad later, only `adapters/*` need a Swift implementation
-(PencilKit, Metal, CoreData). `core/` is the cross-platform spec.
-
-## Development
+## Develop
 
 ```sh
 npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` in Safari on the iPad (same Wi-Fi as the dev
-machine, replace `localhost` with the dev host's LAN IP).
+To draw from another device, open the dev URL with the machine's LAN IP instead of `localhost`, on the same Wi-Fi.
 
 ## Build
 
@@ -62,35 +28,34 @@ machine, replace `localhost` with the dev host's LAN IP).
 npm run build
 ```
 
-Output goes to `dist/`. The Vite `base` path can be overridden with the
-`BASE_PATH` env var so the same artifact deploys under any path.
+Output goes to `dist/`. The base path can be set with the `BASE_PATH` env var so the same build deploys under any path.
 
 ## Deploy
 
-Pushing to `main` triggers `.github/workflows/deploy.yml`, which builds with
-`BASE_PATH=/<repo-name>/` and publishes the `dist/` output to the `gh-pages`
-branch via [`JamesIves/github-pages-deploy-action`](https://github.com/JamesIves/github-pages-deploy-action).
-
-To enable: repo Settings → Pages → Source = "Deploy from a branch", Branch =
-`gh-pages` / `(root)`. The workflow needs `contents: write` (already declared).
+Pushing to `main` runs `.github/workflows/deploy.yml`, which builds and publishes `dist/` to the `gh-pages` branch. Pull requests get their own preview deploy via `.github/workflows/preview.yml`.
 
 ## Data model
 
-| Type     | Persisted in IndexedDB store | Notes                                  |
-|----------|------------------------------|----------------------------------------|
-| Project  | `projects`                   | name, pageOrder, timestamps            |
-| Page     | `pages` (indexed by project) | size, background, index                |
-| Stroke   | `strokes` (indexed by page)  | points: `[{x, y, p, t}]`               |
+| Type    | IndexedDB store      | Notes                        |
+|---------|----------------------|------------------------------|
+| Project | `projects`           | name, page order, timestamps |
+| Page    | `pages` (by project) | size, background, text boxes |
+| Stroke  | `strokes` (by page)  | points `[{x, y, p, t}]`      |
 
-Every committed stroke is written atomically to the `strokes` store, so a
-browser refresh or crash mid-session loses at most the unfinished stroke.
+Each stroke is written as soon as it is finished, so a refresh or crash loses at most the stroke in progress.
 
-## Keyboard
+## Shortcuts
 
-| Key        | Action       |
-|------------|--------------|
-| `1`        | Pen          |
-| `2`        | Highlighter  |
-| `3`        | Eraser       |
-| `Cmd/Ctrl+Z` | Undo       |
-| `Cmd/Ctrl+Shift+Z` / `Cmd/Ctrl+Y` | Redo |
+| Key | Action |
+|-----|--------|
+| `1` | Pen |
+| `2` | Highlighter |
+| `3` | Eraser |
+| `Cmd/Ctrl+Z` | Undo |
+| `Cmd/Ctrl+Shift+Z` or `Cmd/Ctrl+Y` | Redo |
+
+A Dev Mode toggle in the sidebar opens an on-screen debug terminal, useful on devices without devtools.
+
+## License
+
+MIT, © 2026 Shravan Goswami. See [LICENSE](LICENSE).
