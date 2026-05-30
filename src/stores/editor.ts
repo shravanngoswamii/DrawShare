@@ -13,8 +13,10 @@ interface EditorState {
   strokes: Stroke[];
   tool: Tool;
   color: string;
-  size: number;
+  toolSizes: Record<Tool, number>;
   opacity: number;
+  eraserMode: "stroke" | "area";
+  eraserShape: "circle" | "square";
   saving: number;
   history: Stroke[];
   redoStack: Stroke[];
@@ -30,8 +32,10 @@ export const useEditorStore = defineStore("editor", {
     strokes: [],
     tool: "pen",
     color: "#0f172a",
-    size: 4,
+    toolSizes: { pen: 4, highlighter: 20, eraser: 24, text: 4 },
     opacity: 1,
+    eraserMode: "stroke",
+    eraserShape: "circle",
     saving: 0,
     history: [],
     redoStack: [],
@@ -41,6 +45,9 @@ export const useEditorStore = defineStore("editor", {
   getters: {
     currentPage(state): Page | undefined {
       return state.pages.find((p) => p.id === state.currentPageId);
+    },
+    size(state): number {
+      return state.toolSizes[state.tool];
     },
   },
   actions: {
@@ -227,7 +234,73 @@ export const useEditorStore = defineStore("editor", {
       this.color = c;
     },
     setSize(s: number) {
-      this.size = s;
+      this.toolSizes[this.tool] = s;
+    },
+    setEraserMode(mode: "stroke" | "area") {
+      this.eraserMode = mode;
+    },
+    setEraserShape(shape: "circle" | "square") {
+      this.eraserShape = shape;
+    },
+    // Area eraser: drop points within `radius` of (wx, wy) and split each
+    // affected stroke into the surviving runs of points. In-memory only and
+    // synchronous (called rapidly during a drag); persist once via flushPage.
+    eraseArea(pageId: string, wx: number, wy: number, radius: number): boolean {
+      const r2 = radius * radius;
+      const square = this.eraserShape === "square";
+      const survivors: Stroke[] = [];
+      let changed = false;
+      for (const stroke of this.strokes) {
+        if (stroke.pageId !== pageId) {
+          survivors.push(stroke);
+          continue;
+        }
+        const runs: Stroke["points"][] = [];
+        let run: Stroke["points"] = [];
+        let hit = false;
+        for (const p of stroke.points) {
+          const dx = p.x - wx;
+          const dy = p.y - wy;
+          const inside = square
+            ? Math.abs(dx) <= radius && Math.abs(dy) <= radius
+            : dx * dx + dy * dy <= r2;
+          if (inside) {
+            hit = true;
+            if (run.length) { runs.push(run); run = []; }
+          } else {
+            run.push(p);
+          }
+        }
+        if (run.length) runs.push(run);
+        if (!hit) {
+          survivors.push(stroke);
+          continue;
+        }
+        changed = true;
+        runs
+          .filter((pts) => pts.length >= 2)
+          .forEach((pts, i) => {
+            survivors.push({ ...stroke, id: i === 0 ? stroke.id : newId(), points: pts });
+          });
+      }
+      if (changed) this.strokes = survivors;
+      return changed;
+    },
+    // Persist the current strokes of a page after an area-erase gesture.
+    async flushPage(pageId: string) {
+      this.saving++;
+      try {
+        await storage.deleteStrokesForPage(pageId);
+        for (const s of this.strokes) if (s.pageId === pageId) await storage.putStroke(s);
+        useLiveStore().broadcast({
+          t: "page-set",
+          pageId,
+          pages: [...this.pages],
+          strokes: this.strokes.filter((s) => s.pageId === pageId),
+        });
+      } finally {
+        this.saving--;
+      }
     },
     setCamera(x: number, y: number, zoom: number) {
       this.camera = { x, y, zoom };

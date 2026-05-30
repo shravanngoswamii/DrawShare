@@ -40,6 +40,9 @@ const editing = ref<
 >(null);
 const editStyle = ref<Record<string, string>>({});
 
+// Eraser cursor overlay (screen coords relative to the stage)
+const eraseCursor = ref<{ x: number; y: number } | null>(null);
+
 let currentStroke: Stroke | undefined;
 let isErasing = false;
 let textDrag: { item: TextItem; downX: number; downY: number; origX: number; origY: number; moved: boolean } | null = null;
@@ -202,8 +205,18 @@ function distToSegment(px: number, py: number, ax: number, ay: number, bx: numbe
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
+let areaErased = false;
+
 function eraseAt(wx: number, wy: number) {
-  const r = (editor.size * 4 + 8) / cam.zoom;
+  const r = editor.size / cam.zoom;
+  if (editor.eraserMode === "area") {
+    if (editor.eraseArea(props.page.id, wx, wy, r)) {
+      areaErased = true;
+      dirtyBase = true;
+      schedule();
+    }
+    return;
+  }
   const toDelete = editor.strokes.filter((stroke) => {
     if (stroke.pageId !== props.page.id) return false;
     const pts = stroke.points;
@@ -231,6 +244,51 @@ function updateEditStyle() {
     fontSize: `${e.size * cam.zoom}px`,
     color: e.color,
   };
+  requestAnimationFrame(autosizeText);
+}
+
+// Grow the editing box to fit its content so multiline text (shift+enter) is
+// fully visible while typing instead of being clipped to one line.
+function autosizeText() {
+  const el = textInput.value;
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.width = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+  el.style.width = `${el.scrollWidth + 4}px`;
+}
+
+// Drag the text box while editing by grabbing near its dashed border. Clicks in
+// the middle still place the caret for typing.
+function onEditPointerDown(e: PointerEvent) {
+  const el = textInput.value;
+  const ed = editing.value;
+  if (!el || !ed) return;
+  const rect = el.getBoundingClientRect();
+  const edge = 16;
+  const nearBorder =
+    e.clientX - rect.left < edge ||
+    rect.right - e.clientX < edge ||
+    e.clientY - rect.top < edge ||
+    rect.bottom - e.clientY < edge;
+  if (!nearBorder) return;
+  e.preventDefault();
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const origX = ed.x;
+  const origY = ed.y;
+  const onMove = (ev: PointerEvent) => {
+    if (!editing.value) return;
+    editing.value.x = origX + (ev.clientX - startX) / cam.zoom;
+    editing.value.y = origY + (ev.clientY - startY) / cam.zoom;
+    updateEditStyle();
+  };
+  const onUp = () => {
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+  };
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
 }
 
 function hitText(t: TextItem, wx: number, wy: number): boolean {
@@ -254,7 +312,10 @@ function beginTextAt(wx: number, wy: number, existing?: TextItem) {
   updateEditStyle();
   dirtyBase = true;
   schedule();
-  nextTick(() => textInput.value?.focus());
+  nextTick(() => {
+    textInput.value?.focus();
+    autosizeText();
+  });
 }
 
 function commitEditing() {
@@ -282,6 +343,12 @@ function commitEditing() {
 
 function handleDown(s: InputSample) {
   if (panActive || pinchActive) return;
+  // Commit a focused field (e.g. the project name) when drawing starts; the
+  // canvas swallows the focus change otherwise so its blur never fires.
+  const active = document.activeElement as HTMLElement | null;
+  if (active && active !== textInput.value && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) {
+    active.blur();
+  }
   if (editor.tool === "text") {
     const w = toWorld(s.x, s.y);
     if (editing.value) commitEditing();
@@ -297,6 +364,7 @@ function handleDown(s: InputSample) {
   editor.setDrawing(true);
   if (editor.tool === "eraser") {
     isErasing = true;
+    eraseCursor.value = { x: s.x, y: s.y };
     const w = toWorld(s.x, s.y);
     eraseAt(w.x, w.y);
     return;
@@ -337,6 +405,8 @@ function handleMove(samples: InputSample[]) {
     return;
   }
   if (isErasing) {
+    const last = samples[samples.length - 1];
+    eraseCursor.value = { x: last.x, y: last.y };
     for (const s of samples) {
       const w = toWorld(s.x, s.y);
       eraseAt(w.x, w.y);
@@ -386,7 +456,12 @@ async function handleUp(sample?: InputSample) {
     return;
   }
   editor.setDrawing(false);
-  if (isErasing) { isErasing = false; return; }
+  if (isErasing) {
+    isErasing = false;
+    eraseCursor.value = null;
+    if (areaErased) { areaErased = false; editor.flushPage(props.page.id); }
+    return;
+  }
   if (!currentStroke) return;
   predictedPoints = [];
   appendFinalPoint(currentStroke, sample);
@@ -407,7 +482,12 @@ async function handleCancel(sample?: InputSample) {
     return;
   }
   editor.setDrawing(false);
-  if (isErasing) { isErasing = false; return; }
+  if (isErasing) {
+    isErasing = false;
+    eraseCursor.value = null;
+    if (areaErased) { areaErased = false; editor.flushPage(props.page.id); }
+    return;
+  }
   if (!currentStroke) return;
   predictedPoints = [];
   appendFinalPoint(currentStroke, sample);
@@ -605,10 +685,18 @@ onBeforeUnmount(() => {
       rows="1"
       spellcheck="false"
       placeholder="Type..."
+      @input="autosizeText"
+      @pointerdown="onEditPointerDown"
       @blur="commitEditing"
       @keydown.escape.prevent="commitEditing"
       @keydown.enter.exact.prevent="commitEditing"
     ></textarea>
+    <div
+      v-if="eraseCursor"
+      class="eraser-cursor"
+      :class="editor.eraserShape"
+      :style="{ left: `${eraseCursor.x}px`, top: `${eraseCursor.y}px`, width: `${editor.size * 2}px`, height: `${editor.size * 2}px` }"
+    ></div>
     <div class="cam-controls">
       <button class="cam-btn" title="Zoom out" @click="zoomOut">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
@@ -687,13 +775,26 @@ onBeforeUnmount(() => {
   touch-action: none;
 }
 
+.eraser-cursor {
+  position: absolute;
+  z-index: 6;
+  transform: translate(-50%, -50%);
+  border: 1.5px solid rgba(15, 23, 42, 0.55);
+  background: rgba(15, 23, 42, 0.06);
+  pointer-events: none;
+}
+.eraser-cursor.circle { border-radius: 50%; }
+.eraser-cursor.square { border-radius: 3px; }
+
 .text-edit {
   position: absolute;
   z-index: 6;
-  margin: 0;
-  padding: 0;
-  border: 1px dashed var(--color-accent, #3b82f6);
-  background: rgba(255, 255, 255, 0.4);
+  margin: -4px 0 0 -6px;
+  padding: 2px 5px;
+  border: 1.5px dashed var(--color-accent, #3b82f6);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.1);
   outline: none;
   resize: none;
   overflow: hidden;
@@ -712,33 +813,39 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 2px;
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  border-radius: 8px;
-  padding: 3px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 12px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
   z-index: 5;
+  transition: opacity 150ms ease;
 }
 
 .cam-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 5px;
-  color: #334155;
-  transition: background 80ms;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  color: var(--color-text-muted);
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.cam-btn:active {
+  transform: scale(0.94);
 }
 
 .cam-zoom-label {
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
-  min-width: 46px;
+  min-width: 52px;
   letter-spacing: 0.02em;
-  color: #475569;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
 }
 
 .cam-btn:hover {
