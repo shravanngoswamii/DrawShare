@@ -2,7 +2,9 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { PointerInputAdapter } from "@/adapters/input/pointerInput";
 import { Canvas2DRenderer } from "@/adapters/render/canvas2d";
+import { useTheme } from "@/composables/useTheme";
 import { newId } from "@/core/ids";
+import { adaptInk } from "@/core/ink";
 import type { InputSample } from "@/core/ports";
 import type { Page, Stroke, StrokePoint, TextItem } from "@/core/types";
 import { dlog } from "@/debug";
@@ -12,6 +14,12 @@ import { useLiveStore } from "@/stores/live";
 const props = defineProps<{ page: Page }>();
 const editor = useEditorStore();
 const live = useLiveStore();
+const { isDark } = useTheme();
+
+function applyInkAdapter() {
+  baseRenderer.setInkAdapter((c) => adaptInk(c, isDark.value));
+  liveRenderer.setInkAdapter((c) => adaptInk(c, isDark.value));
+}
 
 const wrap = ref<HTMLDivElement | null>(null);
 const baseEl = ref<HTMLCanvasElement | null>(null);
@@ -271,7 +279,7 @@ function updateEditStyle() {
     left: `${(e.x - cam.x) * cam.zoom}px`,
     top: `${(e.y - cam.y) * cam.zoom}px`,
     fontSize: `${e.size * cam.zoom}px`,
-    color: e.color,
+    color: adaptInk(e.color, isDark.value),
   };
   requestAnimationFrame(autosizeText);
 }
@@ -706,6 +714,7 @@ onMounted(() => {
   if (!baseEl.value || !liveEl.value || !wrap.value) return;
   baseRenderer.attach(baseEl.value);
   liveRenderer.attach(liveEl.value);
+  applyInkAdapter();
   fitCanvas();
   wrap.value.addEventListener("wheel", onWheel, { passive: false });
   wrap.value.addEventListener("pointerdown", onNavPointerDown, { capture: true, passive: false });
@@ -723,6 +732,14 @@ onMounted(() => {
   });
   resizeObserver = new ResizeObserver(() => fitCanvas());
   resizeObserver.observe(wrap.value);
+});
+
+// Re-paint ink when the theme flips (dark-mode ink adaptation is render-time).
+watch(isDark, () => {
+  applyInkAdapter();
+  updateEditStyle();
+  dirtyBase = true;
+  schedule();
 });
 
 onBeforeUnmount(() => {
