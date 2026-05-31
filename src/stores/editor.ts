@@ -54,6 +54,8 @@ export const useEditorStore = defineStore("editor", {
   },
   actions: {
     async open(projectId: string) {
+      // Skip the DB round-trip if this project is already loaded (e.g. just created).
+      if (this.project?.id === projectId && this.pages.length > 0) return;
       const project = await storage.getProject(projectId);
       if (!project) throw new Error("Project not found");
       this.project = project;
@@ -64,6 +66,14 @@ export const useEditorStore = defineStore("editor", {
       }
       this.currentPageId = this.pages[0].id;
       await this.loadStrokes(this.currentPageId);
+      this.history = [];
+      this.redoStack = [];
+    },
+    initNew(project: import("@/core/types").Project, page: import("@/core/types").Page) {
+      this.project = project;
+      this.pages = [page];
+      this.currentPageId = page.id;
+      this.strokes = [];
       this.history = [];
       this.redoStack = [];
     },
