@@ -130,6 +130,32 @@ onBeforeUnmount(() => removeProbe?.());
   flex-direction: column;
   overflow: hidden;
   padding-top: var(--safe-top);
+  /* Open feel: the editor expands outward from a centered rectangle toward all
+     four edges (clip-path inset) with a subtle scale + fade. Runs once on mount,
+     i.e. each time a project is opened from the projects list. */
+  animation: editor-open 340ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: center;
+  will-change: clip-path, transform, opacity;
+}
+
+@keyframes editor-open {
+  from {
+    clip-path: inset(9% 9% 9% 9% round 20px);
+    transform: scale(0.97);
+    opacity: 0;
+  }
+  to {
+    clip-path: inset(0 0 0 0 round 0);
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Respect users who prefer less motion (also tracked under the a11y pass). */
+@media (prefers-reduced-motion: reduce) {
+  .editor {
+    animation: none;
+  }
 }
 
 .body {
