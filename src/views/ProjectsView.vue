@@ -30,8 +30,8 @@ const filtered = computed(() => {
   return projects.projects.filter((p) => p.name.toLowerCase().includes(q));
 });
 
-async function createNew() {
-  const { project, page } = await projects.create("Untitled");
+function createNew() {
+  const { project, page } = projects.create("Untitled");
   editor.initNew(project, page);
   router.push({ name: "editor", params: { id: project.id } });
 }

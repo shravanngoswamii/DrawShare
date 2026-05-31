@@ -15,7 +15,7 @@ export const useProjectsStore = defineStore("projects", {
       this.projects = await storage.listProjects();
       this.loaded = true;
     },
-    async create(name: string): Promise<{ project: Project; page: Page }> {
+    create(name: string): { project: Project; page: Page } {
       const now = Date.now();
       const pageId = newId();
       const project: Project = {
@@ -38,8 +38,12 @@ export const useProjectsStore = defineStore("projects", {
       };
       // Update in-memory state immediately so the editor can open without re-reading DB.
       this.projects = [project, ...this.projects];
-      // Write to storage in parallel; the editor is already navigating.
-      await Promise.all([storage.putProject(project), storage.putPage(page)]);
+      // Persist in the background (not awaited): the caller navigates straight
+      // into the editor, which renders from these in-memory objects via
+      // editor.initNew. Awaiting the IndexedDB writes here is what made a new
+      // project flash in the projects grid before opening — existing projects
+      // skip this and open instantly, so we match that.
+      void Promise.all([storage.putProject(project), storage.putPage(page)]).catch(() => {});
       return { project, page };
     },
     async rename(id: string, name: string) {
