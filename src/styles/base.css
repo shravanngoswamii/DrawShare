@@ -19,7 +19,7 @@ body,
 html {
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
-  color-scheme: only light;
+  color-scheme: light dark;
   forced-color-adjust: none;
 }
 
@@ -118,7 +118,7 @@ a {
 .btn-primary {
   background: var(--color-accent);
   border-color: var(--color-accent);
-  color: #fff;
+  color: var(--color-accent-text);
 }
 
 .btn-primary:hover:not(:disabled) {

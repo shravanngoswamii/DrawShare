@@ -276,12 +276,12 @@ onMounted(() => {
 .toolbar {
   position: absolute;
   z-index: 10;
-  background: rgba(255, 255, 255, 0.88);
+  background: var(--color-glass-bg);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(226, 232, 240, 0.8);
+  border: 1px solid var(--color-glass-border);
   border-radius: 14px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 8px 24px var(--color-glass-shadow), 0 2px 6px var(--color-glass-shadow);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -362,8 +362,8 @@ onMounted(() => {
   width: 20px;
   height: 20px;
   border-radius: var(--radius-pill);
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.18);
+  border: 2px solid var(--color-surface);
+  box-shadow: 0 0 0 1px var(--color-border-strong);
 }
 
 .pop-wrap { position: relative; display: flex; flex-direction: column; align-items: center; gap: var(--space-1); }
@@ -373,12 +373,12 @@ onMounted(() => {
 .popover {
   position: absolute;
   z-index: 11;
-  background: rgba(255, 255, 255, 0.97);
+  background: var(--color-glass-bg-strong);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(226, 232, 240, 0.9);
+  border: 1px solid var(--color-glass-border);
   border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+  box-shadow: 0 12px 32px var(--color-glass-shadow);
   padding: var(--space-3);
   width: max-content;
 }
@@ -434,11 +434,11 @@ onMounted(() => {
   width: 18px;
   height: 18px;
   border-radius: var(--radius-pill);
-  border: 1px solid rgba(15, 23, 42, 0.12);
+  border: 1px solid var(--color-border);
   transition: transform 80ms ease;
 }
 .swatch:hover { transform: scale(1.12); }
-.swatch.active { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--color-accent); }
+.swatch.active { box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-accent); }
 
 .custom-row { display: flex; align-items: center; gap: var(--space-2); }
 .native-color {
