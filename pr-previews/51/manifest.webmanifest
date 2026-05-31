@@ -1,0 +1,19 @@
+{
+  "name": "DrawShare",
+  "short_name": "DrawShare",
+  "description": "Local-first collaborative whiteboard that streams your live writing to any screen over the local network.",
+  "theme_color": "#0f172a",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "orientation": "any",
+  "start_url": ".",
+  "scope": ".",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
