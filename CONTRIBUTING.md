@@ -43,7 +43,7 @@ A PR preview deploy is posted automatically as a comment so you can test the liv
 
 ## Reporting bugs
 
-Use the [Bug report](.github/ISSUE_TEMPLATE/bug_report.yml) issue template. Include:
+[Open a bug report](https://github.com/shravanngoswamii/DrawShare/issues/new?template=bug_report.yml) and include:
 - Steps to reproduce
 - Device + browser + OS
 - Expected vs. actual behaviour
@@ -51,20 +51,4 @@ Use the [Bug report](.github/ISSUE_TEMPLATE/bug_report.yml) issue template. Incl
 
 ## Suggesting features
 
-Use the [Feature request](.github/ISSUE_TEMPLATE/feature_request.yml) template. Describe the problem first, then the solution.
-
-## Project structure
-
-```
-src/
-  adapters/      # Platform-specific: IndexedDB storage, Canvas 2D renderer, pointer input
-  components/    # Vue components (Toolbar, CanvasStage, PagesPanel, …)
-  core/          # Pure domain types and ports (no framework dependencies)
-  stores/        # Pinia stores (editor, projects, live session)
-  views/         # Route-level views
-  styles/        # CSS design tokens and base styles
-```
-
-## Code of Conduct
-
-Be kind and constructive. See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+[Open a feature request](https://github.com/shravanngoswamii/DrawShare/issues/new?template=feature_request.yml) and describe the problem first, then the solution.
