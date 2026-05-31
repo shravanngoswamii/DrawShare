@@ -2,9 +2,11 @@
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useTheme } from "@/composables/useTheme";
+import { useEditorStore } from "@/stores/editor";
 import { useProjectsStore } from "@/stores/projects";
 
 const projects = useProjectsStore();
+const editor = useEditorStore();
 const router = useRouter();
 const { isDark, toggleTheme } = useTheme();
 const query = ref("");
@@ -29,7 +31,8 @@ const filtered = computed(() => {
 });
 
 async function createNew() {
-  const project = await projects.create("Untitled");
+  const { project, page } = await projects.create("Untitled");
+  editor.initNew(project, page);
   router.push({ name: "editor", params: { id: project.id } });
 }
 

@@ -15,7 +15,7 @@ export const useProjectsStore = defineStore("projects", {
       this.projects = await storage.listProjects();
       this.loaded = true;
     },
-    async create(name: string): Promise<Project> {
+    async create(name: string): Promise<{ project: Project; page: Page }> {
       const now = Date.now();
       const pageId = newId();
       const project: Project = {
@@ -36,10 +36,11 @@ export const useProjectsStore = defineStore("projects", {
         createdAt: now,
         updatedAt: now,
       };
-      await storage.putProject(project);
-      await storage.putPage(page);
+      // Update in-memory state immediately so the editor can open without re-reading DB.
       this.projects = [project, ...this.projects];
-      return project;
+      // Write to storage in parallel; the editor is already navigating.
+      await Promise.all([storage.putProject(project), storage.putPage(page)]);
+      return { project, page };
     },
     async rename(id: string, name: string) {
       const p = this.projects.find((x) => x.id === id);
