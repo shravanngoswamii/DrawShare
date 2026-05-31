@@ -308,6 +308,7 @@ onMounted(() => {
 .toolbar.horizontal .group { flex-direction: row; }
 .toolbar.horizontal .divider { width: 1px; height: 28px; margin: 0 var(--space-1); }
 .toolbar.horizontal .grip { width: 28px; height: 36px; }
+.toolbar:not(.horizontal) .grip svg { transform: rotate(90deg); }
 
 .toolbar.dragging { cursor: grabbing; box-shadow: 0 16px 40px rgba(15, 23, 42, 0.2); }
 

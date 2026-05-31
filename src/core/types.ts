@@ -52,6 +52,13 @@ export interface Project {
   pageOrder: ID[];
 }
 
+export type HistoryEntry =
+  | { kind: "stroke-add"; stroke: Stroke }
+  | { kind: "stroke-erase"; stroke: Stroke }
+  | { kind: "text-upsert"; prev: TextItem | null; next: TextItem }
+  | { kind: "text-delete"; text: TextItem }
+  | { kind: "area-erase"; pageId: string; before: Stroke[]; after: Stroke[] };
+
 export interface BoundingBox {
   minX: number;
   minY: number;

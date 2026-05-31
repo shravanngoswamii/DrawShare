@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { storage } from "@/adapters/storage/indexedDB";
 import { newId } from "@/core/ids";
-import type { Page, Project, Stroke, TextItem, Tool } from "@/core/types";
+import type { HistoryEntry, Page, Project, Stroke, TextItem, Tool } from "@/core/types";
 import { dlog } from "@/debug";
 import { useLiveStore } from "./live";
 import { DEFAULT_PAGE_SIZE, useProjectsStore } from "./projects";
@@ -18,8 +18,9 @@ interface EditorState {
   eraserMode: "stroke" | "area";
   eraserShape: "circle" | "square";
   saving: number;
-  history: Stroke[];
-  redoStack: Stroke[];
+  history: HistoryEntry[];
+  redoStack: HistoryEntry[];
+  _areaEraseBefore: Stroke[] | null;
   camera: { x: number; y: number; zoom: number };
   isDrawing: boolean;
 }
@@ -39,6 +40,7 @@ export const useEditorStore = defineStore("editor", {
     saving: 0,
     history: [],
     redoStack: [],
+    _areaEraseBefore: null,
     camera: { x: 0, y: 0, zoom: 1 },
     isDrawing: false,
   }),
@@ -153,8 +155,8 @@ export const useEditorStore = defineStore("editor", {
       const stroke = this.strokes.find((s) => s.id === strokeId);
       if (!stroke) return;
       this.strokes = this.strokes.filter((s) => s.id !== strokeId);
-      this.history = this.history.filter((s) => s.id !== strokeId);
-      this.redoStack = this.redoStack.filter((s) => s.id !== strokeId);
+      this.history = [...this.history, { kind: "stroke-erase", stroke }];
+      this.redoStack = [];
       await storage.deleteStroke(strokeId);
       useLiveStore().broadcast({ t: "stroke-delete", pageId: stroke.pageId, strokeId });
     },
@@ -165,7 +167,7 @@ export const useEditorStore = defineStore("editor", {
         dlog(
           `commit id${stroke.id.slice(-4)} pts${stroke.points.length} total${this.strokes.length}`,
         );
-        this.history = [...this.history, stroke];
+        this.history = [...this.history, { kind: "stroke-add", stroke }];
         this.redoStack = [];
         await storage.putStroke(stroke);
         useLiveStore().broadcast({ t: "stroke-commit", stroke });
@@ -179,9 +181,12 @@ export const useEditorStore = defineStore("editor", {
       if (!page) return;
       this.saving++;
       try {
+        const prev = (page.texts ?? []).find((t) => t.id === text.id) ?? null;
         page.texts = [...(page.texts ?? []).filter((t) => t.id !== text.id), text];
         page.updatedAt = Date.now();
         await storage.putPage({ ...page });
+        this.history = [...this.history, { kind: "text-upsert", prev, next: text }];
+        this.redoStack = [];
         useLiveStore().broadcast({ t: "text-commit", text });
         if (this.project) await useProjectsStore().touch(this.project.id);
       } finally {
@@ -191,32 +196,106 @@ export const useEditorStore = defineStore("editor", {
     async deleteText(pageId: string, textId: string) {
       const page = this.pages.find((p) => p.id === pageId);
       if (!page?.texts) return;
+      const text = page.texts.find((t) => t.id === textId);
+      if (!text) return;
       page.texts = page.texts.filter((t) => t.id !== textId);
       page.updatedAt = Date.now();
       await storage.putPage({ ...page });
+      this.history = [...this.history, { kind: "text-delete", text }];
+      this.redoStack = [];
       useLiveStore().broadcast({ t: "text-delete", pageId, textId });
     },
     async undo() {
-      const last = this.history[this.history.length - 1];
-      if (!last) return;
+      const entry = this.history[this.history.length - 1];
+      if (!entry) return;
       this.history = this.history.slice(0, -1);
-      this.redoStack = [...this.redoStack, last];
-      this.strokes = this.strokes.filter((s) => s.id !== last.id);
-      await storage.deleteStroke(last.id);
-      useLiveStore().broadcast({
-        t: "stroke-delete",
-        pageId: last.pageId,
-        strokeId: last.id,
-      });
+      this.redoStack = [...this.redoStack, entry];
+      if (entry.kind === "stroke-add") {
+        this.strokes = this.strokes.filter((s) => s.id !== entry.stroke.id);
+        await storage.deleteStroke(entry.stroke.id);
+        useLiveStore().broadcast({
+          t: "stroke-delete",
+          pageId: entry.stroke.pageId,
+          strokeId: entry.stroke.id,
+        });
+      } else if (entry.kind === "stroke-erase") {
+        this.strokes = [...this.strokes, entry.stroke];
+        await storage.putStroke(entry.stroke);
+        useLiveStore().broadcast({ t: "stroke-commit", stroke: entry.stroke });
+      } else if (entry.kind === "text-upsert") {
+        const page = this.pages.find((p) => p.id === entry.next.pageId);
+        if (page) {
+          if (entry.prev) {
+            page.texts = [...(page.texts ?? []).filter((t) => t.id !== entry.next.id), entry.prev];
+            await storage.putPage({ ...page });
+            useLiveStore().broadcast({ t: "text-commit", text: entry.prev });
+          } else {
+            page.texts = (page.texts ?? []).filter((t) => t.id !== entry.next.id);
+            await storage.putPage({ ...page });
+            useLiveStore().broadcast({ t: "text-delete", pageId: page.id, textId: entry.next.id });
+          }
+        }
+      } else if (entry.kind === "text-delete") {
+        const page = this.pages.find((p) => p.id === entry.text.pageId);
+        if (page) {
+          page.texts = [...(page.texts ?? []).filter((t) => t.id !== entry.text.id), entry.text];
+          await storage.putPage({ ...page });
+          useLiveStore().broadcast({ t: "text-commit", text: entry.text });
+        }
+      } else if (entry.kind === "area-erase") {
+        this.strokes = [...this.strokes.filter((s) => s.pageId !== entry.pageId), ...entry.before];
+        await storage.deleteStrokesForPage(entry.pageId);
+        for (const s of entry.before) await storage.putStroke(s);
+        useLiveStore().broadcast({
+          t: "page-set",
+          pageId: entry.pageId,
+          pages: [...this.pages],
+          strokes: entry.before,
+        });
+      }
     },
     async redo() {
-      const next = this.redoStack[this.redoStack.length - 1];
-      if (!next) return;
+      const entry = this.redoStack[this.redoStack.length - 1];
+      if (!entry) return;
       this.redoStack = this.redoStack.slice(0, -1);
-      this.history = [...this.history, next];
-      this.strokes = [...this.strokes, next];
-      await storage.putStroke(next);
-      useLiveStore().broadcast({ t: "stroke-commit", stroke: next });
+      this.history = [...this.history, entry];
+      if (entry.kind === "stroke-add") {
+        this.strokes = [...this.strokes, entry.stroke];
+        await storage.putStroke(entry.stroke);
+        useLiveStore().broadcast({ t: "stroke-commit", stroke: entry.stroke });
+      } else if (entry.kind === "stroke-erase") {
+        this.strokes = this.strokes.filter((s) => s.id !== entry.stroke.id);
+        await storage.deleteStroke(entry.stroke.id);
+        useLiveStore().broadcast({
+          t: "stroke-delete",
+          pageId: entry.stroke.pageId,
+          strokeId: entry.stroke.id,
+        });
+      } else if (entry.kind === "text-upsert") {
+        const page = this.pages.find((p) => p.id === entry.next.pageId);
+        if (page) {
+          page.texts = [...(page.texts ?? []).filter((t) => t.id !== entry.next.id), entry.next];
+          await storage.putPage({ ...page });
+          useLiveStore().broadcast({ t: "text-commit", text: entry.next });
+        }
+      } else if (entry.kind === "text-delete") {
+        const page = this.pages.find((p) => p.id === entry.text.pageId);
+        if (page) {
+          page.texts = (page.texts ?? []).filter((t) => t.id !== entry.text.id);
+          await storage.putPage({ ...page });
+          useLiveStore().broadcast({ t: "text-delete", pageId: page.id, textId: entry.text.id });
+        }
+      } else if (entry.kind === "area-erase") {
+        this.strokes = [...this.strokes.filter((s) => s.pageId !== entry.pageId), ...entry.after];
+        await storage.deleteStrokesForPage(entry.pageId);
+        for (const s of entry.after) await storage.putStroke(s);
+        useLiveStore().broadcast({
+          t: "page-set",
+          pageId: entry.pageId,
+          pages: [...this.pages],
+          strokes: entry.after,
+        });
+      }
     },
     async clearPage() {
       if (!this.currentPageId) return;
@@ -289,17 +368,28 @@ export const useEditorStore = defineStore("editor", {
       if (changed) this.strokes = survivors;
       return changed;
     },
+    // Call before starting an area-erase gesture to snapshot the before-state.
+    beginAreaErase(pageId: string) {
+      this._areaEraseBefore = this.strokes.filter((s) => s.pageId === pageId);
+    },
     // Persist the current strokes of a page after an area-erase gesture.
     async flushPage(pageId: string) {
       this.saving++;
       try {
+        const after = this.strokes.filter((s) => s.pageId === pageId);
+        const before = this._areaEraseBefore ?? after;
+        this._areaEraseBefore = null;
+        if (before !== after) {
+          this.history = [...this.history, { kind: "area-erase", pageId, before, after }];
+          this.redoStack = [];
+        }
         await storage.deleteStrokesForPage(pageId);
         for (const s of this.strokes) if (s.pageId === pageId) await storage.putStroke(s);
         useLiveStore().broadcast({
           t: "page-set",
           pageId,
           pages: [...this.pages],
-          strokes: this.strokes.filter((s) => s.pageId === pageId),
+          strokes: after,
         });
       } finally {
         this.saving--;

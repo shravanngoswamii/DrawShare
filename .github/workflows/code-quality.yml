@@ -8,6 +8,10 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -52,38 +56,12 @@ jobs:
 
       - name: Comment on PR
         if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v9
+        uses: thollander/actions-comment-pull-request@v3
         with:
-          script: |
-            const typecheck = '${{ steps.typecheck.outcome }}';
-            const biome = '${{ steps.biome.outcome }}';
-            const audit = '${{ steps.audit.outcome }}';
-            const status = (s) => (s === 'success' ? '✅ Passed' : '❌ Failed');
-            const body = `### Code Quality Summary
+          message: |
+            ### Code Quality Summary
 
             | TypeScript | Biome | Security Audit |
             |:----------:|:-----:|:--------------:|
-            | ${status(typecheck)} | ${status(biome)} | ${status(audit)} |`;
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-            const existing = comments.find(
-              (c) => c.user.login === 'github-actions[bot]' && c.body.includes('Code Quality Summary')
-            );
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body,
-              });
-            }
+            | ${{ steps.typecheck.outcome == 'success' && '✅ Passed' || '❌ Failed' }} | ${{ steps.biome.outcome == 'success' && '✅ Passed' || '❌ Failed' }} | ${{ steps.audit.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
+          comment-tag: code-quality-summary

@@ -1,0 +1,49 @@
+name: Feature request
+description: Suggest a new feature or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Got an idea? Describe the problem it solves first, then the solution. That helps us understand the value and explore alternatives.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation where you run into this limitation. "I'm frustrated when…" is a great starting point.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How would you like it to work? Sketches, mockups, or references to similar tools are all welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any other approaches you thought of? Why do you prefer your proposal?
+
+  - type: dropdown
+    id: audience
+    attributes:
+      label: Who benefits most?
+      multiple: true
+      options:
+        - Students / learners
+        - Teachers / tutors
+        - Remote teams / meetings
+        - Solo note-takers
+        - Artists / creatives
+        - Everyone
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Links, references, or anything else that might help.
