@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { onBeforeRouteLeave, useRouter } from "vue-router";
 import { installPointerProbe } from "@/adapters/input/pointerDebug";
 import CanvasStage from "@/components/CanvasStage.vue";
 import DebugConsole from "@/components/DebugConsole.vue";
@@ -22,6 +22,20 @@ const panelOpen = ref(false);
 const toolbarCollapsed = ref(false);
 const pagesCollapsed = ref(false);
 const shareOpen = ref(false);
+
+// Editor open/close animation. Closing plays the reverse (collapse-to-center)
+// before any navigation away from the editor — back button, browser back, or
+// programmatic. Skipped under reduced-motion.
+const closing = ref(false);
+const CLOSE_MS = 360;
+const reduceMotion =
+  typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+onBeforeRouteLeave(async () => {
+  if (reduceMotion || closing.value) return;
+  closing.value = true;
+  await new Promise((resolve) => setTimeout(resolve, CLOSE_MS));
+});
 
 onMounted(async () => {
   if (!projects.loaded) await projects.load();
@@ -89,7 +103,7 @@ onBeforeUnmount(() => removeProbe?.());
 </script>
 
 <template>
-  <div class="editor">
+  <div class="editor" :class="{ closing }">
     <div class="body">
       <button class="hub-btn" :class="{ quiet: editor.isDrawing }" @click="panelOpen = !panelOpen" title="Menu" aria-label="Open menu">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
@@ -131,17 +145,24 @@ onBeforeUnmount(() => removeProbe?.());
   overflow: hidden;
   padding-top: var(--safe-top);
   /* Open feel: the editor expands outward from a centered rectangle toward all
-     four edges (clip-path inset) with a subtle scale + fade. Runs once on mount,
+     four edges (clip-path inset) with a gentle scale + fade. Runs once on mount,
      i.e. each time a project is opened from the projects list. */
-  animation: editor-open 340ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: editor-open 560ms cubic-bezier(0.16, 1, 0.3, 1);
   transform-origin: center;
   will-change: clip-path, transform, opacity;
 }
 
+/* Closing: reverse of the open — collapse back toward the centre. Slightly
+   quicker and ease-in so it accelerates inward. `forwards` holds the collapsed
+   state until the (delayed) navigation completes. */
+.editor.closing {
+  animation: editor-close 360ms cubic-bezier(0.6, 0, 0.78, 0) forwards;
+}
+
 @keyframes editor-open {
   from {
-    clip-path: inset(9% 9% 9% 9% round 20px);
-    transform: scale(0.97);
+    clip-path: inset(12% 12% 12% 12% round 22px);
+    transform: scale(0.95);
     opacity: 0;
   }
   to {
@@ -151,9 +172,23 @@ onBeforeUnmount(() => removeProbe?.());
   }
 }
 
+@keyframes editor-close {
+  from {
+    clip-path: inset(0 0 0 0 round 0);
+    transform: scale(1);
+    opacity: 1;
+  }
+  to {
+    clip-path: inset(12% 12% 12% 12% round 22px);
+    transform: scale(0.95);
+    opacity: 0;
+  }
+}
+
 /* Respect users who prefer less motion (also tracked under the a11y pass). */
 @media (prefers-reduced-motion: reduce) {
-  .editor {
+  .editor,
+  .editor.closing {
     animation: none;
   }
 }
