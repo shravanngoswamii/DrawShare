@@ -161,11 +161,11 @@ onBeforeUnmount(() => removeProbe?.());
   gap: 6px;
   padding: 7px 12px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--color-glass-bg-strong);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(226, 232, 240, 0.9);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  border: 1px solid var(--color-glass-border);
+  box-shadow: 0 2px 8px var(--color-glass-shadow), 0 1px 2px var(--color-glass-shadow);
   font-size: var(--text-sm);
   font-weight: 500;
   color: var(--color-text-muted);
@@ -176,7 +176,7 @@ onBeforeUnmount(() => removeProbe?.());
 .sidebar-pill:hover {
   box-shadow: var(--shadow-md);
   color: var(--color-text);
-  background: rgba(255, 255, 255, 0.98);
+  background: var(--color-glass-bg-strong);
 }
 
 .pill-badge {
@@ -211,11 +211,11 @@ onBeforeUnmount(() => removeProbe?.());
   width: 44px;
   height: 44px;
   border-radius: var(--radius-pill);
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--color-glass-bg-strong);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(226, 232, 240, 0.9);
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12), 0 1px 2px rgba(15, 23, 42, 0.06);
+  border: 1px solid var(--color-glass-border);
+  box-shadow: 0 4px 14px var(--color-glass-shadow), 0 1px 2px var(--color-glass-shadow);
   color: var(--color-accent);
   transition: transform 100ms ease, box-shadow 150ms ease, opacity 150ms ease;
 }
@@ -239,11 +239,11 @@ onBeforeUnmount(() => removeProbe?.());
   width: 40px;
   height: 40px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--color-glass-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(226, 232, 240, 0.9);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  border: 1px solid var(--color-glass-border);
+  box-shadow: 0 2px 8px var(--color-glass-shadow), 0 1px 2px var(--color-glass-shadow);
   color: var(--color-text-muted);
   transition: opacity 150ms ease;
 }

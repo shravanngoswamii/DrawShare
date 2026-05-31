@@ -2,7 +2,9 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { PointerInputAdapter } from "@/adapters/input/pointerInput";
 import { Canvas2DRenderer } from "@/adapters/render/canvas2d";
+import { useTheme } from "@/composables/useTheme";
 import { newId } from "@/core/ids";
+import { adaptInk } from "@/core/ink";
 import type { InputSample } from "@/core/ports";
 import type { Page, Stroke, StrokePoint, TextItem } from "@/core/types";
 import { dlog } from "@/debug";
@@ -12,6 +14,12 @@ import { useLiveStore } from "@/stores/live";
 const props = defineProps<{ page: Page }>();
 const editor = useEditorStore();
 const live = useLiveStore();
+const { isDark } = useTheme();
+
+function applyInkAdapter() {
+  baseRenderer.setInkAdapter((c) => adaptInk(c, isDark.value));
+  liveRenderer.setInkAdapter((c) => adaptInk(c, isDark.value));
+}
 
 const wrap = ref<HTMLDivElement | null>(null);
 const baseEl = ref<HTMLCanvasElement | null>(null);
@@ -271,7 +279,7 @@ function updateEditStyle() {
     left: `${(e.x - cam.x) * cam.zoom}px`,
     top: `${(e.y - cam.y) * cam.zoom}px`,
     fontSize: `${e.size * cam.zoom}px`,
-    color: e.color,
+    color: adaptInk(e.color, isDark.value),
   };
   requestAnimationFrame(autosizeText);
 }
@@ -706,6 +714,7 @@ onMounted(() => {
   if (!baseEl.value || !liveEl.value || !wrap.value) return;
   baseRenderer.attach(baseEl.value);
   liveRenderer.attach(liveEl.value);
+  applyInkAdapter();
   fitCanvas();
   wrap.value.addEventListener("wheel", onWheel, { passive: false });
   wrap.value.addEventListener("pointerdown", onNavPointerDown, { capture: true, passive: false });
@@ -723,6 +732,14 @@ onMounted(() => {
   });
   resizeObserver = new ResizeObserver(() => fitCanvas());
   resizeObserver.observe(wrap.value);
+});
+
+// Re-paint ink when the theme flips (dark-mode ink adaptation is render-time).
+watch(isDark, () => {
+  applyInkAdapter();
+  updateEditStyle();
+  dirtyBase = true;
+  schedule();
 });
 
 onBeforeUnmount(() => {
@@ -790,7 +807,7 @@ onBeforeUnmount(() => {
   position: relative;
   width: 100%;
   height: 100%;
-  background: #ffffff;
+  background: var(--color-canvas-surface);
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
@@ -808,7 +825,7 @@ onBeforeUnmount(() => {
 .page-bg {
   position: absolute;
   inset: 0;
-  background-color: #ffffff;
+  background-color: var(--color-canvas-surface);
   background-repeat: repeat;
   pointer-events: none;
 }
@@ -818,19 +835,19 @@ onBeforeUnmount(() => {
     to bottom,
     transparent 0,
     transparent calc(100% - 1px),
-    #e2e8f0 calc(100% - 1px),
-    #e2e8f0 100%
+    var(--color-canvas-line) calc(100% - 1px),
+    var(--color-canvas-line) 100%
   );
 }
 
 .bg-grid {
   background-image:
-    linear-gradient(to right, transparent calc(100% - 1px), #eef2f6 calc(100% - 1px), #eef2f6 100%),
-    linear-gradient(to bottom, transparent calc(100% - 1px), #eef2f6 calc(100% - 1px), #eef2f6 100%);
+    linear-gradient(to right, transparent calc(100% - 1px), var(--color-canvas-line) calc(100% - 1px), var(--color-canvas-line) 100%),
+    linear-gradient(to bottom, transparent calc(100% - 1px), var(--color-canvas-line) calc(100% - 1px), var(--color-canvas-line) 100%);
 }
 
 .bg-dotted {
-  background-image: radial-gradient(circle at 50% 50%, #cbd5e1 1.5px, transparent 2.5px);
+  background-image: radial-gradient(circle at 50% 50%, var(--color-canvas-dot) 1.5px, transparent 2.5px);
 }
 
 .layer {
@@ -849,8 +866,8 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: 6;
   transform: translate(-50%, -50%);
-  border: 1.5px solid rgba(15, 23, 42, 0.55);
-  background: rgba(15, 23, 42, 0.06);
+  border: 1.5px solid var(--color-ink);
+  background: var(--color-ink-fill);
   pointer-events: none;
 }
 .eraser-cursor.circle { border-radius: 50%; }
@@ -863,8 +880,8 @@ onBeforeUnmount(() => {
   padding: 2px 5px;
   border: 1.5px dashed var(--color-accent, #3b82f6);
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.55);
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.1);
+  background: var(--color-glass-bg);
+  box-shadow: 0 2px 10px var(--color-glass-shadow);
   outline: none;
   resize: none;
   overflow: hidden;
@@ -883,13 +900,13 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 2px;
-  background: rgba(255, 255, 255, 0.88);
+  background: var(--color-glass-bg-strong);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(226, 232, 240, 0.8);
+  border: 1px solid var(--color-glass-border);
   border-radius: 12px;
   padding: 4px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 8px 24px var(--color-glass-shadow), 0 2px 6px var(--color-glass-shadow);
   z-index: 5;
   transition: opacity 150ms ease;
 }

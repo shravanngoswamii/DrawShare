@@ -27,6 +27,11 @@ export class Canvas2DRenderer implements Renderer {
   private dpr = 1;
   private camera: Camera = { x: 0, y: 0, zoom: 1 };
 
+  // Maps a stored ink color to the color actually painted (theme adaptation).
+  // Identity by default; callers set this from the active theme. Stored stroke
+  // data is never changed — only what gets drawn.
+  private inkAdapt: (color: string) => string = (c) => c;
+
   // Incremental live-stroke cache: stores the "stable" prefix of the current
   // stroke rendered into an OffscreenCanvas so drawLive only computes the tail.
   private liveCache: OffscreenCanvas | null = null;
@@ -58,6 +63,12 @@ export class Canvas2DRenderer implements Renderer {
     this.camera = cam;
   }
 
+  setInkAdapter(fn: (color: string) => string): void {
+    this.inkAdapt = fn;
+    // Cached live-stroke pixels used the old adapter; force a rebuild.
+    this.liveCacheCount = 0;
+  }
+
   clear(): void {
     if (!this.ctx || !this.canvas) return;
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -77,14 +88,21 @@ export class Canvas2DRenderer implements Renderer {
 
   drawStroke(stroke: Stroke): void {
     if (!this.ctx || stroke.points.length === 0) return;
-    this.renderToCtx(this.ctx, stroke.points, stroke.color, stroke.opacity, stroke.size, true);
+    this.renderToCtx(
+      this.ctx,
+      stroke.points,
+      this.inkAdapt(stroke.color),
+      stroke.opacity,
+      stroke.size,
+      true,
+    );
   }
 
   drawText(item: TextItem): void {
     const ctx = this.ctx;
     if (!ctx || !item.text) return;
     ctx.save();
-    ctx.fillStyle = item.color;
+    ctx.fillStyle = this.inkAdapt(item.color);
     ctx.font = `${item.size}px ui-sans-serif, system-ui, -apple-system, sans-serif`;
     ctx.textBaseline = "top";
     const lineHeight = item.size * 1.3;
@@ -129,7 +147,14 @@ export class Canvas2DRenderer implements Renderer {
     // Render only the tail — overlap with cache is safe for opaque strokes;
     // for semi-transparent strokes the overlap region is small (~12 pts).
     const tailFrom = Math.max(0, this.liveCacheCount - LIVE_LOOKAHEAD);
-    this.renderToCtx(ctx, pts.slice(tailFrom), stroke.color, stroke.opacity, stroke.size, false);
+    this.renderToCtx(
+      ctx,
+      pts.slice(tailFrom),
+      this.inkAdapt(stroke.color),
+      stroke.opacity,
+      stroke.size,
+      false,
+    );
   }
 
   private refreshLiveCache(stroke: Stroke, upToCount: number): void {
@@ -156,7 +181,7 @@ export class Canvas2DRenderer implements Renderer {
     this.renderToCtx(
       ctx,
       stroke.points.slice(0, upToCount),
-      stroke.color,
+      this.inkAdapt(stroke.color),
       stroke.opacity,
       stroke.size,
       false,

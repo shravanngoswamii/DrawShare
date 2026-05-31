@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import { useTheme } from "@/composables/useTheme";
 import { devMode, setDevMode } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
@@ -13,6 +14,7 @@ const editor = useEditorStore();
 const live = useLiveStore();
 const projects = useProjectsStore();
 const router = useRouter();
+const { isDark, toggleTheme } = useTheme();
 
 const renamingId = ref<string | null>(null);
 const renameValue = ref("");
@@ -159,6 +161,18 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
             <path d="m8 9-3 3 3 3" /><path d="m16 9 3 3-3 3" /><path d="M13.5 7.5 10 17" />
           </svg>
         </button>
+        <button class="action" @click="toggleTheme" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'">
+          <!-- Sun: shown in dark mode (click to go light) -->
+          <svg v-if="isDark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+          </svg>
+          <!-- Moon: shown in light mode (click to go dark) -->
+          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+          </svg>
+        </button>
         <span class="save-status" :class="{ saving: editor.saving > 0 }">{{ saveStatus }}</span>
       </div>
 
@@ -251,12 +265,12 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
   width: var(--sidepanel-w);
   max-height: calc(100% - 16px);
   z-index: 10;
-  background: rgba(255, 255, 255, 0.88);
+  background: var(--color-glass-bg);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(226, 232, 240, 0.8);
+  border: 1px solid var(--color-glass-border);
   border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 8px 24px var(--color-glass-shadow), 0 2px 6px var(--color-glass-shadow);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -282,10 +296,10 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
+  border-bottom: 1px solid var(--color-border);
   position: sticky;
   top: 0;
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--color-glass-bg-strong);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   border-radius: 12px 12px 0 0;
@@ -398,7 +412,7 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
 
 .section {
   padding: var(--space-4);
-  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .section:last-child {
@@ -434,7 +448,7 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
   transition: background 80ms ease, border-color 80ms ease;
 }
 
-.page:hover { background: rgba(241, 245, 249, 0.8); }
+.page:hover { background: var(--color-surface-2); }
 
 .page.active {
   background: var(--color-accent-soft);
@@ -452,7 +466,7 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
 .page-thumb {
   width: 32px;
   height: 42px;
-  background: #fff;
+  background: var(--color-canvas-surface);
   border: 1px solid var(--color-border-strong);
   border-radius: 4px;
   flex-shrink: 0;
@@ -519,7 +533,7 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
 .bg-btn {
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--color-glass-bg);
   padding: var(--space-3) var(--space-2);
   font-size: var(--text-xs);
   font-weight: 500;
@@ -535,7 +549,7 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
 .bg-btn.active {
   background: var(--color-accent);
   border-color: var(--color-accent);
-  color: #fff;
+  color: var(--color-accent-text);
 }
 
 /* ── Mobile — slide-in drawer ── */
@@ -552,7 +566,7 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
     display: block;
     position: absolute;
     inset: 0;
-    background: rgba(15, 23, 42, 0.4);
+    background: rgba(15, 23, 42, 0.5);
     opacity: 0;
     transition: opacity 180ms ease;
     pointer-events: none;

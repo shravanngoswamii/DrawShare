@@ -1,11 +1,19 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Canvas2DRenderer } from "@/adapters/render/canvas2d";
+import { useTheme } from "@/composables/useTheme";
+import { adaptInk } from "@/core/ink";
 import type { Page } from "@/core/types";
 import { useLiveStore } from "@/stores/live";
 
 const props = defineProps<{ page: Page }>();
 const live = useLiveStore();
+const { isDark } = useTheme();
+
+function applyInkAdapter() {
+  baseRenderer.setInkAdapter((c) => adaptInk(c, isDark.value));
+  liveRenderer.setInkAdapter((c) => adaptInk(c, isDark.value));
+}
 
 const wrap = ref<HTMLDivElement | null>(null);
 const baseEl = ref<HTMLCanvasElement | null>(null);
@@ -161,9 +169,16 @@ onMounted(() => {
   if (!baseEl.value || !liveEl.value || !wrap.value) return;
   baseRenderer.attach(baseEl.value);
   liveRenderer.attach(liveEl.value);
+  applyInkAdapter();
   fitCanvas();
   resizeObserver = new ResizeObserver(() => fitCanvas());
   resizeObserver.observe(wrap.value);
+});
+
+watch(isDark, () => {
+  applyInkAdapter();
+  dirtyBase = true;
+  schedule();
 });
 
 onBeforeUnmount(() => {
@@ -191,7 +206,7 @@ onBeforeUnmount(() => {
 .page-bg {
   position: absolute;
   inset: 0;
-  background-color: #ffffff;
+  background-color: var(--color-canvas-surface);
   background-repeat: repeat;
   pointer-events: none;
 }
@@ -201,19 +216,19 @@ onBeforeUnmount(() => {
     to bottom,
     transparent 0,
     transparent calc(100% - 1px),
-    #e2e8f0 calc(100% - 1px),
-    #e2e8f0 100%
+    var(--color-canvas-line) calc(100% - 1px),
+    var(--color-canvas-line) 100%
   );
 }
 
 .bg-grid {
   background-image:
-    linear-gradient(to right, transparent calc(100% - 1px), #eef2f6 calc(100% - 1px), #eef2f6 100%),
-    linear-gradient(to bottom, transparent calc(100% - 1px), #eef2f6 calc(100% - 1px), #eef2f6 100%);
+    linear-gradient(to right, transparent calc(100% - 1px), var(--color-canvas-line) calc(100% - 1px), var(--color-canvas-line) 100%),
+    linear-gradient(to bottom, transparent calc(100% - 1px), var(--color-canvas-line) calc(100% - 1px), var(--color-canvas-line) 100%);
 }
 
 .bg-dotted {
-  background-image: radial-gradient(circle at 50% 50%, #cbd5e1 1.5px, transparent 2.5px);
+  background-image: radial-gradient(circle at 50% 50%, var(--color-canvas-dot) 1.5px, transparent 2.5px);
 }
 
 .layer {
