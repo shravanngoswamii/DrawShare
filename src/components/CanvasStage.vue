@@ -398,6 +398,7 @@ function handleDown(s: InputSample) {
   if (editor.tool === "eraser") {
     isErasing = true;
     eraseCursor.value = { x: s.x, y: s.y };
+    if (editor.eraserMode === "area") editor.beginAreaErase(props.page.id);
     const w = toWorld(s.x, s.y);
     eraseAt(w.x, w.y);
     return;
