@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import { useProjectBackup } from "@/composables/useProjectBackup";
 import { useTheme } from "@/composables/useTheme";
 import { useEditorStore } from "@/stores/editor";
 import { useProjectsStore } from "@/stores/projects";
@@ -9,10 +10,29 @@ const projects = useProjectsStore();
 const editor = useEditorStore();
 const router = useRouter();
 const { isDark, toggleTheme } = useTheme();
+const { exportAll, exportProject, importAll } = useProjectBackup();
+const importInput = ref<HTMLInputElement | null>(null);
+const importing = ref(false);
 const query = ref("");
 const renamingId = ref<string | null>(null);
 const renameValue = ref("");
 const joinCode = ref("");
+
+async function handleImport(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  importing.value = true;
+  try {
+    const count = await importAll(file);
+    await projects.load();
+    alert(`Imported ${count} project${count !== 1 ? "s" : ""} successfully.`);
+  } catch (err) {
+    alert(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    importing.value = false;
+    if (importInput.value) importInput.value.value = "";
+  }
+}
 
 function joinSession() {
   const code = joinCode.value.trim().toUpperCase();
@@ -92,6 +112,25 @@ function formatDate(ts: number): string {
             type="search"
             placeholder="Search projects"
           />
+          <!-- Export all projects -->
+          <button class="btn btn-ghost btn-icon" title="Export all projects" aria-label="Export all projects" @click="exportAll">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </button>
+          <!-- Import projects -->
+          <button class="btn btn-ghost btn-icon" title="Import projects from backup" aria-label="Import projects from backup" @click="importInput?.click()" :disabled="importing">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 5 17 10" />
+              <line x1="12" y1="5" x2="12" y2="17" />
+            </svg>
+          </button>
+          <input ref="importInput" type="file" accept=".json" class="sr-only" @change="handleImport" aria-hidden="true" />
           <button class="btn btn-ghost btn-icon theme-btn" @click="toggleTheme" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'" :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'">
             <svg v-if="isDark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -188,6 +227,9 @@ function formatDate(ts: number): string {
             <div class="card-actions">
               <button class="btn btn-ghost btn-sm" @click="startRename(p.id, p.name)">
                 Rename
+              </button>
+              <button class="btn btn-ghost btn-sm" @click="exportProject(p.id)" title="Export this project as JSON backup">
+                Export
               </button>
               <button class="btn btn-ghost btn-sm card-danger" @click="remove(p.id, p.name)">
                 Delete
@@ -458,6 +500,18 @@ function formatDate(ts: number): string {
 
 .card-danger:hover:not(:disabled) {
   background: var(--color-danger-soft);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
 }
 
 /* Tablet */
