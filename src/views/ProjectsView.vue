@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import { useTheme } from "@/composables/useTheme";
 import { useProjectBackup } from "@/composables/useProjectBackup";
+import { useTheme } from "@/composables/useTheme";
 import { useEditorStore } from "@/stores/editor";
 import { useProjectsStore } from "@/stores/projects";
 
