@@ -20,7 +20,6 @@ const { isDark, toggleTheme } = useTheme();
 const renamingId = ref<string | null>(null);
 const renameValue = ref("");
 
-// Project header (moved here from the old top bar)
 const projectName = ref("");
 watch(
   () => editor.project?.name,
@@ -30,7 +29,7 @@ watch(
   { immediate: true },
 );
 
-const saveStatus = computed(() => (editor.saving > 0 ? "Saving" : "Saved"));
+const saveStatus = computed(() => (editor.saving > 0 ? "Saving…" : "Saved"));
 
 async function commitName() {
   if (!editor.project) return;
@@ -62,7 +61,6 @@ async function clearPage() {
   await editor.clearPage();
 }
 
-// Blurring fires commitName, so Enter just needs to drop focus.
 function onNameEnter(e: KeyboardEvent) {
   (e.target as HTMLInputElement).blur();
 }
@@ -113,7 +111,9 @@ async function exportCurrentPage() {
 <template>
   <div class="wrap" :class="{ 'is-open': open }">
     <div class="backdrop" @click="emit('close')"></div>
-    <aside class="panel" :class="{ 'is-collapsed': collapsed, quiet: editor.isDrawing }" aria-label="Pages and background">
+    <aside class="panel" :class="{ 'is-collapsed': collapsed, quiet: editor.isDrawing }" aria-label="Pages and settings">
+
+      <!-- ── Header ── -->
       <div class="panel-head">
         <button class="head-icon" @click="router.push({ name: 'projects' })" title="Back to projects" aria-label="Back to projects">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -128,6 +128,17 @@ async function exportCurrentPage() {
           @keydown.enter="onNameEnter"
           :placeholder="editor.project?.name ?? 'Untitled'"
         />
+        <span class="save-chip" :class="{ saving: editor.saving > 0 }">{{ saveStatus }}</span>
+        <button class="head-icon" @click="toggleTheme" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'" :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'">
+          <svg v-if="isDark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+          </svg>
+          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+          </svg>
+        </button>
         <button class="head-icon desktop-toggle" @click="emit('toggle')" title="Collapse panel" aria-label="Collapse panel">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24" aria-hidden="true">
             <path fill="currentColor" fill-rule="evenodd" d="M10 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-8zM9 7H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3zM4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" clip-rule="evenodd"/>
@@ -141,56 +152,19 @@ async function exportCurrentPage() {
         </button>
       </div>
 
-      <div class="actions-row">
-        <button class="action" :class="{ live: live.isHosting }" @click="emit('share')" :title="live.isHosting ? `Live ${live.code}` : 'Share'">
+      <!-- ── Share ── -->
+      <div class="share-section">
+        <button class="share-btn" :class="{ live: live.isHosting }" @click="emit('share')" :title="live.isHosting ? `Live session: ${live.code}` : 'Start a live session'">
           <span v-if="live.isHosting" class="live-dot" aria-hidden="true"></span>
-          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><path d="M16 6l-4-4-4 4" /><path d="M12 2v13" />
           </svg>
-          <span class="action-label">{{ live.isHosting ? live.code : "Share" }}</span>
+          <span class="share-label">{{ live.isHosting ? `Live · ${live.code}` : 'Share live session' }}</span>
         </button>
-        <button class="action" @click="toggleFullscreen" :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M21 8V5a2 2 0 0 0-2-2h-3" /><path d="M3 16v3a2 2 0 0 0 2 2h3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" />
-          </svg>
-        </button>
-        <button class="action" @click="clearPage" title="Clear page">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-          </svg>
-        </button>
-        <button class="action" :class="{ 'dev-on': devMode }" @click="setDevMode(!devMode)" title="Dev mode">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="m8 9-3 3 3 3" /><path d="m16 9 3 3-3 3" /><path d="M13.5 7.5 10 17" />
-          </svg>
-        </button>
-        <button class="action" @click="toggleTheme" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'">
-          <!-- Sun: shown in dark mode (click to go light) -->
-          <svg v-if="isDark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
-          </svg>
-          <!-- Moon: shown in light mode (click to go dark) -->
-          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
-          </svg>
-        </button>
-        <button class="action" @click="exportCurrentPage" title="Export page as PNG">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-        </button>
-        <span class="save-status" :class="{ saving: editor.saving > 0 }">{{ saveStatus }}</span>
       </div>
 
+      <!-- ── Pages ── -->
       <div class="section pages-section">
         <div class="section-title pages-head">
           <span>Pages</span>
@@ -225,26 +199,52 @@ async function exportCurrentPage() {
               </div>
             </button>
             <div class="page-actions">
-              <button
-                class="page-action"
-                @click="startRename(page.id, page.name)"
-                title="Rename"
-              >
-                Rename
-              </button>
+              <button class="page-action" @click="startRename(page.id, page.name)">Rename</button>
               <button
                 v-if="editor.pages.length > 1"
                 class="page-action danger"
                 @click="remove(page.id, page.name)"
-                title="Delete"
-              >
-                Delete
-              </button>
+              >Delete</button>
             </div>
           </li>
         </ul>
+
+        <!-- Page-level tools: export, clear, fullscreen, dev -->
+        <div class="page-tools">
+          <button class="tool-btn" @click="exportCurrentPage" title="Export page as PNG">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            <span>Export PNG</span>
+          </button>
+          <button class="tool-btn" @click="clearPage" title="Clear all strokes">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+            </svg>
+            <span>Clear page</span>
+          </button>
+          <button class="tool-btn" @click="toggleFullscreen" :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M21 8V5a2 2 0 0 0-2-2h-3" /><path d="M3 16v3a2 2 0 0 0 2 2h3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+            </svg>
+            <span>{{ isFullscreen ? 'Exit full' : 'Fullscreen' }}</span>
+          </button>
+          <button class="tool-btn" :class="{ 'tool-active': devMode }" @click="setDevMode(!devMode)" title="Dev mode">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m8 9-3 3 3 3" /><path d="m16 9 3 3-3 3" /><path d="M13.5 7.5 10 17" />
+            </svg>
+            <span>Dev mode</span>
+          </button>
+        </div>
       </div>
 
+      <!-- ── Background ── -->
       <div class="section">
         <div class="section-title">Background</div>
         <div class="bg-grid">
@@ -259,6 +259,7 @@ async function exportCurrentPage() {
           </button>
         </div>
       </div>
+
     </aside>
   </div>
 </template>
@@ -289,6 +290,7 @@ async function exportCurrentPage() {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  overflow-x: hidden;
   scrollbar-width: thin;
   transform-origin: top right;
   transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1), opacity 180ms ease;
@@ -306,10 +308,11 @@ async function exportCurrentPage() {
   transition: opacity 150ms ease;
 }
 
+/* ── Header ── */
 .panel-head {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--color-border);
   position: sticky;
@@ -322,8 +325,8 @@ async function exportCurrentPage() {
 }
 
 .head-icon {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -332,7 +335,6 @@ async function exportCurrentPage() {
   flex-shrink: 0;
   transition: background 80ms ease, color 80ms ease;
 }
-
 .head-icon:hover {
   background: var(--color-surface-2);
   color: var(--color-text);
@@ -346,10 +348,9 @@ async function exportCurrentPage() {
   font-size: var(--text-sm);
   font-weight: 600;
   letter-spacing: -0.01em;
-  padding: 5px var(--space-2);
+  padding: 4px var(--space-2);
   border-radius: var(--radius-md);
 }
-
 .project-name:hover { background: var(--color-surface-2); }
 .project-name:focus {
   outline: none;
@@ -358,78 +359,74 @@ async function exportCurrentPage() {
   box-shadow: 0 0 0 3px var(--color-focus-ring);
 }
 
+.save-chip {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  letter-spacing: 0.01em;
+}
+.save-chip.saving { color: var(--color-accent); }
+
 .close-btn { display: none; }
 
-.actions-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
+/* ── Share ── */
+.share-section {
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--color-border);
 }
 
-.action {
+.share-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 var(--space-2);
+  gap: var(--space-2);
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--space-3);
   border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-2);
   color: var(--color-text-muted);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   font-weight: 500;
-  transition: background 80ms ease, color 80ms ease;
+  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
 }
-
-.action:hover { background: var(--color-surface-2); color: var(--color-text); }
-.action-label { display: none; }
-.action.live {
+.share-btn:hover {
+  background: var(--color-surface-3, var(--color-surface-2));
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+.share-btn.live {
   background: var(--color-success-soft);
+  border-color: var(--color-success);
   color: var(--color-success-strong);
 }
-.action.live .action-label { display: inline; font-family: var(--font-mono); letter-spacing: 0.06em; }
-.action.dev-on { background: var(--color-success-soft); color: var(--color-success-strong); }
-
+.share-label {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.share-btn.live .share-label {
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+}
 .live-dot {
   width: 8px;
   height: 8px;
   border-radius: var(--radius-pill);
   background: var(--color-success);
   box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.2);
+  flex-shrink: 0;
 }
 
-.save-status {
-  margin-left: auto;
-  font-size: var(--text-xs);
-  color: var(--color-text-muted);
-  font-variant-numeric: tabular-nums;
-}
-.save-status.saving { color: var(--color-accent); }
-
-.pages-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--space-2);
-}
-
-.add-page {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px var(--space-2);
-  border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--color-accent);
-}
-.add-page:hover { background: var(--color-accent-soft); }
-
+/* ── Sections ── */
 .section {
-  padding: var(--space-4);
+  padding: var(--space-3) var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--color-border);
 }
-
 .section:last-child {
   border-bottom: none;
 }
@@ -443,9 +440,37 @@ async function exportCurrentPage() {
   margin-bottom: var(--space-3);
 }
 
+/* ── Pages ── */
 .pages-section {
-  padding: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-3);
 }
+
+.pages-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-1) var(--space-2);
+  margin-bottom: var(--space-1);
+}
+.pages-head > span {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+.add-page {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-accent);
+}
+.add-page:hover { background: var(--color-accent-soft); }
 
 .pages {
   list-style: none;
@@ -462,9 +487,7 @@ async function exportCurrentPage() {
   padding: var(--space-2);
   transition: background 80ms ease, border-color 80ms ease;
 }
-
 .page:hover { background: var(--color-surface-2); }
-
 .page.active {
   background: var(--color-accent-soft);
   border-color: var(--color-border-strong);
@@ -508,8 +531,6 @@ async function exportCurrentPage() {
   white-space: nowrap;
 }
 
-.page-idx { font-size: var(--text-xs); }
-
 .page-rename {
   height: 26px;
   padding: 0 var(--space-2);
@@ -520,7 +541,7 @@ async function exportCurrentPage() {
   display: flex;
   gap: var(--space-1);
   margin-top: var(--space-2);
-  margin-left: 48px;
+  margin-left: 44px;
 }
 
 .page-action {
@@ -530,15 +551,46 @@ async function exportCurrentPage() {
   color: var(--color-text-muted);
   font-weight: 500;
 }
-
-.page-action:hover {
-  background: var(--color-surface-3);
-  color: var(--color-text);
-}
-
+.page-action:hover { background: var(--color-surface-3, var(--color-surface-2)); color: var(--color-text); }
 .page-action.danger { color: var(--color-danger); }
 .page-action.danger:hover { background: var(--color-danger-soft); }
 
+/* ── Page tools grid ── */
+.page-tools {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: 0 var(--space-1);
+}
+
+.tool-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: var(--space-2) var(--space-1);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-glass-bg);
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 500;
+  text-align: center;
+  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+}
+.tool-btn:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+.tool-btn.tool-active {
+  background: var(--color-success-soft);
+  border-color: var(--color-success);
+  color: var(--color-success-strong);
+}
+
+/* ── Background ── */
 .bg-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -555,12 +607,7 @@ async function exportCurrentPage() {
   color: var(--color-text-muted);
   transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
 }
-
-.bg-btn:hover {
-  background: var(--color-surface-2);
-  color: var(--color-text);
-}
-
+.bg-btn:hover { background: var(--color-surface-2); color: var(--color-text); }
 .bg-btn.active {
   background: var(--color-accent);
   border-color: var(--color-accent);
