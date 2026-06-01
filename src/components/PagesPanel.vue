@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useTheme } from "@/composables/useTheme";
+import { exportPageAsPng } from "@/composables/useExport";
 import { devMode, setDevMode } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
@@ -101,6 +102,12 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
   if (!page) return;
   await editor.setPageBackground(page.id, value);
 }
+
+async function exportCurrentPage() {
+  const page = editor.currentPage;
+  if (!page) return;
+  await exportPageAsPng(page, editor.strokes);
+}
 </script>
 
 <template>
@@ -171,6 +178,14 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
           <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+          </svg>
+        </button>
+        <button class="action" @click="exportCurrentPage" title="Export page as PNG">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
           </svg>
         </button>
         <span class="save-status" :class="{ saving: editor.saving > 0 }">{{ saveStatus }}</span>
