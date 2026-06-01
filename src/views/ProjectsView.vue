@@ -10,7 +10,7 @@ const projects = useProjectsStore();
 const editor = useEditorStore();
 const router = useRouter();
 const { isDark, toggleTheme } = useTheme();
-const { exportAll, importAll } = useProjectBackup();
+const { exportAll, exportProject, importAll } = useProjectBackup();
 const importInput = ref<HTMLInputElement | null>(null);
 const importing = ref(false);
 const query = ref("");
@@ -227,6 +227,9 @@ function formatDate(ts: number): string {
             <div class="card-actions">
               <button class="btn btn-ghost btn-sm" @click="startRename(p.id, p.name)">
                 Rename
+              </button>
+              <button class="btn btn-ghost btn-sm" @click="exportProject(p.id)" title="Export this project as JSON backup">
+                Export
               </button>
               <button class="btn btn-ghost btn-sm card-danger" @click="remove(p.id, p.name)">
                 Delete

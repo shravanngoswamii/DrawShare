@@ -14,31 +14,45 @@ interface BackupFile {
   projects: BackupEntry[];
 }
 
+function triggerDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function buildEntry(project: Project): Promise<BackupEntry> {
+  const pages = await storage.listPages(project.id);
+  const pagesWithStrokes = await Promise.all(
+    pages.map(async (page) => ({
+      page,
+      strokes: await storage.listStrokes(page.id),
+    })),
+  );
+  return { project, pages: pagesWithStrokes };
+}
+
 export function useProjectBackup() {
   async function exportAll(): Promise<void> {
     const projects = await storage.listProjects();
-    const entries: BackupEntry[] = await Promise.all(
-      projects.map(async (project) => {
-        const pages = await storage.listPages(project.id);
-        const pagesWithStrokes = await Promise.all(
-          pages.map(async (page) => ({
-            page,
-            strokes: await storage.listStrokes(page.id),
-          })),
-        );
-        return { project, pages: pagesWithStrokes };
-      }),
-    );
+    const entries = await Promise.all(projects.map(buildEntry));
     const data: BackupFile = { version: FORMAT_VERSION, exportedAt: Date.now(), projects: entries };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `drawshare-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    triggerDownload(blob, `drawshare-backup-${new Date().toISOString().slice(0, 10)}.json`);
+  }
+
+  async function exportProject(id: string): Promise<void> {
+    const project = await storage.getProject(id);
+    if (!project) throw new Error("Project not found");
+    const entry = await buildEntry(project);
+    const data: BackupFile = { version: FORMAT_VERSION, exportedAt: Date.now(), projects: [entry] };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const safeName = project.name.replace(/[^a-z0-9_-]/gi, "_").toLowerCase();
+    triggerDownload(blob, `${safeName}-${new Date().toISOString().slice(0, 10)}.json`);
   }
 
   async function importAll(file: File): Promise<number> {
@@ -66,5 +80,5 @@ export function useProjectBackup() {
     return count;
   }
 
-  return { exportAll, importAll };
+  return { exportAll, exportProject, importAll };
 }
