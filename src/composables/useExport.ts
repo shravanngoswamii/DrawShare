@@ -12,10 +12,7 @@ const PEN_OPTIONS = {
   end: { taper: 20, cap: true },
 };
 
-function drawStrokeToCtx(
-  ctx: OffscreenCanvasRenderingContext2D,
-  stroke: Stroke,
-): void {
+function drawStrokeToCtx(ctx: OffscreenCanvasRenderingContext2D, stroke: Stroke): void {
   if (stroke.points.length === 0) return;
   const inputs = stroke.points.map((p) => [p.x, p.y, p.p] as [number, number, number]);
   const path = getStroke(inputs, { ...PEN_OPTIONS, size: stroke.size, last: true });

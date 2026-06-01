@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { useTheme } from "@/composables/useTheme";
 import { exportPageAsPng } from "@/composables/useExport";
+import { useTheme } from "@/composables/useTheme";
 import { devMode, setDevMode } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
