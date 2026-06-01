@@ -11,3 +11,4 @@ dist-ssr
 .env.local
 coverage
 dev-dist
+.claude/
