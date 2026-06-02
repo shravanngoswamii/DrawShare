@@ -1,10 +1,15 @@
 import { getStroke } from "perfect-freehand";
 import { ref } from "vue";
 import { storage } from "@/adapters/storage/indexedDB";
-import type { Page, Stroke } from "@/core/types";
+import type { Page, Project, Stroke } from "@/core/types";
 
-const THUMB_W = 48;
-const THUMB_H = 68;
+// Page panel thumbnails: A4 ratio, contain mode
+const THUMB_W = 52;
+const THUMB_H = 74;
+
+// Project card thumbnails: 4:3 card ratio, cover mode (fills the card area)
+const PROJ_W = 480;
+const PROJ_H = 360;
 
 const PEN_OPTIONS = {
   size: 1,
@@ -17,21 +22,36 @@ const PEN_OPTIONS = {
   end: { taper: 20, cap: true },
 };
 
+// pageId → data URL (used in the pages panel)
 const thumbnails = ref<Record<string, string>>({});
+// projectId → data URL (used on the projects landing page)
+const projectThumbnails = ref<Record<string, string>>({});
 
-async function renderThumbnail(page: Page, strokes: Stroke[]): Promise<void> {
+async function renderToCanvas(
+  page: Page,
+  strokes: Stroke[],
+  w: number,
+  h: number,
+  cover: boolean,
+): Promise<string | null> {
   const pageStrokes = strokes.filter((s) => s.pageId === page.id);
   const texts = page.texts ?? [];
 
-  const scale = Math.min(THUMB_W / page.width, THUMB_H / page.height);
+  const scaleX = w / page.width;
+  const scaleY = h / page.height;
+  const scale = cover ? Math.max(scaleX, scaleY) : Math.min(scaleX, scaleY);
+  const offsetX = (w - page.width * scale) / 2;
+  const offsetY = (h - page.height * scale) / 2;
 
-  const canvas = new OffscreenCanvas(THUMB_W, THUMB_H);
+  const canvas = new OffscreenCanvas(w, h);
   const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D | null;
-  if (!ctx) return;
+  if (!ctx) return null;
 
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, THUMB_W, THUMB_H);
+  ctx.fillRect(0, 0, w, h);
 
+  ctx.save();
+  ctx.translate(offsetX, offsetY);
   ctx.scale(scale, scale);
 
   for (const stroke of pageStrokes) {
@@ -68,14 +88,29 @@ async function renderThumbnail(page: Page, strokes: Stroke[]): Promise<void> {
     ctx.restore();
   }
 
+  ctx.restore();
+
   const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 });
-  const dataUrl = await blobToDataUrl(blob);
-  thumbnails.value[page.id] = dataUrl;
+  return blobToDataUrl(blob);
+}
+
+async function renderThumbnail(page: Page, strokes: Stroke[]): Promise<void> {
+  const url = await renderToCanvas(page, strokes, THUMB_W, THUMB_H, false);
+  if (url) thumbnails.value[page.id] = url;
 }
 
 async function loadAndRenderThumbnail(page: Page): Promise<void> {
   const strokes = await storage.listStrokes(page.id);
   await renderThumbnail(page, strokes);
+}
+
+async function renderProjectThumbnail(project: Project): Promise<void> {
+  const pages = await storage.listPages(project.id);
+  if (!pages.length) return;
+  const firstPage = pages[0];
+  const strokes = await storage.listStrokes(firstPage.id);
+  const url = await renderToCanvas(firstPage, strokes, PROJ_W, PROJ_H, true);
+  if (url) projectThumbnails.value[project.id] = url;
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -87,5 +122,11 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 }
 
 export function useThumbnails() {
-  return { thumbnails, renderThumbnail, loadAndRenderThumbnail };
+  return {
+    thumbnails,
+    projectThumbnails,
+    renderThumbnail,
+    loadAndRenderThumbnail,
+    renderProjectThumbnail,
+  };
 }

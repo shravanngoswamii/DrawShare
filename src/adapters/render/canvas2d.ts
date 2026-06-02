@@ -41,6 +41,14 @@ const PEN_TYPE_OPTIONS: Record<PenType, Partial<typeof PEN_OPTIONS>> = {
   },
 };
 
+// Effective stroke size multipliers — makes each type immediately distinct
+// even at the same size-slider value.
+const PEN_TYPE_SIZE_SCALE: Record<PenType, number> = {
+  ballpoint: 1.0,
+  brush: 1.4, // slightly wider for a full calligraphic range
+  marker: 3.0, // bold and clearly chisel-like
+};
+
 // perfect-freehand's smoothing window is ~12 points. Points before that
 // threshold are stable and safe to cache. BATCH controls how many new stable
 // points must accumulate before we pay the cost of re-rendering the cache.
@@ -230,8 +238,14 @@ export class Canvas2DRenderer implements Renderer {
     if (points.length === 0) return;
 
     const typeOverride = penType ? PEN_TYPE_OPTIONS[penType] : {};
+    const sizeScale = penType ? PEN_TYPE_SIZE_SCALE[penType] : 1;
     const inputs = points.map((p) => [p.x, p.y, p.p] as [number, number, number]);
-    const path = getStroke(inputs, { ...PEN_OPTIONS, ...typeOverride, size, last });
+    const path = getStroke(inputs, {
+      ...PEN_OPTIONS,
+      ...typeOverride,
+      size: size * sizeScale,
+      last,
+    });
     if (path.length === 0) return;
 
     ctx.fillStyle = color;

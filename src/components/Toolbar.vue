@@ -216,31 +216,31 @@ onMounted(() => {
       <template v-if="editor.tool === 'pen'">
         <div class="divider"></div>
         <div class="group pen-types">
-          <!-- Ballpoint: thin uniform stroke with gentle taper -->
+          <!-- Ballpoint: thin precise stroke -->
           <button class="pen-type-btn" :class="{ active: editor.penType === 'ballpoint' }"
                   title="Ballpoint" aria-label="Ballpoint"
                   :aria-pressed="editor.penType === 'ballpoint'"
                   @click="editor.setPenType('ballpoint')">
-            <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-              <path d="M4 13 C6 10 10 8 14 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 20 C7 16 12 11 20 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
             </svg>
           </button>
-          <!-- Brush: calligraphic variable-width stroke -->
+          <!-- Brush: calligraphic variable-width (thick start → thin end) -->
           <button class="pen-type-btn" :class="{ active: editor.penType === 'brush' }"
                   title="Brush" aria-label="Brush"
                   :aria-pressed="editor.penType === 'brush'"
                   @click="editor.setPenType('brush')">
-            <svg width="16" height="16" viewBox="0 0 18 18" aria-hidden="true">
-              <path d="M3 15 C5 13 8 10 11 7 C13 5 15 3.5 15 3 C14 5 12 7 10 9 C7 11 5 13 3.5 15.5 Z" fill="currentColor"/>
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 21 C6 17 10 13 14 9 C17 6 20 4 21 3 C20 5 17 8 14 11 C10 15 7 18 4 22 Z" fill="currentColor"/>
             </svg>
           </button>
-          <!-- Marker: thick flat-ended stroke -->
+          <!-- Marker: thick uniform flat-capped stroke -->
           <button class="pen-type-btn" :class="{ active: editor.penType === 'marker' }"
                   title="Marker" aria-label="Marker"
                   :aria-pressed="editor.penType === 'marker'"
                   @click="editor.setPenType('marker')">
-            <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-              <path d="M4 14 L13 5" stroke="currentColor" stroke-width="5" stroke-linecap="square"/>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 20 L19 5" stroke="currentColor" stroke-width="7" stroke-linecap="square"/>
             </svg>
           </button>
         </div>
@@ -394,11 +394,11 @@ onMounted(() => {
 
 .pen-type-btn {
   width: 38px;
-  height: 32px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   color: var(--color-text-muted);
   transition: background 80ms ease, color 80ms ease;
   flex-shrink: 0;
