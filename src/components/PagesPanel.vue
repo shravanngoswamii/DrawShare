@@ -33,54 +33,37 @@ watch(
 
 const saveStatus = computed(() => (editor.saving > 0 ? "Saving…" : "Saved"));
 
-// Update the current page thumbnail whenever strokes or texts change.
 let thumbDebounce: ReturnType<typeof setTimeout> | undefined;
+
+// Render current page thumbnail whenever strokes or texts change.
+// Skips debounce on first render so the thumbnail appears immediately on load.
 watch(
   () => [editor.strokes, editor.currentPage?.texts],
   () => {
     const page = editor.currentPage;
     if (!page) return;
     clearTimeout(thumbDebounce);
-    thumbDebounce = setTimeout(() => {
+    if (!thumbnails.value[page.id]) {
       renderThumbnail(page, editor.strokes);
-    }, 400);
+    } else {
+      thumbDebounce = setTimeout(() => renderThumbnail(page, editor.strokes), 400);
+    }
   },
   { deep: false },
 );
 
-// When the panel opens, generate thumbnails for all pages that don't have one yet.
+// When the project loads or current page changes, lazy-load thumbnails for all
+// other pages. Works on desktop (panel always visible) and mobile.
 watch(
-  () => props.open,
-  async (isOpen) => {
-    if (!isOpen) return;
-    for (const page of editor.pages) {
-      if (thumbnails.value[page.id]) continue;
-      if (page.id === editor.currentPageId) {
-        renderThumbnail(page, editor.strokes);
-      } else {
-        loadAndRenderThumbnail(page);
-      }
+  () => editor.currentPageId,
+  (id) => {
+    if (!id) return;
+    for (const p of editor.pages) {
+      if (thumbnails.value[p.id] || p.id === id) continue;
+      loadAndRenderThumbnail(p);
     }
   },
-);
-
-// Also generate thumbnails for newly added pages.
-watch(
-  () => editor.pages.map((p) => p.id),
-  (ids, prev) => {
-    const prevSet = new Set(prev ?? []);
-    for (const id of ids) {
-      if (!prevSet.has(id)) {
-        const page = editor.pages.find((p) => p.id === id);
-        if (!page) continue;
-        if (page.id === editor.currentPageId) {
-          renderThumbnail(page, editor.strokes);
-        } else {
-          loadAndRenderThumbnail(page);
-        }
-      }
-    }
-  },
+  { immediate: true },
 );
 
 async function commitName() {

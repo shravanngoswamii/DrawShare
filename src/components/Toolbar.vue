@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import type { PenType, Tool } from "@/core/types";
+import type { Tool } from "@/core/types";
 import { useEditorStore } from "@/stores/editor";
 
 defineProps<{ collapsed?: boolean }>();
@@ -12,12 +12,6 @@ const penTools: { id: Tool; label: string; icon: string }[] = [
   { id: "pen", label: "Pen", icon: "pen" },
   { id: "highlighter", label: "Highlighter", icon: "highlight" },
   { id: "text", label: "Text", icon: "text" },
-];
-
-const penTypes: { id: PenType; label: string; abbr: string }[] = [
-  { id: "ballpoint", label: "Ballpoint", abbr: "Ball" },
-  { id: "brush", label: "Brush", abbr: "Brush" },
-  { id: "marker", label: "Marker", abbr: "Mkr" },
 ];
 
 const presetColors = [
@@ -222,15 +216,33 @@ onMounted(() => {
       <template v-if="editor.tool === 'pen'">
         <div class="divider"></div>
         <div class="group pen-types">
-          <button
-            v-for="pt in penTypes"
-            :key="pt.id"
-            class="pen-type-btn"
-            :class="{ active: editor.penType === pt.id }"
-            :title="pt.label"
-            :aria-pressed="editor.penType === pt.id"
-            @click="editor.setPenType(pt.id)"
-          >{{ pt.abbr }}</button>
+          <!-- Ballpoint: thin uniform stroke with gentle taper -->
+          <button class="pen-type-btn" :class="{ active: editor.penType === 'ballpoint' }"
+                  title="Ballpoint" aria-label="Ballpoint"
+                  :aria-pressed="editor.penType === 'ballpoint'"
+                  @click="editor.setPenType('ballpoint')">
+            <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+              <path d="M4 13 C6 10 10 8 14 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </button>
+          <!-- Brush: calligraphic variable-width stroke -->
+          <button class="pen-type-btn" :class="{ active: editor.penType === 'brush' }"
+                  title="Brush" aria-label="Brush"
+                  :aria-pressed="editor.penType === 'brush'"
+                  @click="editor.setPenType('brush')">
+            <svg width="16" height="16" viewBox="0 0 18 18" aria-hidden="true">
+              <path d="M3 15 C5 13 8 10 11 7 C13 5 15 3.5 15 3 C14 5 12 7 10 9 C7 11 5 13 3.5 15.5 Z" fill="currentColor"/>
+            </svg>
+          </button>
+          <!-- Marker: thick flat-ended stroke -->
+          <button class="pen-type-btn" :class="{ active: editor.penType === 'marker' }"
+                  title="Marker" aria-label="Marker"
+                  :aria-pressed="editor.penType === 'marker'"
+                  @click="editor.setPenType('marker')">
+            <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+              <path d="M4 14 L13 5" stroke="currentColor" stroke-width="5" stroke-linecap="square"/>
+            </svg>
+          </button>
         </div>
       </template>
 
@@ -378,18 +390,15 @@ onMounted(() => {
 .tool:disabled { opacity: 0.4; cursor: not-allowed; }
 .tool.active { background: var(--color-accent-soft); color: var(--color-accent); }
 
-.pen-types { gap: 3px; }
+.pen-types { gap: var(--space-1); }
 
 .pen-type-btn {
   width: 38px;
-  height: 24px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-sm);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
   color: var(--color-text-muted);
   transition: background 80ms ease, color 80ms ease;
   flex-shrink: 0;

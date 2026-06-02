@@ -15,20 +15,27 @@ const PEN_OPTIONS = {
   end: { taper: 20, cap: true },
 };
 
-// Per-type overrides on top of PEN_OPTIONS. "ballpoint" == defaults (no override needed).
+// Per-type overrides on top of PEN_OPTIONS.
 const PEN_TYPE_OPTIONS: Record<PenType, Partial<typeof PEN_OPTIONS>> = {
+  // Ballpoint: existing well-tuned defaults, unchanged.
   ballpoint: {},
+  // Brush: simulate pressure from speed so the stroke visibly thins on fast
+  // movement even without a pressure-sensitive stylus. High thinning and a
+  // long end taper give a dramatic calligraphic feel.
   brush: {
-    thinning: 0.82,
-    smoothing: 0.7,
-    streamline: 0.4,
-    start: { taper: 8, cap: true },
-    end: { taper: 40, cap: true },
+    thinning: 0.92,
+    smoothing: 0.65,
+    streamline: 0.45,
+    simulatePressure: true,
+    start: { taper: 10, cap: true },
+    end: { taper: 80, cap: true },
   },
+  // Marker: near-zero thinning and no taper produce a thick, completely flat
+  // stroke regardless of speed or pressure.
   marker: {
-    thinning: 0.25,
-    smoothing: 0.45,
-    streamline: 0.28,
+    thinning: 0.02,
+    smoothing: 0.4,
+    streamline: 0.25,
     start: { taper: 0, cap: true },
     end: { taper: 0, cap: true },
   },
