@@ -2,6 +2,8 @@ export type ID = string;
 
 export type Tool = "pen" | "highlighter" | "eraser" | "text";
 
+export type PenType = "ballpoint" | "brush" | "marker";
+
 export interface StrokePoint {
   x: number;
   y: number;
@@ -13,6 +15,7 @@ export interface Stroke {
   id: ID;
   pageId: ID;
   tool: Tool;
+  penType?: PenType;
   color: string;
   size: number;
   opacity: number;

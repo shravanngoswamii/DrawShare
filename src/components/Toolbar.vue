@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import type { Tool } from "@/core/types";
+import type { PenType, Tool } from "@/core/types";
 import { useEditorStore } from "@/stores/editor";
 
 defineProps<{ collapsed?: boolean }>();
@@ -12,6 +12,12 @@ const penTools: { id: Tool; label: string; icon: string }[] = [
   { id: "pen", label: "Pen", icon: "pen" },
   { id: "highlighter", label: "Highlighter", icon: "highlight" },
   { id: "text", label: "Text", icon: "text" },
+];
+
+const penTypes: { id: PenType; label: string; abbr: string }[] = [
+  { id: "ballpoint", label: "Ballpoint", abbr: "Ball" },
+  { id: "brush", label: "Brush", abbr: "Brush" },
+  { id: "marker", label: "Marker", abbr: "Mkr" },
 ];
 
 const presetColors = [
@@ -212,6 +218,22 @@ onMounted(() => {
         </div>
       </div>
 
+      <!-- Pen type selector — visible only when pen tool is active -->
+      <template v-if="editor.tool === 'pen'">
+        <div class="divider"></div>
+        <div class="group pen-types">
+          <button
+            v-for="pt in penTypes"
+            :key="pt.id"
+            class="pen-type-btn"
+            :class="{ active: editor.penType === pt.id }"
+            :title="pt.label"
+            :aria-pressed="editor.penType === pt.id"
+            @click="editor.setPenType(pt.id)"
+          >{{ pt.abbr }}</button>
+        </div>
+      </template>
+
       <div class="divider"></div>
 
       <!-- Stroke size (hidden for eraser, which has its own) -->
@@ -355,6 +377,25 @@ onMounted(() => {
 .tool:hover:not(:disabled) { background: var(--color-surface-2); color: var(--color-text); }
 .tool:disabled { opacity: 0.4; cursor: not-allowed; }
 .tool.active { background: var(--color-accent-soft); color: var(--color-accent); }
+
+.pen-types { gap: 3px; }
+
+.pen-type-btn {
+  width: 38px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--color-text-muted);
+  transition: background 80ms ease, color 80ms ease;
+  flex-shrink: 0;
+}
+.pen-type-btn:hover { background: var(--color-surface-2); color: var(--color-text); }
+.pen-type-btn.active { background: var(--color-accent-soft); color: var(--color-accent); }
 
 .size-dot { display: block; background: var(--color-text); border-radius: var(--radius-pill); }
 

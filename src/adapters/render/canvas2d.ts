@@ -1,6 +1,6 @@
 import { getStroke } from "perfect-freehand";
 import type { Camera, Renderer } from "@/core/ports";
-import type { Stroke, StrokePoint, TextItem } from "@/core/types";
+import type { PenType, Stroke, StrokePoint, TextItem } from "@/core/types";
 
 type DrawCtx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -13,6 +13,25 @@ const PEN_OPTIONS = {
   simulatePressure: false,
   start: { taper: 0, cap: true },
   end: { taper: 20, cap: true },
+};
+
+// Per-type overrides on top of PEN_OPTIONS. "ballpoint" == defaults (no override needed).
+const PEN_TYPE_OPTIONS: Record<PenType, Partial<typeof PEN_OPTIONS>> = {
+  ballpoint: {},
+  brush: {
+    thinning: 0.82,
+    smoothing: 0.7,
+    streamline: 0.4,
+    start: { taper: 8, cap: true },
+    end: { taper: 40, cap: true },
+  },
+  marker: {
+    thinning: 0.25,
+    smoothing: 0.45,
+    streamline: 0.28,
+    start: { taper: 0, cap: true },
+    end: { taper: 0, cap: true },
+  },
 };
 
 // perfect-freehand's smoothing window is ~12 points. Points before that
@@ -95,6 +114,7 @@ export class Canvas2DRenderer implements Renderer {
       stroke.opacity,
       stroke.size,
       true,
+      stroke.penType,
     );
   }
 
@@ -154,6 +174,7 @@ export class Canvas2DRenderer implements Renderer {
       stroke.opacity,
       stroke.size,
       false,
+      stroke.penType,
     );
   }
 
@@ -185,6 +206,7 @@ export class Canvas2DRenderer implements Renderer {
       stroke.opacity,
       stroke.size,
       false,
+      stroke.penType,
     );
     this.liveCacheCount = upToCount;
   }
@@ -196,11 +218,13 @@ export class Canvas2DRenderer implements Renderer {
     opacity: number,
     size: number,
     last: boolean,
+    penType?: PenType,
   ): void {
     if (points.length === 0) return;
 
+    const typeOverride = penType ? PEN_TYPE_OPTIONS[penType] : {};
     const inputs = points.map((p) => [p.x, p.y, p.p] as [number, number, number]);
-    const path = getStroke(inputs, { ...PEN_OPTIONS, size, last });
+    const path = getStroke(inputs, { ...PEN_OPTIONS, ...typeOverride, size, last });
     if (path.length === 0) return;
 
     ctx.fillStyle = color;
