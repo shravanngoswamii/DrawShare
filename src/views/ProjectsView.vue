@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import OnboardingTour from "@/components/OnboardingTour.vue";
 import { useProjectBackup } from "@/composables/useProjectBackup";
 import { useTheme } from "@/composables/useTheme";
 import { useEditorStore } from "@/stores/editor";
@@ -89,6 +90,7 @@ function formatDate(ts: number): string {
 </script>
 
 <template>
+  <OnboardingTour />
   <div class="page">
     <header class="header">
       <div class="header-inner">

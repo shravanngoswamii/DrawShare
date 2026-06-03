@@ -339,6 +339,50 @@ export const useEditorStore = defineStore("editor", {
       const square = this.eraserShape === "square";
       const survivors: Stroke[] = [];
       let changed = false;
+
+      function pointHit(px: number, py: number): boolean {
+        const dx = px - wx,
+          dy = py - wy;
+        return square ? Math.abs(dx) <= radius && Math.abs(dy) <= radius : dx * dx + dy * dy <= r2;
+      }
+
+      // Segment (ax,ay)-(bx,by) intersection test — catches gaps between sparse points.
+      // Circle: closest point on segment to eraser center.
+      // Square: Liang-Barsky AABB clip against [wx-r, wx+r] × [wy-r, wy+r].
+      function segmentHit(ax: number, ay: number, bx: number, by: number): boolean {
+        const dx = bx - ax,
+          dy = by - ay;
+        if (square) {
+          let tMin = 0,
+            tMax = 1;
+          const ps = [-dx, dx, -dy, dy];
+          const qs = [ax - wx + radius, wx + radius - ax, ay - wy + radius, wy + radius - ay];
+          for (let k = 0; k < 4; k++) {
+            const p = ps[k],
+              q = qs[k];
+            if (p === 0) {
+              if (q < 0) return false;
+              continue;
+            }
+            const t = q / p;
+            if (p < 0) {
+              tMin = Math.max(tMin, t);
+              if (tMin > tMax) return false;
+            } else {
+              tMax = Math.min(tMax, t);
+              if (tMax < tMin) return false;
+            }
+          }
+          return true;
+        }
+        const lenSq = dx * dx + dy * dy;
+        if (lenSq === 0) return pointHit(ax, ay);
+        const t = Math.max(0, Math.min(1, ((wx - ax) * dx + (wy - ay) * dy) / lenSq));
+        const cx = ax + t * dx - wx,
+          cy = ay + t * dy - wy;
+        return cx * cx + cy * cy <= r2;
+      }
+
       for (const stroke of this.strokes) {
         if (stroke.pageId !== pageId) {
           survivors.push(stroke);
@@ -347,12 +391,14 @@ export const useEditorStore = defineStore("editor", {
         const runs: Stroke["points"][] = [];
         let run: Stroke["points"] = [];
         let hit = false;
-        for (const p of stroke.points) {
-          const dx = p.x - wx;
-          const dy = p.y - wy;
-          const inside = square
-            ? Math.abs(dx) <= radius && Math.abs(dy) <= radius
-            : dx * dx + dy * dy <= r2;
+        for (let i = 0; i < stroke.points.length; i++) {
+          const p = stroke.points[i];
+          let inside = pointHit(p.x, p.y);
+          // Also test segment from previous point to catch gaps between sparse points
+          if (!inside && i > 0) {
+            const prev = stroke.points[i - 1];
+            inside = segmentHit(prev.x, prev.y, p.x, p.y);
+          }
           if (inside) {
             hit = true;
             if (run.length) {

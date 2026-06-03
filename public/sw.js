@@ -1,6 +1,9 @@
-const CACHE = "drawshare-v4";
+const CACHE = "drawshare-v5";
 
-self.addEventListener("install", () => {
+self.addEventListener("install", (event) => {
+  // Pre-cache the app shell so navigate requests can be served offline.
+  // Failure (e.g. no network during SW update) is non-fatal.
+  event.waitUntil(caches.open(CACHE).then((cache) => cache.add("./").catch(() => {})));
   self.skipWaiting();
 });
 
@@ -16,8 +19,8 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
-  if (request.mode === "navigate") return;
   if (new URL(request.url).origin !== self.location.origin) return;
+
   event.respondWith(
     caches.match(request).then((cached) => {
       const networkFetch = fetch(request).then((response) => {
@@ -30,6 +33,11 @@ self.addEventListener("fetch", (event) => {
       if (cached) {
         networkFetch.catch(() => {});
         return cached;
+      }
+      // Navigate requests that aren't cached yet fall back to the app root
+      // (the SPA handles all routes client-side).
+      if (request.mode === "navigate") {
+        return networkFetch.catch(() => caches.match("./").then((r) => r ?? Response.error()));
       }
       return networkFetch.catch(() => Response.error());
     }),
