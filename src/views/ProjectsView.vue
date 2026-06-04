@@ -6,6 +6,8 @@ import { useTheme } from "@/composables/useTheme";
 import { useEditorStore } from "@/stores/editor";
 import { useProjectsStore } from "@/stores/projects";
 
+const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
 const projects = useProjectsStore();
 const editor = useEditorStore();
 const router = useRouter();
@@ -17,6 +19,7 @@ const query = ref("");
 const renamingId = ref<string | null>(null);
 const renameValue = ref("");
 const joinCode = ref("");
+const trashOpen = ref(false);
 
 async function handleImport(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0];
@@ -46,8 +49,8 @@ onMounted(async () => {
 
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase();
-  if (!q) return projects.projects;
-  return projects.projects.filter((p) => p.name.toLowerCase().includes(q));
+  if (!q) return projects.activeProjects;
+  return projects.activeProjects.filter((p) => p.name.toLowerCase().includes(q));
 });
 
 function createNew() {
@@ -72,9 +75,22 @@ async function commitRename() {
   renamingId.value = null;
 }
 
-async function remove(id: string, name: string) {
-  if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+async function remove(id: string) {
   await projects.remove(id);
+}
+
+async function restore(id: string) {
+  await projects.restore(id);
+}
+
+async function permanentDelete(id: string, name: string) {
+  if (!confirm(`Permanently delete "${name}"? This cannot be undone.`)) return;
+  await projects.permanentDelete(id);
+}
+
+function daysRemaining(deletedAt: number): number {
+  const msRemaining = TRASH_RETENTION_MS - (Date.now() - deletedAt);
+  return Math.max(0, Math.ceil(msRemaining / (24 * 60 * 60 * 1000)));
 }
 
 function formatDate(ts: number): string {
@@ -179,13 +195,13 @@ function formatDate(ts: number): string {
       <div class="page-header">
         <h1 class="page-title">Projects</h1>
         <div class="muted page-count" v-if="projects.loaded">
-          {{ projects.projects.length }} total
+          {{ projects.activeProjects.length }} total
         </div>
       </div>
 
       <div v-if="!projects.loaded" class="state muted">Loading.</div>
 
-      <div v-else-if="filtered.length === 0 && !query" class="empty">
+      <div v-else-if="filtered.length === 0 && !query && projects.activeProjects.length === 0" class="empty">
         <div class="empty-icon" aria-hidden="true">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
@@ -231,13 +247,47 @@ function formatDate(ts: number): string {
               <button class="btn btn-ghost btn-sm" @click="exportProject(p.id)" title="Export this project as JSON backup">
                 Export
               </button>
-              <button class="btn btn-ghost btn-sm card-danger" @click="remove(p.id, p.name)">
+              <button class="btn btn-ghost btn-sm card-danger" @click="remove(p.id)">
                 Delete
               </button>
             </div>
           </div>
         </li>
       </ul>
+
+      <!-- Trash section -->
+      <section v-if="projects.loaded && projects.trashedProjects.length > 0" class="trash-section">
+        <button class="trash-header" @click="trashOpen = !trashOpen" :aria-expanded="trashOpen">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+            <path d="M10 11v6M14 11v6" />
+            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+          </svg>
+          <span class="trash-title">Trash</span>
+          <span class="trash-count muted">{{ projects.trashedProjects.length }}</span>
+          <svg class="trash-chevron" :class="{ open: trashOpen }" width="14" height="14" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            aria-hidden="true">
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </button>
+        <ul v-if="trashOpen" class="trash-list">
+          <li v-for="p in projects.trashedProjects" :key="p.id" class="trash-item">
+            <div class="trash-item-info">
+              <span class="trash-item-name">{{ p.name }}</span>
+              <span class="trash-item-meta muted">
+                {{ daysRemaining(p.deletedAt!) }} day{{ daysRemaining(p.deletedAt!) === 1 ? '' : 's' }} remaining
+              </span>
+            </div>
+            <div class="trash-item-actions">
+              <button class="btn btn-ghost btn-sm" @click="restore(p.id)">Restore</button>
+              <button class="btn btn-ghost btn-sm card-danger" @click="permanentDelete(p.id, p.name)">Delete permanently</button>
+            </div>
+          </li>
+        </ul>
+      </section>
     </main>
   </div>
 </template>
@@ -512,6 +562,97 @@ function formatDate(ts: number): string {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border-width: 0;
+}
+
+.trash-section {
+  margin-top: var(--space-10);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.trash-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+}
+
+.trash-header:hover {
+  background: var(--color-surface-2);
+}
+
+.trash-title {
+  flex: 1;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.trash-count {
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.trash-chevron {
+  transition: transform 200ms ease;
+  flex-shrink: 0;
+}
+
+.trash-chevron.open {
+  transform: rotate(180deg);
+}
+
+.trash-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.trash-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.trash-item:last-child {
+  border-bottom: none;
+}
+
+.trash-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.trash-item-name {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trash-item-meta {
+  font-size: var(--text-xs);
+}
+
+.trash-item-actions {
+  display: flex;
+  gap: var(--space-1);
+  flex-shrink: 0;
 }
 
 /* Tablet */

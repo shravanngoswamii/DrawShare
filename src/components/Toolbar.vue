@@ -48,6 +48,7 @@ function setSize(v: number) {
 const COLOR_KEY = "drawshare:color";
 const RECENT_KEY = "drawshare:recentColors";
 const DOCK_KEY = "drawshare:dock";
+const DOCK_POSITIONS_KEY = "drawshare:dock-positions";
 const recentColors = ref<string[]>([]);
 const hexInput = ref("");
 
@@ -74,12 +75,46 @@ function chooseColor(c: string) {
   }
 }
 
-// Magnetic docking: drag the toolbar, snap to the nearest of left / top / bottom.
-type Dock = "left" | "top" | "bottom";
+// Magnetic docking: drag the toolbar, snap to nearest of left / right / top / bottom.
+// Each side remembers its last position (fraction 0–1 along the edge).
+type Dock = "left" | "right" | "top" | "bottom";
+
+interface DockPositions {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
 const dock = ref<Dock>("left");
+const dockPositions = ref<DockPositions>({ left: 0.5, right: 0.5, top: 0.5, bottom: 0.5 });
 const dragging = ref(false);
 const dragStyle = ref<Record<string, string>>({});
-const horizontal = computed(() => dock.value !== "left");
+const horizontal = computed(() => dock.value === "top" || dock.value === "bottom");
+
+// Compute the inline style that positions the toolbar on its docked edge.
+const dockStyle = computed(() => {
+  if (Object.keys(dragStyle.value).length > 0) return {} as Record<string, string>;
+  const frac = dockPositions.value[dock.value];
+  switch (dock.value) {
+    case "left":
+      return { left: "8px", top: `${frac * 100}%`, transform: "translateY(-50%)" };
+    case "right":
+      return { right: "8px", top: `${frac * 100}%`, transform: "translateY(-50%)" };
+    case "top":
+      return { top: "8px", left: `${frac * 100}%`, transform: "translateX(-50%)" };
+    case "bottom":
+      return { bottom: "8px", left: `${frac * 100}%`, transform: "translateX(-50%)" };
+  }
+});
+
+function saveDockPositions() {
+  try {
+    localStorage.setItem(DOCK_POSITIONS_KEY, JSON.stringify(dockPositions.value));
+  } catch {
+    /* ignore */
+  }
+}
 
 function onGripDown(e: PointerEvent) {
   e.preventDefault();
@@ -119,16 +154,35 @@ function onGripDown(e: PointerEvent) {
     }
     dragging.value = false;
     dragStyle.value = {};
+    // Determine the nearest edge based on pointer position.
     const dl = ev.clientX;
+    const dr = window.innerWidth - ev.clientX;
     const dt = ev.clientY;
     const db = window.innerHeight - ev.clientY;
-    const min = Math.min(dl, dt, db);
-    dock.value = min === dl ? "left" : min === dt ? "top" : "bottom";
+    const min = Math.min(dl, dr, dt, db);
+    let newDock: Dock;
+    let frac: number;
+    if (min === dl) {
+      newDock = "left";
+      frac = Math.max(0, Math.min(1, ev.clientY / window.innerHeight));
+    } else if (min === dr) {
+      newDock = "right";
+      frac = Math.max(0, Math.min(1, ev.clientY / window.innerHeight));
+    } else if (min === dt) {
+      newDock = "top";
+      frac = Math.max(0, Math.min(1, ev.clientX / window.innerWidth));
+    } else {
+      newDock = "bottom";
+      frac = Math.max(0, Math.min(1, ev.clientX / window.innerWidth));
+    }
+    dock.value = newDock;
+    dockPositions.value[newDock] = frac;
     try {
       localStorage.setItem(DOCK_KEY, dock.value);
     } catch {
       /* ignore */
     }
+    saveDockPositions();
   };
   window.addEventListener("pointermove", move);
   window.addEventListener("pointerup", up);
@@ -140,7 +194,15 @@ onMounted(() => {
     if (saved && isHex(saved)) editor.setColor(saved);
     recentColors.value = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
     const d = localStorage.getItem(DOCK_KEY);
-    if (d === "left" || d === "top" || d === "bottom") dock.value = d;
+    if (d === "left" || d === "right" || d === "top" || d === "bottom") dock.value = d;
+    const savedPositions = localStorage.getItem(DOCK_POSITIONS_KEY);
+    if (savedPositions) {
+      const parsed = JSON.parse(savedPositions) as Partial<DockPositions>;
+      if (typeof parsed.left === "number") dockPositions.value.left = parsed.left;
+      if (typeof parsed.right === "number") dockPositions.value.right = parsed.right;
+      if (typeof parsed.top === "number") dockPositions.value.top = parsed.top;
+      if (typeof parsed.bottom === "number") dockPositions.value.bottom = parsed.bottom;
+    }
   } catch {
     /* ignore */
   }
@@ -152,7 +214,7 @@ onMounted(() => {
   <aside
     class="toolbar"
     :class="[`dock-${dock}`, { 'is-collapsed': collapsed, quiet: editor.isDrawing, horizontal, dragging }]"
-    :style="dragStyle"
+    :style="Object.keys(dragStyle).length > 0 ? dragStyle : dockStyle"
     aria-label="Drawing tools"
   >
     <button class="grip" @pointerdown="onGripDown" title="Drag to move, tap to collapse" aria-label="Move or collapse toolbar">
@@ -296,9 +358,12 @@ onMounted(() => {
     transform 200ms ease, opacity 180ms ease;
 }
 
-.dock-left { left: 8px; top: 50%; transform: translateY(-50%); transform-origin: left center; }
-.dock-top { top: 8px; left: 50%; transform: translateX(-50%); transform-origin: top center; }
-.dock-bottom { bottom: 8px; left: 50%; transform: translateX(-50%); transform-origin: bottom center; }
+/* dock-* classes set transform-origin for scale animations only;
+   actual position is driven by dockStyle inline style. */
+.dock-left { transform-origin: left center; }
+.dock-right { transform-origin: right center; }
+.dock-top { transform-origin: top center; }
+.dock-bottom { transform-origin: bottom center; }
 
 .toolbar.horizontal {
   flex-direction: row;
@@ -384,6 +449,7 @@ onMounted(() => {
 }
 /* Open away from the docked edge */
 .pop-left { left: calc(100% + 10px); top: -6px; }
+.pop-right { right: calc(100% + 10px); top: -6px; }
 .pop-top { top: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
 .pop-bottom { bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
 
@@ -464,6 +530,7 @@ onMounted(() => {
 @media (max-width: 767px) {
   .toolbar,
   .toolbar.dock-left,
+  .toolbar.dock-right,
   .toolbar.dock-top,
   .toolbar.dock-bottom {
     position: static;
