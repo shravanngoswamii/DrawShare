@@ -4,6 +4,7 @@ import { onBeforeRouteLeave, useRouter } from "vue-router";
 import { installPointerProbe } from "@/adapters/input/pointerDebug";
 import CanvasStage from "@/components/CanvasStage.vue";
 import DebugConsole from "@/components/DebugConsole.vue";
+import HelpPanel from "@/components/HelpPanel.vue";
 import PagesPanel from "@/components/PagesPanel.vue";
 import ShareSessionModal from "@/components/ShareSessionModal.vue";
 import Toolbar from "@/components/Toolbar.vue";
@@ -22,6 +23,7 @@ const panelOpen = ref(false);
 const toolbarCollapsed = ref(false);
 const pagesCollapsed = ref(false);
 const shareOpen = ref(false);
+const helpOpen = ref(false);
 
 // Editor open/close animation. Closing plays the reverse (collapse-to-center)
 // before any navigation away from the editor — back button, browser back, or
@@ -80,6 +82,7 @@ function onKey(e: KeyboardEvent) {
   else if (e.key === "3") editor.setTool("eraser");
   else if (e.key === "Escape") {
     panelOpen.value = false;
+    helpOpen.value = false;
   }
 }
 
@@ -130,7 +133,16 @@ onBeforeUnmount(() => removeProbe?.());
           <path fill="currentColor" fill-rule="evenodd" d="M10 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-8zM9 7H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3zM4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" clip-rule="evenodd"/>
         </svg>
       </button>
+      <button
+        class="help-fab"
+        :class="{ quiet: editor.isDrawing, active: helpOpen }"
+        @click="helpOpen = !helpOpen"
+        title="Help"
+        aria-label="Help"
+        :aria-expanded="helpOpen"
+      >?</button>
     </div>
+    <HelpPanel :open="helpOpen" @close="helpOpen = false" />
     <ShareSessionModal :open="shareOpen" @close="shareOpen = false" />
     <DebugConsole v-if="devMode" />
   </div>
@@ -288,6 +300,31 @@ onBeforeUnmount(() => removeProbe?.());
   opacity: 0.06;
   pointer-events: none;
 }
+
+.help-fab {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  z-index: 20;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--color-glass-bg-strong);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-glass-border);
+  box-shadow: 0 2px 8px var(--color-glass-shadow);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: box-shadow 150ms, color 80ms, background 80ms, opacity 150ms;
+}
+.help-fab:hover { box-shadow: var(--shadow-md); color: var(--color-text); }
+.help-fab.active { background: var(--color-accent-soft); color: var(--color-accent); border-color: var(--color-accent); }
+.help-fab.quiet { opacity: 0.06; pointer-events: none; }
 
 .hub-btn {
   position: absolute;

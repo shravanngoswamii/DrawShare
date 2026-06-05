@@ -32,12 +32,17 @@ const input = new PointerInputAdapter();
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 10;
 
+// A4 page dimensions in world units (794 × 1123 px at 96 DPI), anchored at world (0,0).
+const PAGE_W = 794;
+const PAGE_H = 1123;
+
 // Camera – plain object for perf (mutated directly, not reactive)
 const cam = { x: 0, y: 0, zoom: 1 };
 
 // Reactive state for template only
 const zoomLabel = ref("100%");
 const bgStyle = ref({ backgroundSize: "32px 32px", backgroundPosition: "0px 0px" });
+const pageOverlayStyle = ref<Record<string, string>>({});
 const panCursor = ref(false);
 
 // Text tool editing overlay
@@ -72,6 +77,9 @@ let frameQueued = false;
 let dirtyBase = true;
 let viewW = 0;
 let viewH = 0;
+
+// Strict notebook mode: once a stroke exits the page boundary, block further points.
+let strictBlocked = false;
 
 // Navigation state (plain booleans – not reactive)
 let spaceHeld = false;
@@ -110,11 +118,25 @@ function updateBg() {
   };
 }
 
+function isInPage(wx: number, wy: number): boolean {
+  return wx >= 0 && wx <= PAGE_W && wy >= 0 && wy <= PAGE_H;
+}
+
+function updatePageOverlay() {
+  pageOverlayStyle.value = {
+    left: `${(0 - cam.x) * cam.zoom}px`,
+    top: `${(0 - cam.y) * cam.zoom}px`,
+    width: `${PAGE_W * cam.zoom}px`,
+    height: `${PAGE_H * cam.zoom}px`,
+  };
+}
+
 function syncCamera() {
   baseRenderer.setCamera({ ...cam });
   liveRenderer.setCamera({ ...cam });
   zoomLabel.value = `${Math.round(cam.zoom * 100)}%`;
   updateBg();
+  updatePageOverlay();
   updateEditStyle();
   live.setHostCamera(cam.x, cam.y, cam.zoom);
   dirtyBase = true;
@@ -134,6 +156,7 @@ function fitCanvas() {
   liveRenderer.setCamera({ ...cam });
   live.setHostViewport(viewW, viewH);
   updateBg();
+  updatePageOverlay();
   dirtyBase = true;
   schedule();
 }
@@ -390,6 +413,10 @@ function handleDown(s: InputSample) {
   ) {
     active.blur();
   }
+  if (editor.notebookMode === "strict" && editor.tool !== "eraser") {
+    const w = toWorld(s.x, s.y);
+    if (!isInPage(w.x, w.y)) return;
+  }
   if (editor.tool === "text") {
     const w = toWorld(s.x, s.y);
     if (editing.value) commitEditing();
@@ -432,6 +459,20 @@ function handleDown(s: InputSample) {
 
 function handleMove(samples: InputSample[]) {
   if (panActive || pinchActive) return;
+  if (editor.notebookMode === "strict" && currentStroke) {
+    if (strictBlocked) return;
+    const allowed: InputSample[] = [];
+    for (const pt of samples) {
+      const w = toWorld(pt.x, pt.y);
+      if (!isInPage(w.x, w.y)) {
+        strictBlocked = true;
+        break;
+      }
+      allowed.push(pt);
+    }
+    samples = allowed;
+    if (samples.length === 0) return;
+  }
   if (textDrag) {
     const s = samples[samples.length - 1];
     const w = toWorld(s.x, s.y);
@@ -485,6 +526,7 @@ function appendFinalPoint(stroke: Stroke, sample?: InputSample) {
 }
 
 async function handleUp(sample?: InputSample) {
+  strictBlocked = false;
   if (textDrag) {
     const d = textDrag;
     textDrag = null;
@@ -519,6 +561,7 @@ async function handleUp(sample?: InputSample) {
 }
 
 async function handleCancel(sample?: InputSample) {
+  strictBlocked = false;
   if (textDrag) {
     if (textDrag.moved) editor.commitText({ ...textDrag.item });
     textDrag = null;
@@ -716,6 +759,7 @@ onMounted(() => {
   liveRenderer.attach(liveEl.value);
   applyInkAdapter();
   fitCanvas();
+  updatePageOverlay();
   wrap.value.addEventListener("wheel", onWheel, { passive: false });
   wrap.value.addEventListener("pointerdown", onNavPointerDown, { capture: true, passive: false });
   wrap.value.addEventListener("pointermove", onNavPointerMove, { capture: true, passive: false });
@@ -778,6 +822,15 @@ onBeforeUnmount(() => {
       @keydown.escape.prevent="commitEditing"
       @keydown.enter.exact.prevent="commitEditing"
     ></textarea>
+    <div
+      v-if="editor.notebookMode !== 'off'"
+      class="page-frame"
+      :class="{ 'is-strict': editor.notebookMode === 'strict' }"
+      :style="pageOverlayStyle"
+      aria-hidden="true"
+    >
+      <span class="page-frame-label">{{ editor.notebookMode === 'strict' ? 'A4 strict' : 'A4' }}</span>
+    </div>
     <div
       v-if="eraseCursor"
       class="eraser-cursor"
@@ -860,6 +913,38 @@ onBeforeUnmount(() => {
 
 .live {
   touch-action: none;
+}
+
+.page-frame {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  border: 2px dashed color-mix(in srgb, var(--color-accent) 60%, transparent);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+
+.page-frame.is-strict {
+  border-style: solid;
+  border-color: color-mix(in srgb, #f59e0b 70%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #f59e0b 15%, transparent);
+}
+
+.page-frame-label {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  opacity: 0.7;
+  user-select: none;
+}
+
+.page-frame.is-strict .page-frame-label {
+  color: #f59e0b;
 }
 
 .eraser-cursor {

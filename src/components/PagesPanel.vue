@@ -260,6 +260,21 @@ async function exportCurrentPage() {
         </div>
       </div>
 
+      <!-- ── Canvas mode ── -->
+      <div class="section">
+        <div class="section-title">Canvas Mode</div>
+        <div class="mode-btns">
+          <button class="mode-btn" :class="{ active: editor.notebookMode === 'off' }" @click="editor.setNotebookMode('off')">Free</button>
+          <button class="mode-btn" :class="{ active: editor.notebookMode === 'notebook' }" @click="editor.setNotebookMode('notebook')">Notebook</button>
+          <button class="mode-btn mode-btn-strict" :class="{ active: editor.notebookMode === 'strict' }" @click="editor.setNotebookMode('strict')">Strict</button>
+        </div>
+        <p class="mode-hint">
+          <template v-if="editor.notebookMode === 'off'">Infinite canvas — draw anywhere.</template>
+          <template v-else-if="editor.notebookMode === 'notebook'">A4 guide shown; drawing anywhere allowed.</template>
+          <template v-else>Drawing outside the A4 boundary is blocked.</template>
+        </p>
+      </div>
+
     </aside>
   </div>
 </template>
@@ -588,6 +603,42 @@ async function exportCurrentPage() {
   background: var(--color-success-soft);
   border-color: var(--color-success);
   color: var(--color-success-strong);
+}
+
+/* ── Canvas mode ── */
+.mode-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.mode-btn {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-glass-bg);
+  padding: var(--space-2) var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+}
+.mode-btn:hover { background: var(--color-surface-2); color: var(--color-text); }
+.mode-btn.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-text);
+}
+.mode-btn-strict.active {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  color: #fff;
+}
+
+.mode-hint {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  line-height: 1.4;
 }
 
 /* ── Background ── */

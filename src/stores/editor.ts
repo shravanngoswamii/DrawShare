@@ -23,6 +23,7 @@ interface EditorState {
   _areaEraseBefore: Stroke[] | null;
   camera: { x: number; y: number; zoom: number };
   isDrawing: boolean;
+  notebookMode: "off" | "notebook" | "strict";
 }
 
 export const useEditorStore = defineStore("editor", {
@@ -43,6 +44,7 @@ export const useEditorStore = defineStore("editor", {
     _areaEraseBefore: null,
     camera: { x: 0, y: 0, zoom: 1 },
     isDrawing: false,
+    notebookMode: "off",
   }),
   getters: {
     currentPage(state): Page | undefined {
@@ -413,6 +415,9 @@ export const useEditorStore = defineStore("editor", {
     },
     setDrawing(active: boolean) {
       this.isDrawing = active;
+    },
+    setNotebookMode(mode: "off" | "notebook" | "strict") {
+      this.notebookMode = mode;
     },
   },
 });
