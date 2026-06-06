@@ -35,7 +35,16 @@ export const useEditorStore = defineStore("editor", {
     shapes: [],
     tool: "pen",
     color: "#0f172a",
-    toolSizes: { pen: 4, highlighter: 20, eraser: 24, text: 4, rect: 2, ellipse: 2, line: 2, arrow: 2 },
+    toolSizes: {
+      pen: 4,
+      highlighter: 20,
+      eraser: 24,
+      text: 4,
+      rect: 2,
+      ellipse: 2,
+      line: 2,
+      arrow: 2,
+    },
     opacity: 1,
     eraserMode: "stroke",
     eraserShape: "circle",
@@ -294,7 +303,11 @@ export const useEditorStore = defineStore("editor", {
       } else if (entry.kind === "shape-add") {
         this.shapes = this.shapes.filter((s) => s.id !== entry.shape.id);
         await storage.deleteShape(entry.shape.id);
-        useLiveStore().broadcast({ t: "shape-delete", pageId: entry.shape.pageId, shapeId: entry.shape.id });
+        useLiveStore().broadcast({
+          t: "shape-delete",
+          pageId: entry.shape.pageId,
+          shapeId: entry.shape.id,
+        });
       } else if (entry.kind === "shape-erase") {
         this.shapes = [...this.shapes, entry.shape];
         await storage.putShape(entry.shape);
@@ -349,7 +362,11 @@ export const useEditorStore = defineStore("editor", {
       } else if (entry.kind === "shape-erase") {
         this.shapes = this.shapes.filter((s) => s.id !== entry.shape.id);
         await storage.deleteShape(entry.shape.id);
-        useLiveStore().broadcast({ t: "shape-delete", pageId: entry.shape.pageId, shapeId: entry.shape.id });
+        useLiveStore().broadcast({
+          t: "shape-delete",
+          pageId: entry.shape.pageId,
+          shapeId: entry.shape.id,
+        });
       }
     },
     async clearPage() {
