@@ -1,6 +1,6 @@
 import { getStroke } from "perfect-freehand";
 import type { Camera, Renderer } from "@/core/ports";
-import type { Stroke, StrokePoint, TextItem } from "@/core/types";
+import type { Shape, Stroke, StrokePoint, TextItem } from "@/core/types";
 
 type DrawCtx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -96,6 +96,49 @@ export class Canvas2DRenderer implements Renderer {
       stroke.size,
       true,
     );
+  }
+
+  drawShape(shape: Shape): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    ctx.save();
+    ctx.strokeStyle = this.inkAdapt(shape.color);
+    ctx.lineWidth = shape.size;
+    ctx.globalAlpha = shape.opacity;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    const { x1, y1, x2, y2 } = shape;
+    ctx.beginPath();
+    if (shape.type === "rect") {
+      ctx.rect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+    } else if (shape.type === "ellipse") {
+      const cx = (x1 + x2) / 2,
+        cy = (y1 + y2) / 2;
+      const rx = Math.abs(x2 - x1) / 2,
+        ry = Math.abs(y2 - y1) / 2;
+      if (rx > 0 && ry > 0) ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    } else if (shape.type === "line") {
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+    } else if (shape.type === "arrow") {
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      const headLen = Math.max(10, shape.size * 5);
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(
+        x2 - headLen * Math.cos(angle - Math.PI / 6),
+        y2 - headLen * Math.sin(angle - Math.PI / 6),
+      );
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(
+        x2 - headLen * Math.cos(angle + Math.PI / 6),
+        y2 - headLen * Math.sin(angle + Math.PI / 6),
+      );
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.restore();
   }
 
   drawText(item: TextItem): void {
