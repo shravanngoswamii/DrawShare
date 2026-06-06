@@ -6,10 +6,15 @@ import { useTheme } from "@/composables/useTheme";
 import { newId } from "@/core/ids";
 import { adaptInk } from "@/core/ink";
 import type { InputSample } from "@/core/ports";
-import type { Page, Stroke, StrokePoint, TextItem } from "@/core/types";
+import type { Page, Shape, ShapeType, Stroke, StrokePoint, TextItem, Tool } from "@/core/types";
 import { dlog } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
+
+const SHAPE_TOOLS = new Set<Tool>(["rect", "ellipse", "line", "arrow"]);
+function isShapeTool(t: Tool): t is ShapeType {
+  return SHAPE_TOOLS.has(t);
+}
 
 const props = defineProps<{ page: Page }>();
 const editor = useEditorStore();
@@ -57,6 +62,7 @@ const editStyle = ref<Record<string, string>>({});
 const eraseCursor = ref<{ x: number; y: number } | null>(null);
 
 let currentStroke: Stroke | undefined;
+let currentShape: Shape | undefined;
 let isErasing = false;
 let textDrag: {
   item: TextItem;
@@ -187,6 +193,7 @@ function render() {
     baseRenderer.clear();
     baseRenderer.beginFrame();
     for (const s of editor.strokes) baseRenderer.drawStroke(s);
+    for (const sh of editor.shapes) baseRenderer.drawShape(sh);
     for (const t of editor.currentPage?.texts ?? []) {
       if (editing.value?.id === t.id) continue;
       baseRenderer.drawText(t);
@@ -196,7 +203,11 @@ function render() {
     dirtyBase = false;
   }
   liveRenderer.clear();
-  if (currentStroke && currentStroke.points.length > 0) {
+  if (currentShape) {
+    liveRenderer.beginFrame();
+    liveRenderer.drawShape(currentShape);
+    liveRenderer.endFrame();
+  } else if (currentStroke && currentStroke.points.length > 0) {
     liveRenderer.beginFrame();
     if (predictedPoints.length > 0) {
       liveRenderer.drawLive({
@@ -402,6 +413,25 @@ function handleDown(s: InputSample) {
     }
     return;
   }
+  if (isShapeTool(editor.tool)) {
+    const w = toWorld(s.x, s.y);
+    currentShape = {
+      id: newId(),
+      pageId: props.page.id,
+      type: editor.tool as ShapeType,
+      x1: w.x,
+      y1: w.y,
+      x2: w.x,
+      y2: w.y,
+      color: editor.color,
+      size: editor.size,
+      opacity: editor.opacity,
+      createdAt: Date.now(),
+    };
+    editor.setDrawing(true);
+    schedule();
+    return;
+  }
   editor.setDrawing(true);
   if (editor.tool === "eraser") {
     isErasing = true;
@@ -453,6 +483,14 @@ function handleMove(samples: InputSample[]) {
       const w = toWorld(s.x, s.y);
       eraseAt(w.x, w.y);
     }
+    return;
+  }
+  if (currentShape) {
+    const last = samples[samples.length - 1];
+    const w = toWorld(last.x, last.y);
+    currentShape.x2 = w.x;
+    currentShape.y2 = w.y;
+    schedule();
     return;
   }
   if (!currentStroke) return;
@@ -507,6 +545,25 @@ async function handleUp(sample?: InputSample) {
     }
     return;
   }
+  if (currentShape) {
+    editor.setDrawing(false);
+    if (sample) {
+      const w = toWorld(sample.x, sample.y);
+      currentShape.x2 = w.x;
+      currentShape.y2 = w.y;
+    }
+    const minDist = 2 / cam.zoom;
+    if (
+      Math.abs(currentShape.x2 - currentShape.x1) > minDist ||
+      Math.abs(currentShape.y2 - currentShape.y1) > minDist
+    ) {
+      await editor.commitShape({ ...currentShape });
+    }
+    currentShape = undefined;
+    dirtyBase = true;
+    schedule();
+    return;
+  }
   if (!currentStroke) return;
   predictedPoints = [];
   appendFinalPoint(currentStroke, sample);
@@ -534,6 +591,12 @@ async function handleCancel(sample?: InputSample) {
       areaErased = false;
       editor.flushPage(props.page.id);
     }
+    return;
+  }
+  if (currentShape) {
+    editor.setDrawing(false);
+    currentShape = undefined;
+    schedule();
     return;
   }
   if (!currentStroke) return;
@@ -677,6 +740,13 @@ function onKeyUp(e: KeyboardEvent) {
 
 watch(
   () => editor.strokes.length,
+  () => {
+    dirtyBase = true;
+    schedule();
+  },
+);
+watch(
+  () => editor.shapes.length,
   () => {
     dirtyBase = true;
     schedule();

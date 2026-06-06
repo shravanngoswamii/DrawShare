@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { storage } from "@/adapters/storage/indexedDB";
 import { newId } from "@/core/ids";
-import type { HistoryEntry, Page, Project, Stroke, TextItem, Tool } from "@/core/types";
+import type { HistoryEntry, Page, Project, Shape, Stroke, TextItem, Tool } from "@/core/types";
 import { dlog } from "@/debug";
 import { useLiveStore } from "./live";
 import { DEFAULT_PAGE_SIZE, useProjectsStore } from "./projects";
@@ -11,6 +11,7 @@ interface EditorState {
   pages: Page[];
   currentPageId: string | undefined;
   strokes: Stroke[];
+  shapes: Shape[];
   tool: Tool;
   color: string;
   toolSizes: Record<Tool, number>;
@@ -31,9 +32,10 @@ export const useEditorStore = defineStore("editor", {
     pages: [],
     currentPageId: undefined,
     strokes: [],
+    shapes: [],
     tool: "pen",
     color: "#0f172a",
-    toolSizes: { pen: 4, highlighter: 20, eraser: 24, text: 4 },
+    toolSizes: { pen: 4, highlighter: 20, eraser: 24, text: 4, rect: 2, ellipse: 2, line: 2, arrow: 2 },
     opacity: 1,
     eraserMode: "stroke",
     eraserShape: "circle",
@@ -66,6 +68,7 @@ export const useEditorStore = defineStore("editor", {
       }
       this.currentPageId = this.pages[0].id;
       await this.loadStrokes(this.currentPageId);
+      await this.loadShapes(this.currentPageId);
       this.history = [];
       this.redoStack = [];
     },
@@ -80,10 +83,14 @@ export const useEditorStore = defineStore("editor", {
     async loadStrokes(pageId: string) {
       this.strokes = await storage.listStrokes(pageId);
     },
+    async loadShapes(pageId: string) {
+      this.shapes = await storage.listShapes(pageId);
+    },
     async selectPage(pageId: string) {
       if (this.currentPageId === pageId) return;
       this.currentPageId = pageId;
       await this.loadStrokes(pageId);
+      await this.loadShapes(pageId);
       this.history = [];
       this.redoStack = [];
       useLiveStore().broadcast({
@@ -203,6 +210,28 @@ export const useEditorStore = defineStore("editor", {
         this.saving--;
       }
     },
+    async commitShape(shape: Shape) {
+      this.saving++;
+      try {
+        this.shapes = [...this.shapes, shape];
+        this.history = [...this.history, { kind: "shape-add", shape }];
+        this.redoStack = [];
+        await storage.putShape(shape);
+        useLiveStore().broadcast({ t: "shape-commit", shape });
+        if (this.project) await useProjectsStore().touch(this.project.id);
+      } finally {
+        this.saving--;
+      }
+    },
+    async deleteShape(shapeId: string) {
+      const shape = this.shapes.find((s) => s.id === shapeId);
+      if (!shape) return;
+      this.shapes = this.shapes.filter((s) => s.id !== shapeId);
+      this.history = [...this.history, { kind: "shape-erase", shape }];
+      this.redoStack = [];
+      await storage.deleteShape(shapeId);
+      useLiveStore().broadcast({ t: "shape-delete", pageId: shape.pageId, shapeId });
+    },
     async deleteText(pageId: string, textId: string) {
       const page = this.pages.find((p) => p.id === pageId);
       if (!page?.texts) return;
@@ -262,6 +291,14 @@ export const useEditorStore = defineStore("editor", {
           pages: [...this.pages],
           strokes: entry.before,
         });
+      } else if (entry.kind === "shape-add") {
+        this.shapes = this.shapes.filter((s) => s.id !== entry.shape.id);
+        await storage.deleteShape(entry.shape.id);
+        useLiveStore().broadcast({ t: "shape-delete", pageId: entry.shape.pageId, shapeId: entry.shape.id });
+      } else if (entry.kind === "shape-erase") {
+        this.shapes = [...this.shapes, entry.shape];
+        await storage.putShape(entry.shape);
+        useLiveStore().broadcast({ t: "shape-commit", shape: entry.shape });
       }
     },
     async redo() {
@@ -305,13 +342,23 @@ export const useEditorStore = defineStore("editor", {
           pages: [...this.pages],
           strokes: entry.after,
         });
+      } else if (entry.kind === "shape-add") {
+        this.shapes = [...this.shapes, entry.shape];
+        await storage.putShape(entry.shape);
+        useLiveStore().broadcast({ t: "shape-commit", shape: entry.shape });
+      } else if (entry.kind === "shape-erase") {
+        this.shapes = this.shapes.filter((s) => s.id !== entry.shape.id);
+        await storage.deleteShape(entry.shape.id);
+        useLiveStore().broadcast({ t: "shape-delete", pageId: entry.shape.pageId, shapeId: entry.shape.id });
       }
     },
     async clearPage() {
       if (!this.currentPageId) return;
       await storage.deleteStrokesForPage(this.currentPageId);
+      await storage.deleteShapesForPage(this.currentPageId);
       const pageId = this.currentPageId;
       this.strokes = [];
+      this.shapes = [];
       this.history = [];
       this.redoStack = [];
       useLiveStore().broadcast({ t: "clear-page", pageId });
