@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
 import { installPointerProbe } from "@/adapters/input/pointerDebug";
-import CanvasStage from "@/components/CanvasStage.vue";
+import type CanvasStage from "@/components/CanvasStage.vue";
 import DebugConsole from "@/components/DebugConsole.vue";
 import PagesPanel from "@/components/PagesPanel.vue";
 import ShareSessionModal from "@/components/ShareSessionModal.vue";
@@ -11,6 +11,8 @@ import { devMode } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
 import { useProjectsStore } from "@/stores/projects";
+
+const canvasStage = ref<InstanceType<typeof CanvasStage> | null>(null);
 
 const props = defineProps<{ id: string }>();
 const editor = useEditorStore();
@@ -110,9 +112,9 @@ onBeforeUnmount(() => removeProbe?.());
           <path d="M4 6h16M4 12h16M4 18h16" />
         </svg>
       </button>
-      <Toolbar :collapsed="toolbarCollapsed" @toggle="toolbarCollapsed = !toolbarCollapsed" />
+      <Toolbar :collapsed="toolbarCollapsed" @toggle="toolbarCollapsed = !toolbarCollapsed" @image-import="canvasStage?.triggerFileImport()" />
       <main class="stage-wrap">
-        <CanvasStage v-if="editor.currentPage" :page="editor.currentPage" />
+        <CanvasStage v-if="editor.currentPage" ref="canvasStage" :page="editor.currentPage" />
         <div v-else class="loading muted">Loading.</div>
       </main>
       <PagesPanel :open="panelOpen" :collapsed="pagesCollapsed" @close="panelOpen = false" @toggle="pagesCollapsed = !pagesCollapsed" @share="shareOpen = true" />

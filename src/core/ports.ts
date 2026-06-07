@@ -1,4 +1,4 @@
-import type { ID, Page, Project, Stroke, TextItem } from "./types";
+import type { ID, ImageItem, Page, Project, Stroke, TextItem } from "./types";
 
 export interface StorageAdapter {
   init(): Promise<void>;
@@ -16,6 +16,11 @@ export interface StorageAdapter {
   putStroke(s: Stroke): Promise<void>;
   deleteStroke(id: ID): Promise<void>;
   deleteStrokesForPage(pageId: ID): Promise<void>;
+
+  listImages(pageId: ID): Promise<ImageItem[]>;
+  putImage(img: ImageItem): Promise<void>;
+  deleteImage(id: ID): Promise<void>;
+  deleteImagesForPage(pageId: ID): Promise<void>;
 }
 
 export interface InputAdapter {

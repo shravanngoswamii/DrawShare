@@ -1,6 +1,6 @@
 import { getStroke } from "perfect-freehand";
 import type { Camera, Renderer } from "@/core/ports";
-import type { Stroke, StrokePoint, TextItem } from "@/core/types";
+import type { ImageItem, Stroke, StrokePoint, TextItem } from "@/core/types";
 
 type DrawCtx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -21,24 +21,36 @@ const PEN_OPTIONS = {
 const LIVE_LOOKAHEAD = 12;
 const LIVE_BATCH = 8;
 
+interface BBox {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
 export class Canvas2DRenderer implements Renderer {
   private canvas: HTMLCanvasElement | undefined;
   private ctx: CanvasRenderingContext2D | undefined;
   private dpr = 1;
   private camera: Camera = { x: 0, y: 0, zoom: 1 };
+  private viewW = 0;
+  private viewH = 0;
 
   // Maps a stored ink color to the color actually painted (theme adaptation).
-  // Identity by default; callers set this from the active theme. Stored stroke
-  // data is never changed — only what gets drawn.
   private inkAdapt: (color: string) => string = (c) => c;
 
-  // Incremental live-stroke cache: stores the "stable" prefix of the current
-  // stroke rendered into an OffscreenCanvas so drawLive only computes the tail.
+  // Incremental live-stroke cache
   private liveCache: OffscreenCanvas | null = null;
   private liveCacheCtx: OffscreenCanvasRenderingContext2D | null = null;
   private liveCacheCount = 0;
   private liveCacheId = "";
   private liveCacheCam: Camera = { x: NaN, y: NaN, zoom: NaN };
+
+  // Per-stroke bounding box cache for viewport culling (strokes are immutable).
+  private bboxCache = new Map<string, BBox>();
+
+  // Decoded image bitmaps keyed by ImageItem.id.
+  private imageCache = new Map<string, ImageBitmap>();
 
   attach(canvas: HTMLCanvasElement): void {
     this.canvas = canvas;
@@ -52,6 +64,8 @@ export class Canvas2DRenderer implements Renderer {
   setViewport(width: number, height: number, dpr: number): void {
     if (!this.canvas) return;
     this.dpr = dpr;
+    this.viewW = width;
+    this.viewH = height;
     this.canvas.width = Math.round(width * dpr);
     this.canvas.height = Math.round(height * dpr);
     this.canvas.style.width = `${width}px`;
@@ -86,8 +100,45 @@ export class Canvas2DRenderer implements Renderer {
     /* noop */
   }
 
+  // ── Viewport culling ────────────────────────────────────────────────────────
+
+  private isStrokeVisible(stroke: Stroke): boolean {
+    if (this.viewW === 0 || this.viewH === 0) return true;
+    let bbox = this.bboxCache.get(stroke.id);
+    if (!bbox) {
+      const half = stroke.size / 2 + 2;
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const p of stroke.points) {
+        if (p.x - half < minX) minX = p.x - half;
+        if (p.y - half < minY) minY = p.y - half;
+        if (p.x + half > maxX) maxX = p.x + half;
+        if (p.y + half > maxY) maxY = p.y + half;
+      }
+      bbox = { minX, minY, maxX, maxY };
+      this.bboxCache.set(stroke.id, bbox);
+    }
+    const { x, y, zoom } = this.camera;
+    const vMaxX = x + this.viewW / zoom;
+    const vMaxY = y + this.viewH / zoom;
+    return bbox.maxX >= x && bbox.minX <= vMaxX && bbox.maxY >= y && bbox.minY <= vMaxY;
+  }
+
+  invalidateStrokeBbox(id: string): void {
+    this.bboxCache.delete(id);
+  }
+
+  clearBboxCache(): void {
+    this.bboxCache.clear();
+  }
+
+  // ── Drawing ─────────────────────────────────────────────────────────────────
+
   drawStroke(stroke: Stroke): void {
     if (!this.ctx || stroke.points.length === 0) return;
+    if (!this.isStrokeVisible(stroke)) return;
     this.renderToCtx(
       this.ctx,
       stroke.points,
@@ -111,6 +162,40 @@ export class Canvas2DRenderer implements Renderer {
       ctx.fillText(lines[i], item.x, item.y + i * lineHeight);
     }
     ctx.restore();
+  }
+
+  drawImageItem(item: ImageItem): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const bm = this.imageCache.get(item.id);
+    if (!bm) return;
+    ctx.save();
+    ctx.drawImage(bm, item.x, item.y, item.width, item.height);
+    ctx.restore();
+  }
+
+  async loadImage(item: ImageItem): Promise<void> {
+    if (this.imageCache.has(item.id)) return;
+    try {
+      const img = new Image();
+      await new Promise<void>((res, rej) => {
+        img.onload = () => res();
+        img.onerror = rej;
+        img.src = item.src;
+      });
+      const bm = await createImageBitmap(img);
+      this.imageCache.set(item.id, bm);
+    } catch {
+      // Silently skip undecodable images
+    }
+  }
+
+  releaseImage(id: string): void {
+    const bm = this.imageCache.get(id);
+    if (bm) {
+      bm.close();
+      this.imageCache.delete(id);
+    }
   }
 
   drawLive(stroke: Stroke): void {
@@ -144,8 +229,7 @@ export class Canvas2DRenderer implements Renderer {
       ctx.setTransform(s, 0, 0, s, -cam.x * s, -cam.y * s);
     }
 
-    // Render only the tail — overlap with cache is safe for opaque strokes;
-    // for semi-transparent strokes the overlap region is small (~12 pts).
+    // Render only the tail — overlap with cache is safe for opaque strokes.
     const tailFrom = Math.max(0, this.liveCacheCount - LIVE_LOOKAHEAD);
     this.renderToCtx(
       ctx,

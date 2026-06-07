@@ -1,5 +1,5 @@
 import { getStroke } from "perfect-freehand";
-import type { Page, Stroke, TextItem } from "@/core/types";
+import type { ImageItem, Page, Stroke, TextItem } from "@/core/types";
 
 const PADDING = 32;
 
@@ -20,6 +20,7 @@ const PEN_OPTIONS = {
 function contentBounds(
   strokes: Stroke[],
   texts: TextItem[],
+  images: ImageItem[],
   page: Page,
 ): { minX: number; minY: number; maxX: number; maxY: number } {
   let minX = 0;
@@ -48,6 +49,13 @@ function contentBounds(
     if (item.y < minY) minY = item.y;
     if (item.x + estW > maxX) maxX = item.x + estW;
     if (item.y + estH > maxY) maxY = item.y + estH;
+  }
+
+  for (const img of images) {
+    if (img.x < minX) minX = img.x;
+    if (img.y < minY) minY = img.y;
+    if (img.x + img.width > maxX) maxX = img.x + img.width;
+    if (img.y + img.height > maxY) maxY = img.y + img.height;
   }
 
   return { minX, minY, maxX, maxY };
@@ -134,12 +142,34 @@ function drawBackground(ctx: OffscreenCanvasRenderingContext2D, page: Page): voi
   ctx.restore();
 }
 
-export async function exportPageAsPng(page: Page, strokes: Stroke[]): Promise<void> {
+async function drawImageToCtx(
+  ctx: OffscreenCanvasRenderingContext2D,
+  item: ImageItem,
+): Promise<void> {
+  try {
+    const img = new Image();
+    await new Promise<void>((res, rej) => {
+      img.onload = () => res();
+      img.onerror = rej;
+      img.src = item.src;
+    });
+    ctx.drawImage(img, item.x, item.y, item.width, item.height);
+  } catch {
+    // Skip undecodable images silently
+  }
+}
+
+export async function exportPageAsPng(
+  page: Page,
+  strokes: Stroke[],
+  images: ImageItem[] = [],
+): Promise<void> {
   const pageStrokes = strokes.filter((s) => s.pageId === page.id);
+  const pageImages = images.filter((i) => i.pageId === page.id);
   const texts = page.texts ?? [];
 
   // Size the export canvas to all content, not just the page guide rectangle.
-  const { minX, minY, maxX, maxY } = contentBounds(pageStrokes, texts, page);
+  const { minX, minY, maxX, maxY } = contentBounds(pageStrokes, texts, pageImages, page);
   const canvasW = Math.ceil(maxX - minX + 2 * PADDING);
   const canvasH = Math.ceil(maxY - minY + 2 * PADDING);
 
@@ -155,6 +185,8 @@ export async function exportPageAsPng(page: Page, strokes: Stroke[]): Promise<vo
 
   ctx.translate(offsetX, offsetY);
   drawBackground(ctx, page);
+  // Images are drawn below strokes/text, matching canvas layer order
+  for (const img of pageImages) await drawImageToCtx(ctx, img);
   for (const stroke of pageStrokes) drawStrokeToCtx(ctx, stroke);
   for (const item of texts) drawTextToCtx(ctx, item);
 

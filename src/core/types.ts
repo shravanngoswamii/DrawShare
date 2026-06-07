@@ -52,12 +52,25 @@ export interface Project {
   pageOrder: ID[];
 }
 
+export interface ImageItem {
+  id: ID;
+  pageId: ID;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  src: string; // data URL
+  createdAt: number;
+}
+
 export type HistoryEntry =
   | { kind: "stroke-add"; stroke: Stroke }
   | { kind: "stroke-erase"; stroke: Stroke }
   | { kind: "text-upsert"; prev: TextItem | null; next: TextItem }
   | { kind: "text-delete"; text: TextItem }
-  | { kind: "area-erase"; pageId: string; before: Stroke[]; after: Stroke[] };
+  | { kind: "area-erase"; pageId: string; before: Stroke[]; after: Stroke[] }
+  | { kind: "image-add"; image: ImageItem }
+  | { kind: "image-erase"; image: ImageItem };
 
 export interface BoundingBox {
   minX: number;

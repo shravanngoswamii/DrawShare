@@ -104,7 +104,7 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
 async function exportCurrentPage() {
   const page = editor.currentPage;
   if (!page) return;
-  await exportPageAsPng(page, editor.strokes);
+  await exportPageAsPng(page, editor.strokes, editor.images);
 }
 </script>
 

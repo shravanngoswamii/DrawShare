@@ -6,7 +6,7 @@ import { useTheme } from "@/composables/useTheme";
 import { newId } from "@/core/ids";
 import { adaptInk } from "@/core/ink";
 import type { InputSample } from "@/core/ports";
-import type { Page, Stroke, StrokePoint, TextItem } from "@/core/types";
+import type { ImageItem, Page, Stroke, StrokePoint, TextItem } from "@/core/types";
 import { dlog } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
@@ -53,6 +53,28 @@ const editing = ref<{
 } | null>(null);
 const editStyle = ref<Record<string, string>>({});
 
+// Image selection ring (screen coords, updated by updateImageSelStyle)
+const imageSelStyle = ref<Record<string, string> | null>(null);
+
+function updateImageSelStyle() {
+  const id = selectedImageId.value;
+  if (!id) {
+    imageSelStyle.value = null;
+    return;
+  }
+  const img = editor.images.find((i) => i.id === id);
+  if (!img) {
+    imageSelStyle.value = null;
+    return;
+  }
+  imageSelStyle.value = {
+    left: `${(img.x - cam.x) * cam.zoom}px`,
+    top: `${(img.y - cam.y) * cam.zoom}px`,
+    width: `${img.width * cam.zoom}px`,
+    height: `${img.height * cam.zoom}px`,
+  };
+}
+
 // Eraser cursor overlay (screen coords relative to the stage)
 const eraseCursor = ref<{ x: number; y: number } | null>(null);
 
@@ -66,6 +88,15 @@ let textDrag: {
   origY: number;
   moved: boolean;
 } | null = null;
+let imageDrag: {
+  item: ImageItem;
+  downX: number;
+  downY: number;
+  origX: number;
+  origY: number;
+  moved: boolean;
+} | null = null;
+const selectedImageId = ref<string | null>(null);
 let predictedPoints: StrokePoint[] = [];
 let liveSendCursor = 0;
 let frameQueued = false;
@@ -110,12 +141,122 @@ function updateBg() {
   };
 }
 
+// ── Image helpers ──────────────────────────────────────────────────────────
+
+function hitImage(img: ImageItem, wx: number, wy: number): boolean {
+  return wx >= img.x && wx <= img.x + img.width && wy >= img.y && wy <= img.y + img.height;
+}
+
+async function placeImageFile(file: File, worldX?: number, worldY?: number): Promise<void> {
+  const src = await new Promise<string>((res, rej) => {
+    const reader = new FileReader();
+    reader.onload = () => res(reader.result as string);
+    reader.onerror = rej;
+    reader.readAsDataURL(file);
+  });
+
+  const img = new Image();
+  await new Promise<void>((res) => {
+    img.onload = () => res();
+    img.onerror = () => res();
+    img.src = src;
+  });
+
+  let nw = img.naturalWidth || 400;
+  let nh = img.naturalHeight || 300;
+
+  // Compress if too large (keeps storage and potential sync payloads small)
+  const MAX_PX = 1600;
+  let finalSrc = src;
+  if (nw > MAX_PX || nh > MAX_PX) {
+    const scale = Math.min(MAX_PX / nw, MAX_PX / nh);
+    nw = Math.round(nw * scale);
+    nh = Math.round(nh * scale);
+    const oc = new OffscreenCanvas(nw, nh);
+    const octx = oc.getContext("2d")!;
+    octx.drawImage(img, 0, 0, nw, nh);
+    const blob = await oc.convertToBlob({ type: "image/webp", quality: 0.85 });
+    finalSrc = await new Promise<string>((res) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result as string);
+      r.readAsDataURL(blob);
+    });
+  }
+
+  // Scale display size to fit ~50% of viewport min dimension in world coords
+  const maxDim = (Math.min(viewW, viewH) / cam.zoom) * 0.5;
+  const dispScale = Math.min(maxDim / nw, maxDim / nh, 1);
+  const dispW = nw * dispScale;
+  const dispH = nh * dispScale;
+
+  const cx = worldX ?? cam.x + viewW / (2 * cam.zoom);
+  const cy = worldY ?? cam.y + viewH / (2 * cam.zoom);
+
+  const imageItem: ImageItem = {
+    id: newId(),
+    pageId: props.page.id,
+    x: cx - dispW / 2,
+    y: cy - dispH / 2,
+    width: dispW,
+    height: dispH,
+    src: finalSrc,
+    createdAt: Date.now(),
+  };
+
+  await baseRenderer.loadImage(imageItem);
+  await editor.commitImage(imageItem);
+}
+
+function triggerFileImport(): void {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/*";
+  input.onchange = () => {
+    const file = input.files?.[0];
+    if (file) placeImageFile(file);
+  };
+  input.click();
+}
+
+async function onPaste(e: ClipboardEvent): Promise<void> {
+  const items = Array.from(e.clipboardData?.items ?? []);
+  const imageEntry = items.find((it) => it.type.startsWith("image/"));
+  if (!imageEntry) return;
+  e.preventDefault();
+  const blob = imageEntry.getAsFile();
+  if (blob) await placeImageFile(blob);
+}
+
+function onDragOver(e: DragEvent): void {
+  const hasImage = Array.from(e.dataTransfer?.items ?? []).some((it) =>
+    it.type.startsWith("image/"),
+  );
+  if (hasImage) {
+    e.preventDefault();
+    e.dataTransfer!.dropEffect = "copy";
+  }
+}
+
+async function onDrop(e: DragEvent): Promise<void> {
+  e.preventDefault();
+  const files = Array.from(e.dataTransfer?.files ?? []).filter((f) => f.type.startsWith("image/"));
+  if (files.length === 0) return;
+  const rect = wrap.value!.getBoundingClientRect();
+  const w = toWorld(e.clientX - rect.left, e.clientY - rect.top);
+  await placeImageFile(files[0], w.x, w.y);
+}
+
+defineExpose({ triggerFileImport });
+
+// ── End image helpers ──────────────────────────────────────────────────────
+
 function syncCamera() {
   baseRenderer.setCamera({ ...cam });
   liveRenderer.setCamera({ ...cam });
   zoomLabel.value = `${Math.round(cam.zoom * 100)}%`;
   updateBg();
   updateEditStyle();
+  updateImageSelStyle();
   live.setHostCamera(cam.x, cam.y, cam.zoom);
   dirtyBase = true;
   schedule();
@@ -127,6 +268,7 @@ function fitCanvas() {
   const ratio = dpr();
   viewW = rect.width;
   viewH = rect.height;
+  // viewW/viewH are stored before setViewport so culling uses updated dimensions
   baseRenderer.setViewport(viewW, viewH, ratio);
   liveRenderer.setViewport(viewW, viewH, ratio);
   // Apply current camera without resetting it
@@ -186,6 +328,10 @@ function render() {
   if (dirtyBase) {
     baseRenderer.clear();
     baseRenderer.beginFrame();
+    // Images sit below strokes/text
+    for (const img of editor.images) {
+      if (img.pageId === props.page.id) baseRenderer.drawImageItem(img);
+    }
     for (const s of editor.strokes) baseRenderer.drawStroke(s);
     for (const t of editor.currentPage?.texts ?? []) {
       if (editing.value?.id === t.id) continue;
@@ -393,6 +539,23 @@ function handleDown(s: InputSample) {
   if (editor.tool === "text") {
     const w = toWorld(s.x, s.y);
     if (editing.value) commitEditing();
+    // Check images first — they sit below text in z-order but are selectable in text mode
+    const hitImg = editor.images.find(
+      (img) => img.pageId === props.page.id && hitImage(img, w.x, w.y),
+    );
+    if (hitImg) {
+      selectedImageId.value = hitImg.id;
+      imageDrag = {
+        item: hitImg,
+        downX: w.x,
+        downY: w.y,
+        origX: hitImg.x,
+        origY: hitImg.y,
+        moved: false,
+      };
+      return;
+    }
+    selectedImageId.value = null;
     const hit = (props.page.texts ?? []).find((t) => hitText(t, w.x, w.y));
     if (hit) {
       // Drag to move, or tap (no move) to edit — decided in move/up.
@@ -432,6 +595,21 @@ function handleDown(s: InputSample) {
 
 function handleMove(samples: InputSample[]) {
   if (panActive || pinchActive) return;
+  if (imageDrag) {
+    const s = samples[samples.length - 1];
+    const w = toWorld(s.x, s.y);
+    const dx = w.x - imageDrag.downX;
+    const dy = w.y - imageDrag.downY;
+    if (!imageDrag.moved && Math.hypot(dx, dy) * cam.zoom > 4) imageDrag.moved = true;
+    if (imageDrag.moved) {
+      imageDrag.item.x = imageDrag.origX + dx;
+      imageDrag.item.y = imageDrag.origY + dy;
+      updateImageSelStyle();
+      dirtyBase = true;
+      schedule();
+    }
+    return;
+  }
   if (textDrag) {
     const s = samples[samples.length - 1];
     const w = toWorld(s.x, s.y);
@@ -485,6 +663,16 @@ function appendFinalPoint(stroke: Stroke, sample?: InputSample) {
 }
 
 async function handleUp(sample?: InputSample) {
+  if (imageDrag) {
+    const d = imageDrag;
+    imageDrag = null;
+    if (d.moved) {
+      await editor.moveImage(d.item.id, d.item.x, d.item.y);
+      dirtyBase = true;
+      schedule();
+    }
+    return;
+  }
   if (textDrag) {
     const d = textDrag;
     textDrag = null;
@@ -519,6 +707,17 @@ async function handleUp(sample?: InputSample) {
 }
 
 async function handleCancel(sample?: InputSample) {
+  if (imageDrag) {
+    if (imageDrag.moved) {
+      // Revert to original position
+      imageDrag.item.x = imageDrag.origX;
+      imageDrag.item.y = imageDrag.origY;
+      dirtyBase = true;
+      schedule();
+    }
+    imageDrag = null;
+    return;
+  }
   if (textDrag) {
     if (textDrag.moved) editor.commitText({ ...textDrag.item });
     textDrag = null;
@@ -663,6 +862,15 @@ function onKeyDown(e: KeyboardEvent) {
     spaceHeld = true;
     panCursor.value = true;
   }
+  if ((e.key === "Delete" || e.key === "Backspace") && selectedImageId.value) {
+    e.preventDefault();
+    const id = selectedImageId.value;
+    selectedImageId.value = null;
+    baseRenderer.releaseImage(id);
+    editor.deleteImage(id);
+    dirtyBase = true;
+    schedule();
+  }
 }
 
 function onKeyUp(e: KeyboardEvent) {
@@ -682,10 +890,27 @@ watch(
     schedule();
   },
 );
+
+watch(
+  () => editor.images,
+  async (imgs) => {
+    const pageImgs = imgs.filter((i) => i.pageId === props.page.id);
+    await Promise.all(pageImgs.map((i) => baseRenderer.loadImage(i)));
+    updateImageSelStyle();
+    dirtyBase = true;
+    schedule();
+  },
+  { deep: false },
+);
+
+watch(selectedImageId, () => updateImageSelStyle());
+
 watch(
   () => props.page.id,
   () => {
     commitEditing();
+    selectedImageId.value = null;
+    baseRenderer.clearBboxCache();
     dirtyBase = true;
     schedule();
   },
@@ -710,7 +935,7 @@ watch(
 
 let resizeObserver: ResizeObserver | undefined;
 
-onMounted(() => {
+onMounted(async () => {
   if (!baseEl.value || !liveEl.value || !wrap.value) return;
   baseRenderer.attach(baseEl.value);
   liveRenderer.attach(liveEl.value);
@@ -721,8 +946,11 @@ onMounted(() => {
   wrap.value.addEventListener("pointermove", onNavPointerMove, { capture: true, passive: false });
   wrap.value.addEventListener("pointerup", onNavPointerUp, { capture: true });
   wrap.value.addEventListener("pointercancel", onNavPointerUp, { capture: true });
+  wrap.value.addEventListener("dragover", onDragOver);
+  wrap.value.addEventListener("drop", onDrop);
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
+  window.addEventListener("paste", onPaste);
   input.start(liveEl.value, {
     onDown: handleDown,
     onMove: handleMove,
@@ -732,6 +960,13 @@ onMounted(() => {
   });
   resizeObserver = new ResizeObserver(() => fitCanvas());
   resizeObserver.observe(wrap.value);
+  // Preload any images already on this page
+  const pageImgs = editor.images.filter((i) => i.pageId === props.page.id);
+  if (pageImgs.length > 0) {
+    await Promise.all(pageImgs.map((i) => baseRenderer.loadImage(i)));
+    dirtyBase = true;
+    schedule();
+  }
 });
 
 // Re-paint ink when the theme flips (dark-mode ink adaptation is render-time).
@@ -751,9 +986,12 @@ onBeforeUnmount(() => {
     wrap.value.removeEventListener("pointermove", onNavPointerMove, true);
     wrap.value.removeEventListener("pointerup", onNavPointerUp, true);
     wrap.value.removeEventListener("pointercancel", onNavPointerUp, true);
+    wrap.value.removeEventListener("dragover", onDragOver);
+    wrap.value.removeEventListener("drop", onDrop);
   }
   window.removeEventListener("keydown", onKeyDown);
   window.removeEventListener("keyup", onKeyUp);
+  window.removeEventListener("paste", onPaste);
   resizeObserver?.disconnect();
 });
 </script>
@@ -778,6 +1016,12 @@ onBeforeUnmount(() => {
       @keydown.escape.prevent="commitEditing"
       @keydown.enter.exact.prevent="commitEditing"
     ></textarea>
+    <div
+      v-if="imageSelStyle"
+      class="image-sel"
+      :style="imageSelStyle"
+      aria-hidden="true"
+    ></div>
     <div
       v-if="eraseCursor"
       class="eraser-cursor"
@@ -860,6 +1104,15 @@ onBeforeUnmount(() => {
 
 .live {
   touch-action: none;
+}
+
+.image-sel {
+  position: absolute;
+  z-index: 5;
+  border: 2px solid var(--color-accent, #3b82f6);
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.25);
+  pointer-events: none;
 }
 
 .eraser-cursor {

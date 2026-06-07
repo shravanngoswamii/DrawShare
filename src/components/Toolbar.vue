@@ -4,7 +4,7 @@ import type { Tool } from "@/core/types";
 import { useEditorStore } from "@/stores/editor";
 
 defineProps<{ collapsed?: boolean }>();
-const emit = defineEmits<{ toggle: [] }>();
+const emit = defineEmits<{ toggle: []; "image-import": [] }>();
 
 const editor = useEditorStore();
 
@@ -250,6 +250,18 @@ onMounted(() => {
             <input type="text" class="hex" v-model="hexInput" maxlength="7" spellcheck="false" placeholder="#000000" @change="chooseColor(hexInput)" @keydown.enter="chooseColor(hexInput)" />
           </div>
         </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="group">
+        <button class="tool" title="Import image (or paste / drag & drop)" @click="emit('image-import')" aria-label="Import image">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <circle cx="9" cy="9" r="2"/>
+            <path d="m21 15-5-5L5 21"/>
+          </svg>
+        </button>
       </div>
 
       <div class="divider"></div>

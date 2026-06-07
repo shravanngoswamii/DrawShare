@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { storage } from "@/adapters/storage/indexedDB";
 import { newId } from "@/core/ids";
-import type { HistoryEntry, Page, Project, Stroke, TextItem, Tool } from "@/core/types";
+import type { HistoryEntry, ImageItem, Page, Project, Stroke, TextItem, Tool } from "@/core/types";
 import { dlog } from "@/debug";
 import { useLiveStore } from "./live";
 import { DEFAULT_PAGE_SIZE, useProjectsStore } from "./projects";
@@ -11,6 +11,7 @@ interface EditorState {
   pages: Page[];
   currentPageId: string | undefined;
   strokes: Stroke[];
+  images: ImageItem[];
   tool: Tool;
   color: string;
   toolSizes: Record<Tool, number>;
@@ -31,6 +32,7 @@ export const useEditorStore = defineStore("editor", {
     pages: [],
     currentPageId: undefined,
     strokes: [],
+    images: [],
     tool: "pen",
     color: "#0f172a",
     toolSizes: { pen: 4, highlighter: 20, eraser: 24, text: 4 },
@@ -66,6 +68,7 @@ export const useEditorStore = defineStore("editor", {
       }
       this.currentPageId = this.pages[0].id;
       await this.loadStrokes(this.currentPageId);
+      await this.loadImages(this.currentPageId);
       this.history = [];
       this.redoStack = [];
     },
@@ -74,16 +77,21 @@ export const useEditorStore = defineStore("editor", {
       this.pages = [page];
       this.currentPageId = page.id;
       this.strokes = [];
+      this.images = [];
       this.history = [];
       this.redoStack = [];
     },
     async loadStrokes(pageId: string) {
       this.strokes = await storage.listStrokes(pageId);
     },
+    async loadImages(pageId: string) {
+      this.images = await storage.listImages(pageId);
+    },
     async selectPage(pageId: string) {
       if (this.currentPageId === pageId) return;
       this.currentPageId = pageId;
       await this.loadStrokes(pageId);
+      await this.loadImages(pageId);
       this.history = [];
       this.redoStack = [];
       useLiveStore().broadcast({
@@ -262,6 +270,12 @@ export const useEditorStore = defineStore("editor", {
           pages: [...this.pages],
           strokes: entry.before,
         });
+      } else if (entry.kind === "image-add") {
+        this.images = this.images.filter((i) => i.id !== entry.image.id);
+        await storage.deleteImage(entry.image.id);
+      } else if (entry.kind === "image-erase") {
+        this.images = [...this.images, entry.image];
+        await storage.putImage(entry.image);
       }
     },
     async redo() {
@@ -305,13 +319,52 @@ export const useEditorStore = defineStore("editor", {
           pages: [...this.pages],
           strokes: entry.after,
         });
+      } else if (entry.kind === "image-add") {
+        this.images = [...this.images, entry.image];
+        await storage.putImage(entry.image);
+      } else if (entry.kind === "image-erase") {
+        this.images = this.images.filter((i) => i.id !== entry.image.id);
+        await storage.deleteImage(entry.image.id);
       }
+    },
+    async commitImage(image: ImageItem) {
+      this.saving++;
+      try {
+        this.images = [...this.images, image];
+        this.history = [...this.history, { kind: "image-add", image }];
+        this.redoStack = [];
+        await storage.putImage(image);
+        if (this.project) await useProjectsStore().touch(this.project.id);
+      } finally {
+        this.saving--;
+      }
+    },
+    async deleteImage(imageId: string) {
+      const image = this.images.find((i) => i.id === imageId);
+      if (!image) return;
+      this.images = this.images.filter((i) => i.id !== imageId);
+      this.history = [...this.history, { kind: "image-erase", image }];
+      this.redoStack = [];
+      await storage.deleteImage(imageId);
+    },
+    async moveImage(imageId: string, x: number, y: number) {
+      const image = this.images.find((i) => i.id === imageId);
+      if (!image) return;
+      const prev = { ...image };
+      image.x = x;
+      image.y = y;
+      await storage.putImage({ ...image });
+      // Not tracked in undo history (drag-move is finalised on pointerup)
+      if (this.project) await useProjectsStore().touch(this.project.id);
+      return prev;
     },
     async clearPage() {
       if (!this.currentPageId) return;
       await storage.deleteStrokesForPage(this.currentPageId);
+      await storage.deleteImagesForPage(this.currentPageId);
       const pageId = this.currentPageId;
       this.strokes = [];
+      this.images = [];
       this.history = [];
       this.redoStack = [];
       useLiveStore().broadcast({ t: "clear-page", pageId });
