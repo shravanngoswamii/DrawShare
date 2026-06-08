@@ -157,37 +157,49 @@ function onGripDown(e: PointerEvent) {
     }
     dragging.value = false;
 
-    // Compute where the toolbar *centre* landed in viewport coords.
+    // Toolbar centre in viewport coords.
     const centerX = ev.clientX - offX + tbW / 2;
     const centerY = ev.clientY - offY + tbH / 2;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const PAD = 12; // keep grip at least this many px inside the viewport
+    const PAD = 12;
 
+    // Use the container's bounding rect so frac matches what `top/left: X%`
+    // resolves to — percentage is relative to the containing block, not the
+    // full viewport (which can differ due to safe-area padding or flex sizing).
+    const parent = aside.parentElement;
+    const cRect = parent
+      ? parent.getBoundingClientRect()
+      : new DOMRect(0, 0, window.innerWidth, window.innerHeight);
+    const cW = cRect.width || window.innerWidth;
+    const cH = cRect.height || window.innerHeight;
+    // Centre in container-local coordinates.
+    const localX = centerX - cRect.left;
+    const localY = centerY - cRect.top;
+
+    // Which edge is nearest (use full viewport for the comparison).
     const dl = centerX;
-    const dr = vw - centerX;
+    const dr = window.innerWidth - centerX;
     const dt = centerY;
-    const db = vh - centerY;
+    const db = window.innerHeight - centerY;
     const min = Math.min(dl, dr, dt, db);
 
     let newDock: Dock;
     let frac: number;
     if (min === dl) {
       newDock = "left";
-      const safe = Math.max(tbH / 2 + PAD, Math.min(vh - tbH / 2 - PAD, centerY));
-      frac = safe / vh;
+      const safe = Math.max(tbH / 2 + PAD, Math.min(cH - tbH / 2 - PAD, localY));
+      frac = safe / cH;
     } else if (min === dr) {
       newDock = "right";
-      const safe = Math.max(tbH / 2 + PAD, Math.min(vh - tbH / 2 - PAD, centerY));
-      frac = safe / vh;
+      const safe = Math.max(tbH / 2 + PAD, Math.min(cH - tbH / 2 - PAD, localY));
+      frac = safe / cH;
     } else if (min === dt) {
       newDock = "top";
-      const safe = Math.max(tbW / 2 + PAD, Math.min(vw - tbW / 2 - PAD, centerX));
-      frac = safe / vw;
+      const safe = Math.max(tbW / 2 + PAD, Math.min(cW - tbW / 2 - PAD, localX));
+      frac = safe / cW;
     } else {
       newDock = "bottom";
-      const safe = Math.max(tbW / 2 + PAD, Math.min(vw - tbW / 2 - PAD, centerX));
-      frac = safe / vw;
+      const safe = Math.max(tbW / 2 + PAD, Math.min(cW - tbW / 2 - PAD, localX));
+      frac = safe / cW;
     }
 
     // Snap to final position immediately (no spring from stale coords).
