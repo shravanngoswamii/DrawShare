@@ -39,6 +39,21 @@ const cam = { x: 0, y: 0, zoom: 1 };
 const zoomLabel = ref("100%");
 const bgStyle = ref({ backgroundSize: "32px 32px", backgroundPosition: "0px 0px" });
 const panCursor = ref(false);
+const pageFrameStyle = ref<Record<string, string> | null>(null);
+
+function updatePageFrame() {
+  const { width, height } = props.page;
+  if (!width || !height) {
+    pageFrameStyle.value = null;
+    return;
+  }
+  pageFrameStyle.value = {
+    left: `${(0 - cam.x) * cam.zoom}px`,
+    top: `${(0 - cam.y) * cam.zoom}px`,
+    width: `${width * cam.zoom}px`,
+    height: `${height * cam.zoom}px`,
+  };
+}
 
 // Text tool editing overlay
 const textInput = ref<HTMLTextAreaElement | null>(null);
@@ -116,6 +131,7 @@ function syncCamera() {
   zoomLabel.value = `${Math.round(cam.zoom * 100)}%`;
   updateBg();
   updateEditStyle();
+  updatePageFrame();
   live.setHostCamera(cam.x, cam.y, cam.zoom);
   dirtyBase = true;
   schedule();
@@ -134,6 +150,7 @@ function fitCanvas() {
   liveRenderer.setCamera({ ...cam });
   live.setHostViewport(viewW, viewH);
   updateBg();
+  updatePageFrame();
   dirtyBase = true;
   schedule();
 }
@@ -705,6 +722,12 @@ watch(
   },
   { deep: true },
 );
+watch(
+  () => [props.page.width, props.page.height] as const,
+  () => {
+    updatePageFrame();
+  },
+);
 
 // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -783,6 +806,12 @@ onBeforeUnmount(() => {
       class="eraser-cursor"
       :class="editor.eraserShape"
       :style="{ left: `${eraseCursor.x}px`, top: `${eraseCursor.y}px`, width: `${editor.size * 2}px`, height: `${editor.size * 2}px` }"
+    ></div>
+    <div
+      v-if="pageFrameStyle"
+      class="page-frame"
+      :style="pageFrameStyle"
+      aria-hidden="true"
     ></div>
     <div class="cam-controls">
       <button class="cam-btn" title="Zoom out" @click="zoomOut">
@@ -872,6 +901,15 @@ onBeforeUnmount(() => {
 }
 .eraser-cursor.circle { border-radius: 50%; }
 .eraser-cursor.square { border-radius: 3px; }
+
+.page-frame {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  border: 1px dashed var(--color-accent, #3b82f6);
+  opacity: 0.3;
+  border-radius: 1px;
+}
 
 .text-edit {
   position: absolute;

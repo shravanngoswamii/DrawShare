@@ -5,6 +5,15 @@ import type { Page, Project } from "@/core/types";
 
 const A4_PORTRAIT = { width: 1240, height: 1754 };
 
+export const PAPER_SIZES = [
+  { id: "a4", label: "A4", width: 1240, height: 1754 },
+  { id: "letter", label: "Letter", width: 1275, height: 1650 },
+  { id: "legal", label: "Legal", width: 1275, height: 2100 },
+  { id: "square", label: "Square", width: 1400, height: 1400 },
+] as const;
+
+export type PaperSizeId = (typeof PAPER_SIZES)[number]["id"];
+
 export const useProjectsStore = defineStore("projects", {
   state: () => ({
     projects: [] as Project[],

@@ -29,6 +29,7 @@ export type SyncMessage =
   | { t: "page-delete"; pageId: string; pages: Page[]; fallbackPageId: string }
   | { t: "page-rename"; pageId: string; name: string }
   | { t: "page-background"; pageId: string; background: Page["background"] }
+  | { t: "page-size"; pageId: string; width: number; height: number }
   | { t: "stroke-begin"; stroke: Stroke }
   | {
       t: "stroke-points";

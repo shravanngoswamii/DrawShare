@@ -161,6 +161,15 @@ export const useEditorStore = defineStore("editor", {
       await storage.putPage({ ...page });
       useLiveStore().broadcast({ t: "page-background", pageId, background });
     },
+    async setPageSize(pageId: string, width: number, height: number) {
+      const page = this.pages.find((p) => p.id === pageId);
+      if (!page) return;
+      page.width = width;
+      page.height = height;
+      page.updatedAt = Date.now();
+      await storage.putPage({ ...page });
+      useLiveStore().broadcast({ t: "page-size", pageId, width, height });
+    },
     async eraseStroke(strokeId: string) {
       const stroke = this.strokes.find((s) => s.id === strokeId);
       if (!stroke) return;
