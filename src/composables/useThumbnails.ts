@@ -1,13 +1,13 @@
 import { getStroke } from "perfect-freehand";
 import { ref } from "vue";
 import { storage } from "@/adapters/storage/indexedDB";
-import type { Page, Project, Stroke } from "@/core/types";
+import type { Page, Project, Stroke, TextItem } from "@/core/types";
 
 // Page panel thumbnails: A4 ratio, contain mode
 const THUMB_W = 52;
 const THUMB_H = 74;
 
-// Project card thumbnails: 4:3 card ratio, cover mode (fills the card area)
+// Project card thumbnails: 4:3 card ratio
 const PROJ_W = 480;
 const PROJ_H = 360;
 
@@ -27,25 +27,45 @@ const thumbnails = ref<Record<string, string>>({});
 // projectId → data URL (used on the projects landing page)
 const projectThumbnails = ref<Record<string, string>>({});
 
+type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
+
+function contentBounds(pageStrokes: Stroke[], texts: TextItem[]): Bounds | null {
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
+  for (const stroke of pageStrokes) {
+    for (const pt of stroke.points) {
+      if (pt.x < minX) minX = pt.x;
+      if (pt.y < minY) minY = pt.y;
+      if (pt.x > maxX) maxX = pt.x;
+      if (pt.y > maxY) maxY = pt.y;
+    }
+  }
+  for (const item of texts) {
+    if (!item.text) continue;
+    const lines = item.text.split("\n");
+    const charW = item.size * 0.6;
+    const lineH = item.size * 1.3;
+    const textW = Math.max(...lines.map((l) => l.length * charW));
+    const textH = lines.length * lineH;
+    if (item.x < minX) minX = item.x;
+    if (item.y < minY) minY = item.y;
+    if (item.x + textW > maxX) maxX = item.x + textW;
+    if (item.y + textH > maxY) maxY = item.y + textH;
+  }
+  if (!Number.isFinite(minX)) return null;
+  return { minX, minY, maxX, maxY };
+}
+
 async function renderToCanvas(
   page: Page,
   strokes: Stroke[],
   w: number,
   h: number,
-  cover: boolean,
 ): Promise<string | null> {
   const pageStrokes = strokes.filter((s) => s.pageId === page.id);
   const texts = page.texts ?? [];
-
-  const scaleX = w / page.width;
-  const scaleY = h / page.height;
-  const scale = cover ? Math.max(scaleX, scaleY) : Math.min(scaleX, scaleY);
-  // Cover mode: align to top-left so drawings near the page origin are always
-  // visible. Contain mode: center within the thumbnail box.
-  const centerX = (w - page.width * scale) / 2;
-  const centerY = (h - page.height * scale) / 2;
-  const offsetX = cover ? Math.max(0, centerX) : centerX;
-  const offsetY = cover ? Math.max(0, centerY) : centerY;
 
   const canvas = new OffscreenCanvas(w, h);
   const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D | null;
@@ -53,6 +73,32 @@ async function renderToCanvas(
 
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, w, h);
+
+  const bounds = contentBounds(pageStrokes, texts);
+
+  let scale: number;
+  let offsetX: number;
+  let offsetY: number;
+
+  if (!bounds) {
+    // No content — show top-left corner of the page at natural scale.
+    scale = Math.min(w / page.width, h / page.height);
+    offsetX = 0;
+    offsetY = 0;
+  } else {
+    // Pad by stroke width + a fixed margin so no ink is clipped at edges.
+    const maxSize = pageStrokes.reduce((m, s) => Math.max(m, s.size), 10);
+    const pad = maxSize * 2 + 24;
+    const bx = bounds.minX - pad;
+    const by = bounds.minY - pad;
+    const bw = bounds.maxX - bounds.minX + pad * 2;
+    const bh = bounds.maxY - bounds.minY + pad * 2;
+
+    // Contain the bounding box, centered in the thumbnail.
+    scale = Math.min(w / bw, h / bh);
+    offsetX = (w - bw * scale) / 2 - bx * scale;
+    offsetY = (h - bh * scale) / 2 - by * scale;
+  }
 
   ctx.save();
   ctx.translate(offsetX, offsetY);
@@ -99,7 +145,7 @@ async function renderToCanvas(
 }
 
 async function renderThumbnail(page: Page, strokes: Stroke[]): Promise<void> {
-  const url = await renderToCanvas(page, strokes, THUMB_W, THUMB_H, false);
+  const url = await renderToCanvas(page, strokes, THUMB_W, THUMB_H);
   if (url) thumbnails.value[page.id] = url;
 }
 
@@ -113,7 +159,7 @@ async function renderProjectThumbnail(project: Project): Promise<void> {
   if (!pages.length) return;
   const firstPage = pages[0];
   const strokes = await storage.listStrokes(firstPage.id);
-  const url = await renderToCanvas(firstPage, strokes, PROJ_W, PROJ_H, true);
+  const url = await renderToCanvas(firstPage, strokes, PROJ_W, PROJ_H);
   if (url) projectThumbnails.value[project.id] = url;
 }
 

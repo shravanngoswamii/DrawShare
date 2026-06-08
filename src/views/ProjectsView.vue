@@ -44,8 +44,9 @@ function joinSession() {
 
 onMounted(async () => {
   if (!projects.loaded) await projects.load();
+  // Always re-render so thumbnails reflect edits made since last visit.
   for (const p of projects.projects) {
-    if (!projectThumbnails.value[p.id]) renderProjectThumbnail(p);
+    renderProjectThumbnail(p);
   }
 });
 
