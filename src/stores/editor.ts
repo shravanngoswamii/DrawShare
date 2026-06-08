@@ -335,7 +335,6 @@ export const useEditorStore = defineStore("editor", {
     // affected stroke into the surviving runs of points. In-memory only and
     // synchronous (called rapidly during a drag); persist once via flushPage.
     eraseArea(pageId: string, wx: number, wy: number, radius: number): boolean {
-      const r2 = radius * radius;
       const square = this.eraserShape === "square";
       const survivors: Stroke[] = [];
       let changed = false;
@@ -344,6 +343,11 @@ export const useEditorStore = defineStore("editor", {
           survivors.push(stroke);
           continue;
         }
+        // Expand the hit threshold by the stroke's visible half-width so the
+        // eraser circle correctly erases down to the rendered stroke edge, not
+        // just the invisible centerline point.
+        const threshold = radius + stroke.size / 2;
+        const t2 = threshold * threshold;
         const runs: Stroke["points"][] = [];
         let run: Stroke["points"] = [];
         let hit = false;
@@ -351,8 +355,8 @@ export const useEditorStore = defineStore("editor", {
           const dx = p.x - wx;
           const dy = p.y - wy;
           const inside = square
-            ? Math.abs(dx) <= radius && Math.abs(dy) <= radius
-            : dx * dx + dy * dy <= r2;
+            ? Math.abs(dx) <= threshold && Math.abs(dy) <= threshold
+            : dx * dx + dy * dy <= t2;
           if (inside) {
             hit = true;
             if (run.length) {
