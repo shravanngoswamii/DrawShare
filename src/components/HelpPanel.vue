@@ -125,7 +125,7 @@ const faqs = [
 .help-panel {
   position: fixed;
   bottom: 64px;
-  left: 12px;
+  right: 12px;
   z-index: 91;
   width: 300px;
   max-height: min(520px, calc(100dvh - 80px));
@@ -359,7 +359,7 @@ details[open] .faq-q::before { transform: rotate(90deg); }
 
 @media (max-width: 767px) {
   .help-panel {
-    left: 8px;
+    right: 8px;
     bottom: 72px;
     width: calc(100vw - 16px);
     max-width: 340px;

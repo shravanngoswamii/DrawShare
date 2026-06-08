@@ -127,6 +127,12 @@ function isInPage(wx: number, wy: number): boolean {
   );
 }
 
+function strictFinalSampleOutOfBounds(sample?: InputSample): boolean {
+  if (!sample || editor.notebookMode !== "strict") return false;
+  const w = toWorld(sample.x, sample.y);
+  return !isInPage(w.x, w.y);
+}
+
 function updatePageOverlay() {
   pageOverlayStyle.value = {
     left: `${(editor.pageOriginX - cam.x) * cam.zoom}px`,
@@ -598,7 +604,7 @@ async function handleUp(sample?: InputSample) {
   }
   if (!currentStroke) return;
   predictedPoints = [];
-  appendFinalPoint(currentStroke, sample);
+  if (!strictFinalSampleOutOfBounds(sample)) appendFinalPoint(currentStroke, sample);
   const finished = currentStroke;
   currentStroke = undefined;
   liveSendCursor = 0;
@@ -628,7 +634,7 @@ async function handleCancel(sample?: InputSample) {
   }
   if (!currentStroke) return;
   predictedPoints = [];
-  appendFinalPoint(currentStroke, sample);
+  if (!strictFinalSampleOutOfBounds(sample)) appendFinalPoint(currentStroke, sample);
   if (currentStroke.points.length >= 2) {
     const partial = currentStroke;
     currentStroke = undefined;
