@@ -143,6 +143,9 @@ function updatePageOverlay() {
 }
 
 function centerOnPage() {
+  const MARGIN = 40;
+  const fitZoom = Math.min((viewW - MARGIN * 2) / PAGE_W, (viewH - MARGIN * 2) / PAGE_H, MAX_ZOOM);
+  cam.zoom = Math.max(MIN_ZOOM, fitZoom);
   cam.x = editor.pageOriginX + PAGE_W / 2 - viewW / (2 * cam.zoom);
   cam.y = editor.pageOriginY + PAGE_H / 2 - viewH / (2 * cam.zoom);
   syncCamera();
