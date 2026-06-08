@@ -188,9 +188,10 @@ const faqs = [
 .help-body {
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-width: thin;
+  scrollbar-width: none;
   flex: 1;
 }
+.help-body::-webkit-scrollbar { display: none; }
 
 .help-section {
   padding: var(--space-3) var(--space-3);
