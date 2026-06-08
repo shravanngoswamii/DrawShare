@@ -21,6 +21,7 @@ const renameValue = ref("");
 const joinCode = ref("");
 const trashOpen = ref(false);
 const deletingIds = ref<string[]>([]);
+const restoringIds = ref<string[]>([]);
 
 async function handleImport(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0];
@@ -80,13 +81,16 @@ async function remove(id: string) {
   if (!deletingIds.value.includes(id)) {
     deletingIds.value = [...deletingIds.value, id];
   }
-  await new Promise<void>((resolve) => setTimeout(resolve, 720));
+  await new Promise<void>((resolve) => setTimeout(resolve, 860));
   await projects.remove(id);
   deletingIds.value = deletingIds.value.filter((x) => x !== id);
 }
 
 async function restore(id: string) {
+  restoringIds.value = [...restoringIds.value, id];
   await projects.restore(id);
+  await new Promise<void>((resolve) => setTimeout(resolve, 750));
+  restoringIds.value = restoringIds.value.filter((x) => x !== id);
 }
 
 async function permanentDelete(id: string, name: string) {
@@ -227,7 +231,7 @@ function formatDate(ts: number): string {
       </div>
 
       <ul v-else class="grid">
-        <li v-for="p in filtered" :key="p.id" class="card" :class="{ 'card-deleting': deletingIds.includes(p.id) }">
+        <li v-for="p in filtered" :key="p.id" class="card" :class="{ 'card-deleting': deletingIds.includes(p.id), 'card-restoring': restoringIds.includes(p.id) }">
           <button class="card-thumb" @click="open(p.id)" aria-label="Open project">
             <div class="thumb-grid"></div>
           </button>
@@ -756,21 +760,48 @@ function formatDate(ts: number): string {
   }
 }
 
+/* Delete: pop → crumple → accelerating fall into trash */
 @keyframes card-crumple {
-  0%   { transform: translateY(0)    scale(1,    1)    rotate(0deg);   opacity: 1;    }
-  7%   { transform: translateY(-10px) scale(1.06, 1.06) rotate(-1deg);  opacity: 1;    }
-  18%  { transform: translateY(-5px)  scaleX(1.09) scaleY(0.84) skewX(-5deg) rotate(2deg);  opacity: 1;    }
-  30%  { transform: translateY(-2px)  scaleX(0.93) scaleY(0.75) skewX(4deg)  rotate(-4deg); opacity: 1;    }
-  42%  { transform: translateY(3px)   scaleX(1.04) scaleY(0.66) skewX(-3deg) rotate(6deg);  opacity: 0.95; }
-  55%  { transform: translateY(14px)  scale(0.62,  0.50) rotate(-8deg);  opacity: 0.82; }
-  68%  { transform: translateY(34px)  scale(0.40,  0.30) rotate(11deg);  opacity: 0.55; }
-  84%  { transform: translateY(62px)  scale(0.20,  0.14) rotate(-14deg); opacity: 0.25; }
-  100% { transform: translateY(92px)  scale(0.08,  0.06) rotate(18deg);  opacity: 0;    }
+  /* 1. Pop up */
+  0%   { transform: translateY(0) scale(1) rotate(0deg);                                  opacity: 1;    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
+  11%  { transform: translateY(-30px) scale(1.10, 1.08) rotate(-2deg);                    opacity: 1;    }
+
+  /* 2. Crumple / newspaper squeeze */
+  22%  { transform: translateY(-20px) scaleX(1.14) scaleY(0.76) skewX(-8deg) rotate(4deg);  opacity: 1;    animation-timing-function: linear; }
+  33%  { transform: translateY(-10px) scaleX(0.86) scaleY(0.63) skewX(7deg)  rotate(-7deg); opacity: 1;    }
+  44%  { transform: translateY(-2px)  scaleX(0.78) scaleY(0.52) skewX(-5deg) rotate(9deg);  opacity: 0.9;  animation-timing-function: ease-in; }
+
+  /* 3. Accelerating fall into trash */
+  56%  { transform: translateY(60px)  scale(0.52, 0.38) rotate(-12deg);                  opacity: 0.72; }
+  68%  { transform: translateY(160px) scale(0.28, 0.20) rotate(16deg);                   opacity: 0.44; }
+  82%  { transform: translateY(320px) scale(0.12, 0.07) rotate(-22deg);                  opacity: 0.16; }
+  100% { transform: translateY(520px) scale(0.04, 0.02) rotate(28deg);                   opacity: 0;    }
 }
 
 .card-deleting {
-  animation: card-crumple 720ms cubic-bezier(0.36, 0.07, 0.19, 0.97) forwards;
+  animation: card-crumple 860ms ease-out forwards;
   pointer-events: none;
+  transform-origin: center 60%;
+  position: relative;
+  z-index: 10;
+}
+
+/* Restore: spring up from where the trash bin sits */
+@keyframes card-restore {
+  0%   { transform: translateY(120px) scale(0.06, 0.04) rotate(-20deg); opacity: 0;    }
+  18%  { transform: translateY(60px)  scale(0.22, 0.18) rotate(-10deg); opacity: 0.35; }
+  40%  { transform: translateY(-22px) scale(1.10, 1.10) rotate(4deg);   opacity: 0.85; animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1); }
+  56%  { transform: translateY(9px)   scale(0.97, 0.97) rotate(-2deg);  opacity: 0.95; }
+  70%  { transform: translateY(-6px)  scale(1.03, 1.03) rotate(1deg);   opacity: 1;    }
+  82%  { transform: translateY(3px)   scale(0.99, 0.99) rotate(-0.5deg); opacity: 1;   }
+  91%  { transform: translateY(-2px)  scale(1.01, 1.01) rotate(0.2deg); opacity: 1;    }
+  100% { transform: translateY(0)     scale(1)          rotate(0deg);   opacity: 1;    }
+}
+
+.card-restoring {
+  animation: card-restore 750ms ease-out forwards;
   transform-origin: center bottom;
+  position: relative;
+  z-index: 10;
 }
 </style>
