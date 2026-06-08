@@ -40,8 +40,12 @@ async function renderToCanvas(
   const scaleX = w / page.width;
   const scaleY = h / page.height;
   const scale = cover ? Math.max(scaleX, scaleY) : Math.min(scaleX, scaleY);
-  const offsetX = (w - page.width * scale) / 2;
-  const offsetY = (h - page.height * scale) / 2;
+  // Cover mode: align to top-left so drawings near the page origin are always
+  // visible. Contain mode: center within the thumbnail box.
+  const centerX = (w - page.width * scale) / 2;
+  const centerY = (h - page.height * scale) / 2;
+  const offsetX = cover ? Math.max(0, centerX) : centerX;
+  const offsetY = cover ? Math.max(0, centerY) : centerY;
 
   const canvas = new OffscreenCanvas(w, h);
   const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D | null;
