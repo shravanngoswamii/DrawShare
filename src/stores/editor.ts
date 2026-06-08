@@ -427,5 +427,20 @@ export const useEditorStore = defineStore("editor", {
       this.pageOriginX = x;
       this.pageOriginY = y;
     },
+    async translatePageContent(pageId: string, dx: number, dy: number) {
+      if (dx === 0 && dy === 0) return;
+      this.strokes = this.strokes.map((s) => {
+        if (s.pageId !== pageId) return s;
+        return { ...s, points: s.points.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy })) };
+      });
+      const page = this.pages.find((p) => p.id === pageId);
+      if (page?.texts?.length) {
+        page.texts = page.texts.map((t) => ({ ...t, x: t.x + dx, y: t.y + dy }));
+      }
+      for (const s of this.strokes.filter((s) => s.pageId === pageId)) {
+        await storage.putStroke(s);
+      }
+      if (page) await storage.putPage(page);
+    },
   },
 });

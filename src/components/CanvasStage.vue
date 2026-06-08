@@ -169,6 +169,9 @@ function startPageDrag(e: PointerEvent) {
   function onUp() {
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
+    const dx = editor.pageOriginX - origX;
+    const dy = editor.pageOriginY - origY;
+    if (editor.currentPageId) editor.translatePageContent(editor.currentPageId, dx, dy);
   }
   window.addEventListener("pointermove", onMove);
   window.addEventListener("pointerup", onUp);
