@@ -40,7 +40,7 @@ const faqs = [
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="help-backdrop" @click="emit('close')" aria-hidden="true"></div>
+    <div v-if="open" class="help-backdrop" aria-hidden="true"></div>
     <div v-if="open" class="help-panel" role="dialog" aria-label="Help" aria-modal="true">
       <div class="help-head">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
@@ -120,6 +120,7 @@ const faqs = [
   inset: 0;
   z-index: 90;
   background: transparent;
+  pointer-events: none;
 }
 
 .help-panel {
@@ -129,10 +130,10 @@ const faqs = [
   z-index: 91;
   width: 300px;
   max-height: min(520px, calc(100dvh - 80px));
-  background: rgba(255, 255, 255, 0.55);
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(40px) saturate(200%);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
   border-radius: 14px;
   box-shadow: 0 12px 36px var(--color-glass-shadow), 0 2px 8px var(--color-glass-shadow);
   display: flex;
@@ -144,17 +145,17 @@ const faqs = [
 
 @media (prefers-color-scheme: dark) {
   .help-panel {
-    background: rgba(15, 23, 42, 0.6);
+    background: rgba(15, 23, 42, 0.5);
     border-color: rgba(148, 163, 184, 0.18);
   }
 }
 html[data-theme="dark"] .help-panel {
-  background: rgba(15, 23, 42, 0.6);
+  background: rgba(15, 23, 42, 0.5);
   border-color: rgba(148, 163, 184, 0.18);
 }
 html[data-theme="light"] .help-panel {
-  background: rgba(255, 255, 255, 0.55);
-  border-color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.45);
+  border-color: rgba(255, 255, 255, 0.55);
 }
 
 @keyframes help-in {
@@ -175,17 +176,17 @@ html[data-theme="light"] .help-panel {
   color: var(--color-text-muted);
   position: sticky;
   top: 0;
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(40px) saturate(200%);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
   border-radius: 14px 14px 0 0;
 }
 
 @media (prefers-color-scheme: dark) {
-  .help-head { background: rgba(15, 23, 42, 0.75); }
+  .help-head { background: rgba(15, 23, 42, 0.65); }
 }
-html[data-theme="dark"] .help-head { background: rgba(15, 23, 42, 0.75); }
-html[data-theme="light"] .help-head { background: rgba(255, 255, 255, 0.7); }
+html[data-theme="dark"] .help-head { background: rgba(15, 23, 42, 0.65); }
+html[data-theme="light"] .help-head { background: rgba(255, 255, 255, 0.6); }
 
 .help-title {
   flex: 1;

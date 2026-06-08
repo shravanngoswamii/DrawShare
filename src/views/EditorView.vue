@@ -114,7 +114,7 @@ onBeforeUnmount(() => removeProbe?.());
         </svg>
       </button>
       <Toolbar :collapsed="toolbarCollapsed" @toggle="toolbarCollapsed = !toolbarCollapsed" />
-      <main class="stage-wrap">
+      <main class="stage-wrap" @pointerdown="if (helpOpen) helpOpen = false">
         <CanvasStage v-if="editor.currentPage" :page="editor.currentPage" />
         <div v-else class="loading muted">Loading.</div>
       </main>
@@ -161,7 +161,6 @@ onBeforeUnmount(() => removeProbe?.());
      i.e. each time a project is opened from the projects list. */
   animation: editor-open 560ms cubic-bezier(0.16, 1, 0.3, 1);
   transform-origin: center;
-  will-change: clip-path, transform, opacity;
 }
 
 /* Closing: reverse of the open — collapse back toward the centre. Slightly
