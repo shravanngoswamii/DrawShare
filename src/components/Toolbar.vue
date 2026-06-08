@@ -89,6 +89,7 @@ interface DockPositions {
 const dock = ref<Dock>("left");
 const dockPositions = ref<DockPositions>({ left: 0.5, right: 0.5, top: 0.5, bottom: 0.5 });
 const dragging = ref(false);
+const noTransition = ref(false);
 const dragStyle = ref<Record<string, string>>({});
 const horizontal = computed(() => dock.value === "top" || dock.value === "bottom");
 
@@ -121,7 +122,10 @@ function onGripDown(e: PointerEvent) {
   popover.value = null;
   const aside = (e.currentTarget as HTMLElement).closest(".toolbar") as HTMLElement | null;
   if (!aside) return;
+  // Capture toolbar size at drag-start (before position: fixed takes over).
   const rect = aside.getBoundingClientRect();
+  const tbW = rect.width;
+  const tbH = rect.height;
   const offX = e.clientX - rect.left;
   const offY = e.clientY - rect.top;
   const startX = e.clientX;
@@ -142,41 +146,60 @@ function onGripDown(e: PointerEvent) {
       transform: "none",
       transition: "none",
       margin: "0",
-      maxHeight: "none",
     };
   };
   const up = (ev: PointerEvent) => {
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", up);
     if (!moved) {
-      emit("toggle"); // a tap (no drag) collapses the toolbar
+      emit("toggle");
       return;
     }
     dragging.value = false;
-    dragStyle.value = {};
-    // Determine the nearest edge based on pointer position.
-    const dl = ev.clientX;
-    const dr = window.innerWidth - ev.clientX;
-    const dt = ev.clientY;
-    const db = window.innerHeight - ev.clientY;
+
+    // Compute where the toolbar *centre* landed in viewport coords.
+    const centerX = ev.clientX - offX + tbW / 2;
+    const centerY = ev.clientY - offY + tbH / 2;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const PAD = 12; // keep grip at least this many px inside the viewport
+
+    const dl = centerX;
+    const dr = vw - centerX;
+    const dt = centerY;
+    const db = vh - centerY;
     const min = Math.min(dl, dr, dt, db);
+
     let newDock: Dock;
     let frac: number;
     if (min === dl) {
       newDock = "left";
-      frac = Math.max(0, Math.min(1, ev.clientY / window.innerHeight));
+      const safe = Math.max(tbH / 2 + PAD, Math.min(vh - tbH / 2 - PAD, centerY));
+      frac = safe / vh;
     } else if (min === dr) {
       newDock = "right";
-      frac = Math.max(0, Math.min(1, ev.clientY / window.innerHeight));
+      const safe = Math.max(tbH / 2 + PAD, Math.min(vh - tbH / 2 - PAD, centerY));
+      frac = safe / vh;
     } else if (min === dt) {
       newDock = "top";
-      frac = Math.max(0, Math.min(1, ev.clientX / window.innerWidth));
+      const safe = Math.max(tbW / 2 + PAD, Math.min(vw - tbW / 2 - PAD, centerX));
+      frac = safe / vw;
     } else {
       newDock = "bottom";
-      frac = Math.max(0, Math.min(1, ev.clientX / window.innerWidth));
+      const safe = Math.max(tbW / 2 + PAD, Math.min(vw - tbW / 2 - PAD, centerX));
+      frac = safe / vw;
     }
+
+    // Snap to final position immediately (no spring from stale coords).
+    noTransition.value = true;
+    dragStyle.value = {};
     dock.value = newDock;
-    dockPositions.value[newDock] = frac;
+    // Spread-replace so Vue reactivity sees a new object reference.
+    dockPositions.value = { ...dockPositions.value, [newDock]: frac };
+    requestAnimationFrame(() => {
+      noTransition.value = false;
+    });
+
     try {
       localStorage.setItem(DOCK_KEY, dock.value);
     } catch {
@@ -213,7 +236,7 @@ onMounted(() => {
 <template>
   <aside
     class="toolbar"
-    :class="[`dock-${dock}`, { 'is-collapsed': collapsed, quiet: editor.isDrawing, horizontal, dragging }]"
+    :class="[`dock-${dock}`, { 'is-collapsed': collapsed, quiet: editor.isDrawing, horizontal, dragging, 'no-transition': noTransition }]"
     :style="Object.keys(dragStyle).length > 0 ? dragStyle : dockStyle"
     aria-label="Drawing tools"
   >
@@ -376,6 +399,7 @@ onMounted(() => {
 .toolbar:not(.horizontal) .grip svg { transform: rotate(90deg); }
 
 .toolbar.dragging { cursor: grabbing; box-shadow: 0 16px 40px rgba(15, 23, 42, 0.2); }
+.toolbar.no-transition { transition: none !important; }
 
 .toolbar.is-collapsed { transform: scale(0); opacity: 0; pointer-events: none; }
 .toolbar.quiet { opacity: 0.12; pointer-events: none; transition: opacity 150ms ease; }
