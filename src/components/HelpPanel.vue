@@ -129,10 +129,10 @@ const faqs = [
   z-index: 91;
   width: 300px;
   max-height: min(520px, calc(100dvh - 80px));
-  background: var(--color-glass-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--color-glass-border);
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: 14px;
   box-shadow: 0 12px 36px var(--color-glass-shadow), 0 2px 8px var(--color-glass-shadow);
   display: flex;
@@ -140,6 +140,21 @@ const faqs = [
   overflow: hidden;
   animation: help-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
   transform-origin: bottom left;
+}
+
+@media (prefers-color-scheme: dark) {
+  .help-panel {
+    background: rgba(15, 23, 42, 0.6);
+    border-color: rgba(148, 163, 184, 0.18);
+  }
+}
+html[data-theme="dark"] .help-panel {
+  background: rgba(15, 23, 42, 0.6);
+  border-color: rgba(148, 163, 184, 0.18);
+}
+html[data-theme="light"] .help-panel {
+  background: rgba(255, 255, 255, 0.55);
+  border-color: rgba(255, 255, 255, 0.5);
 }
 
 @keyframes help-in {
@@ -160,11 +175,17 @@ const faqs = [
   color: var(--color-text-muted);
   position: sticky;
   top: 0;
-  background: var(--color-glass-bg-strong);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
   border-radius: 14px 14px 0 0;
 }
+
+@media (prefers-color-scheme: dark) {
+  .help-head { background: rgba(15, 23, 42, 0.75); }
+}
+html[data-theme="dark"] .help-head { background: rgba(15, 23, 42, 0.75); }
+html[data-theme="light"] .help-head { background: rgba(255, 255, 255, 0.7); }
 
 .help-title {
   flex: 1;
