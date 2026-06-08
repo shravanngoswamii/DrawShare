@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import HelpPanel from "@/components/HelpPanel.vue";
 import { useProjectBackup } from "@/composables/useProjectBackup";
 import { useTheme } from "@/composables/useTheme";
 import { useEditorStore } from "@/stores/editor";
@@ -14,6 +15,7 @@ const { exportAll, exportProject, importAll } = useProjectBackup();
 const importInput = ref<HTMLInputElement | null>(null);
 const importing = ref(false);
 const query = ref("");
+const helpOpen = ref(false);
 const renamingId = ref<string | null>(null);
 const renameValue = ref("");
 const joinCode = ref("");
@@ -141,6 +143,13 @@ function formatDate(ts: number): string {
               <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
             </svg>
           </button>
+          <button
+            class="btn btn-ghost btn-icon help-btn"
+            @click="helpOpen = !helpOpen"
+            :aria-expanded="helpOpen"
+            title="Help"
+            aria-label="Help"
+          >?</button>
           <button class="btn btn-primary new-btn" @click="createNew">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -240,6 +249,7 @@ function formatDate(ts: number): string {
       </ul>
     </main>
   </div>
+  <HelpPanel :open="helpOpen" @close="helpOpen = false" />
 </template>
 
 <style scoped>
@@ -300,6 +310,16 @@ function formatDate(ts: number): string {
 .theme-btn {
   flex-shrink: 0;
   color: var(--color-text-muted);
+}
+
+.help-btn {
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
 }
 
 .search {

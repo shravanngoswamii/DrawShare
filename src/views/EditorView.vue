@@ -142,10 +142,10 @@ onBeforeUnmount(() => removeProbe?.());
         :aria-expanded="helpOpen"
       >?</button>
     </div>
-    <HelpPanel :open="helpOpen" @close="helpOpen = false" />
-    <ShareSessionModal :open="shareOpen" @close="shareOpen = false" />
-    <DebugConsole v-if="devMode" />
   </div>
+  <HelpPanel :open="helpOpen" @close="helpOpen = false" />
+  <ShareSessionModal :open="shareOpen" @close="shareOpen = false" />
+  <DebugConsole v-if="devMode" />
 </template>
 
 <style scoped>
