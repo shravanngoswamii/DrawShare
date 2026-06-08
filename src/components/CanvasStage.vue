@@ -81,6 +81,11 @@ let viewH = 0;
 // Strict notebook mode: once a stroke exits the page boundary, block further points.
 let strictBlocked = false;
 
+// Render-time offset applied to strokes/texts while the page frame is being dragged.
+// Avoids mutating all stroke data on every pointermove; committed on pointer-up.
+let pageDragDeltaX = 0;
+let pageDragDeltaY = 0;
+
 // Navigation state (plain booleans – not reactive)
 let spaceHeld = false;
 let panActive = false;
@@ -160,18 +165,25 @@ function startPageDrag(e: PointerEvent) {
   const origX = editor.pageOriginX;
   const origY = editor.pageOriginY;
   function onMove(ev: PointerEvent) {
-    editor.setPageOrigin(
-      origX + (ev.clientX - startX) / cam.zoom,
-      origY + (ev.clientY - startY) / cam.zoom,
-    );
+    const newX = origX + (ev.clientX - startX) / cam.zoom;
+    const newY = origY + (ev.clientY - startY) / cam.zoom;
+    editor.setPageOrigin(newX, newY);
+    pageDragDeltaX = newX - origX;
+    pageDragDeltaY = newY - origY;
+    dirtyBase = true;
+    schedule();
     updatePageOverlay();
   }
-  function onUp() {
+  async function onUp() {
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
-    const dx = editor.pageOriginX - origX;
-    const dy = editor.pageOriginY - origY;
-    if (editor.currentPageId) editor.translatePageContent(editor.currentPageId, dx, dy);
+    const dx = pageDragDeltaX;
+    const dy = pageDragDeltaY;
+    pageDragDeltaX = 0;
+    pageDragDeltaY = 0;
+    if (editor.currentPageId) await editor.translatePageContent(editor.currentPageId, dx, dy);
+    dirtyBase = true;
+    schedule();
   }
   window.addEventListener("pointermove", onMove);
   window.addEventListener("pointerup", onUp);
@@ -255,10 +267,24 @@ function render() {
   if (dirtyBase) {
     baseRenderer.clear();
     baseRenderer.beginFrame();
-    for (const s of editor.strokes) baseRenderer.drawStroke(s);
+    const hasDragOffset = pageDragDeltaX !== 0 || pageDragDeltaY !== 0;
+    for (const s of editor.strokes) {
+      if (hasDragOffset && s.pageId === editor.currentPageId) {
+        baseRenderer.drawStroke({
+          ...s,
+          points: s.points.map((p) => ({ ...p, x: p.x + pageDragDeltaX, y: p.y + pageDragDeltaY })),
+        });
+      } else {
+        baseRenderer.drawStroke(s);
+      }
+    }
     for (const t of editor.currentPage?.texts ?? []) {
       if (editing.value?.id === t.id) continue;
-      baseRenderer.drawText(t);
+      if (hasDragOffset) {
+        baseRenderer.drawText({ ...t, x: t.x + pageDragDeltaX, y: t.y + pageDragDeltaY });
+      } else {
+        baseRenderer.drawText(t);
+      }
     }
     baseRenderer.endFrame();
     dlog(`render base strokes=${editor.strokes.length} cur=${currentStroke ? "y" : "n"}`);
