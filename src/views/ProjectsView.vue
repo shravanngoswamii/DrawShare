@@ -143,13 +143,6 @@ function formatDate(ts: number): string {
               <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
             </svg>
           </button>
-          <button
-            class="btn btn-ghost btn-icon help-btn"
-            @click="helpOpen = !helpOpen"
-            :aria-expanded="helpOpen"
-            title="Help"
-            aria-label="Help"
-          >?</button>
           <button class="btn btn-primary new-btn" @click="createNew">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -248,6 +241,14 @@ function formatDate(ts: number): string {
         </li>
       </ul>
     </main>
+    <button
+      class="help-fab"
+      :class="{ active: helpOpen }"
+      @click="helpOpen = !helpOpen"
+      :aria-expanded="helpOpen"
+      title="Help"
+      aria-label="Help"
+    >?</button>
   </div>
   <HelpPanel :open="helpOpen" @close="helpOpen = false" />
 </template>
@@ -312,15 +313,29 @@ function formatDate(ts: number): string {
   color: var(--color-text-muted);
 }
 
-.help-btn {
-  flex-shrink: 0;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--color-text-muted);
+.help-fab {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 20;
   width: 32px;
   height: 32px;
   border-radius: 50%;
+  background: var(--color-glass-bg-strong);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-glass-border);
+  box-shadow: 0 2px 8px var(--color-glass-shadow);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: box-shadow 150ms, color 80ms, background 80ms;
 }
+.help-fab:hover { box-shadow: var(--shadow-md); color: var(--color-text); }
+.help-fab.active { background: var(--color-accent-soft); color: var(--color-accent); border-color: var(--color-accent); }
 
 .search {
   width: 260px;
