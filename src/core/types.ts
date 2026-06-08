@@ -53,6 +53,7 @@ export interface Project {
   createdAt: number;
   updatedAt: number;
   pageOrder: ID[];
+  deletedAt?: number;
 }
 
 export type HistoryEntry =
