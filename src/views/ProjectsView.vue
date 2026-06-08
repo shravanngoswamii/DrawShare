@@ -20,6 +20,7 @@ const renamingId = ref<string | null>(null);
 const renameValue = ref("");
 const joinCode = ref("");
 const trashOpen = ref(false);
+const deletingIds = ref<string[]>([]);
 
 async function handleImport(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0];
@@ -76,7 +77,12 @@ async function commitRename() {
 }
 
 async function remove(id: string) {
+  if (!deletingIds.value.includes(id)) {
+    deletingIds.value = [...deletingIds.value, id];
+  }
+  await new Promise<void>((resolve) => setTimeout(resolve, 720));
   await projects.remove(id);
+  deletingIds.value = deletingIds.value.filter((x) => x !== id);
 }
 
 async function restore(id: string) {
@@ -221,7 +227,7 @@ function formatDate(ts: number): string {
       </div>
 
       <ul v-else class="grid">
-        <li v-for="p in filtered" :key="p.id" class="card">
+        <li v-for="p in filtered" :key="p.id" class="card" :class="{ 'card-deleting': deletingIds.includes(p.id) }">
           <button class="card-thumb" @click="open(p.id)" aria-label="Open project">
             <div class="thumb-grid"></div>
           </button>
@@ -748,5 +754,23 @@ function formatDate(ts: number): string {
   .grid {
     grid-template-columns: 1fr;
   }
+}
+
+@keyframes card-crumple {
+  0%   { transform: translateY(0)    scale(1,    1)    rotate(0deg);   opacity: 1;    }
+  7%   { transform: translateY(-10px) scale(1.06, 1.06) rotate(-1deg);  opacity: 1;    }
+  18%  { transform: translateY(-5px)  scaleX(1.09) scaleY(0.84) skewX(-5deg) rotate(2deg);  opacity: 1;    }
+  30%  { transform: translateY(-2px)  scaleX(0.93) scaleY(0.75) skewX(4deg)  rotate(-4deg); opacity: 1;    }
+  42%  { transform: translateY(3px)   scaleX(1.04) scaleY(0.66) skewX(-3deg) rotate(6deg);  opacity: 0.95; }
+  55%  { transform: translateY(14px)  scale(0.62,  0.50) rotate(-8deg);  opacity: 0.82; }
+  68%  { transform: translateY(34px)  scale(0.40,  0.30) rotate(11deg);  opacity: 0.55; }
+  84%  { transform: translateY(62px)  scale(0.20,  0.14) rotate(-14deg); opacity: 0.25; }
+  100% { transform: translateY(92px)  scale(0.08,  0.06) rotate(18deg);  opacity: 0;    }
+}
+
+.card-deleting {
+  animation: card-crumple 720ms cubic-bezier(0.36, 0.07, 0.19, 0.97) forwards;
+  pointer-events: none;
+  transform-origin: center bottom;
 }
 </style>
