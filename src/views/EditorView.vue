@@ -114,7 +114,7 @@ onBeforeUnmount(() => removeProbe?.());
         </svg>
       </button>
       <Toolbar :collapsed="toolbarCollapsed" @toggle="toolbarCollapsed = !toolbarCollapsed" />
-      <main class="stage-wrap" @pointerdown="if (helpOpen) helpOpen = false">
+      <main class="stage-wrap" @pointerdown="helpOpen = false">
         <CanvasStage v-if="editor.currentPage" :page="editor.currentPage" />
         <div v-else class="loading muted">Loading.</div>
       </main>
