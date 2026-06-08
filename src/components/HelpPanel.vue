@@ -107,7 +107,7 @@ const faqs = [
             Dev mode
             <span class="dev-status">{{ devMode ? 'on' : 'off' }}</span>
           </button>
-          <span class="foot-credit">by <a :href="GITHUB_URL" target="_blank" rel="noopener noreferrer">Shravan Goswami</a></span>
+          <span class="foot-credit">by <a href="https://github.com/shravanngoswamii" target="_blank" rel="noopener noreferrer">Shravan Goswami</a></span>
         </section>
       </div>
     </div>
@@ -342,6 +342,8 @@ details[open] .faq-q::before { transform: rotate(90deg); }
 .dev-status {
   font-family: var(--font-mono);
   font-size: 10px;
+  line-height: 1;
+  padding-top: 1px;
 }
 
 .foot-credit {

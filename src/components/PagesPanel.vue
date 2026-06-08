@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { exportPageAsPng } from "@/composables/useExport";
+import { exportPageAsNotebookPdf, exportPageAsPng } from "@/composables/useExport";
 import { useTheme } from "@/composables/useTheme";
 import { devMode, setDevMode } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
@@ -105,6 +105,12 @@ async function exportCurrentPage() {
   const page = editor.currentPage;
   if (!page) return;
   await exportPageAsPng(page, editor.strokes);
+}
+
+async function exportNotebookPdf() {
+  const page = editor.currentPage;
+  if (!page) return;
+  await exportPageAsNotebookPdf(page, editor.strokes, editor.pageOriginX, editor.pageOriginY);
 }
 </script>
 
@@ -233,6 +239,14 @@ async function exportCurrentPage() {
               <path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M21 8V5a2 2 0 0 0-2-2h-3" /><path d="M3 16v3a2 2 0 0 0 2 2h3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" />
             </svg>
             <span>{{ isFullscreen ? 'Exit full' : 'Fullscreen' }}</span>
+          </button>
+          <button v-if="editor.notebookMode !== 'off'" class="tool-btn" @click="exportNotebookPdf" title="Export A4 page as PDF">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>
+              <path d="M9 15h6M9 18h4"/>
+            </svg>
+            <span>Export PDF</span>
           </button>
           <button class="tool-btn" :class="{ 'tool-active': devMode }" @click="setDevMode(!devMode)" title="Dev mode">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"

@@ -119,16 +119,50 @@ function updateBg() {
 }
 
 function isInPage(wx: number, wy: number): boolean {
-  return wx >= 0 && wx <= PAGE_W && wy >= 0 && wy <= PAGE_H;
+  return (
+    wx >= editor.pageOriginX &&
+    wx <= editor.pageOriginX + PAGE_W &&
+    wy >= editor.pageOriginY &&
+    wy <= editor.pageOriginY + PAGE_H
+  );
 }
 
 function updatePageOverlay() {
   pageOverlayStyle.value = {
-    left: `${(0 - cam.x) * cam.zoom}px`,
-    top: `${(0 - cam.y) * cam.zoom}px`,
+    left: `${(editor.pageOriginX - cam.x) * cam.zoom}px`,
+    top: `${(editor.pageOriginY - cam.y) * cam.zoom}px`,
     width: `${PAGE_W * cam.zoom}px`,
     height: `${PAGE_H * cam.zoom}px`,
   };
+}
+
+function centerOnPage() {
+  cam.x = editor.pageOriginX + PAGE_W / 2 - viewW / (2 * cam.zoom);
+  cam.y = editor.pageOriginY + PAGE_H / 2 - viewH / (2 * cam.zoom);
+  syncCamera();
+}
+
+function startPageDrag(e: PointerEvent) {
+  e.preventDefault();
+  const el = e.currentTarget as HTMLElement;
+  el.setPointerCapture(e.pointerId);
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const origX = editor.pageOriginX;
+  const origY = editor.pageOriginY;
+  function onMove(ev: PointerEvent) {
+    editor.setPageOrigin(
+      origX + (ev.clientX - startX) / cam.zoom,
+      origY + (ev.clientY - startY) / cam.zoom,
+    );
+    updatePageOverlay();
+  }
+  function onUp() {
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+  }
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
 }
 
 function syncCamera() {
@@ -460,7 +494,11 @@ function handleDown(s: InputSample) {
 function handleMove(samples: InputSample[]) {
   if (panActive || pinchActive) return;
   if (editor.notebookMode === "strict" && currentStroke) {
-    if (strictBlocked) return;
+    if (strictBlocked) {
+      predictedPoints = [];
+      schedule();
+      return;
+    }
     const allowed: InputSample[] = [];
     for (const pt of samples) {
       const w = toWorld(pt.x, pt.y);
@@ -471,7 +509,11 @@ function handleMove(samples: InputSample[]) {
       allowed.push(pt);
     }
     samples = allowed;
-    if (samples.length === 0) return;
+    if (samples.length === 0) {
+      predictedPoints = [];
+      schedule();
+      return;
+    }
   }
   if (textDrag) {
     const s = samples[samples.length - 1];
@@ -504,6 +546,11 @@ function handleMove(samples: InputSample[]) {
 
 function handlePredict(samples: InputSample[]) {
   if (!currentStroke || panActive || pinchActive) return;
+  if (editor.notebookMode === "strict" && strictBlocked) {
+    predictedPoints = [];
+    schedule();
+    return;
+  }
   predictedPoints = samples.map(toPagePoint);
   schedule();
 }
@@ -748,6 +795,15 @@ watch(
   },
   { deep: true },
 );
+watch(
+  () => editor.notebookMode,
+  (mode, prev) => {
+    if (mode !== "off" && prev === "off") centerOnPage();
+  },
+);
+watch([() => editor.pageOriginX, () => editor.pageOriginY], () => {
+  updatePageOverlay();
+});
 
 // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -829,6 +885,12 @@ onBeforeUnmount(() => {
       :style="pageOverlayStyle"
       aria-hidden="true"
     >
+      <div class="page-frame-grip" @pointerdown="startPageDrag" title="Drag to move page">
+        <svg width="14" height="8" viewBox="0 0 14 8" fill="currentColor" aria-hidden="true">
+          <circle cx="2" cy="2" r="1.2"/><circle cx="7" cy="2" r="1.2"/><circle cx="12" cy="2" r="1.2"/>
+          <circle cx="2" cy="6" r="1.2"/><circle cx="7" cy="6" r="1.2"/><circle cx="12" cy="6" r="1.2"/>
+        </svg>
+      </div>
       <span class="page-frame-label">{{ editor.notebookMode === 'strict' ? 'A4 strict' : 'A4' }}</span>
     </div>
     <div
@@ -947,6 +1009,31 @@ onBeforeUnmount(() => {
   color: #f59e0b;
 }
 
+.page-frame-grip {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--color-accent);
+  opacity: 0.5;
+  cursor: grab;
+  pointer-events: auto;
+  padding: 3px 6px;
+  border-radius: 4px;
+  line-height: 0;
+  transition: opacity 80ms ease, background 80ms ease;
+}
+.page-frame-grip:hover {
+  opacity: 0.85;
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+}
+.page-frame-grip:active {
+  cursor: grabbing;
+}
+.page-frame.is-strict .page-frame-grip {
+  color: #f59e0b;
+}
+
 .eraser-cursor {
   position: absolute;
   z-index: 6;
@@ -981,7 +1068,7 @@ onBeforeUnmount(() => {
 .cam-controls {
   position: absolute;
   bottom: 16px;
-  right: 16px;
+  left: 16px;
   display: flex;
   align-items: center;
   gap: 2px;

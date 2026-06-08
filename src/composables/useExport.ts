@@ -2,6 +2,9 @@ import { getStroke } from "perfect-freehand";
 import type { Page, Stroke, TextItem } from "@/core/types";
 
 const PADDING = 32;
+// A4 at 96 DPI — matches CanvasStage PAGE_W / PAGE_H constants.
+const A4_W = 794;
+const A4_H = 1123;
 
 const PEN_OPTIONS = {
   size: 1,
@@ -168,4 +171,81 @@ export async function exportPageAsPng(page: Page, strokes: Stroke[]): Promise<vo
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// Export the A4 notebook area as a print-ready page (browser Save as PDF).
+// Renders exactly the region (originX, originY) → (originX+A4_W, originY+A4_H)
+// in world coordinates at 2× resolution, clips everything to the A4 boundary,
+// opens a styled print window and triggers the browser print dialog.
+export async function exportPageAsNotebookPdf(
+  page: Page,
+  strokes: Stroke[],
+  originX: number,
+  originY: number,
+): Promise<void> {
+  const scale = 2;
+  const canvas = new OffscreenCanvas(A4_W * scale, A4_H * scale);
+  const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D;
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, A4_W * scale, A4_H * scale);
+
+  ctx.save();
+  ctx.scale(scale, scale);
+  // Clip to A4 bounds
+  ctx.beginPath();
+  ctx.rect(0, 0, A4_W, A4_H);
+  ctx.clip();
+  // Draw background pattern aligned to the A4 region
+  drawBackground(ctx, { ...page, width: A4_W, height: A4_H });
+  // Shift so world (originX, originY) maps to canvas (0, 0)
+  ctx.translate(-originX, -originY);
+  const pageStrokes = strokes.filter((s) => s.pageId === page.id);
+  for (const s of pageStrokes) drawStrokeToCtx(ctx, s);
+  for (const t of page.texts ?? []) drawTextToCtx(ctx, t);
+  ctx.restore();
+
+  const blob = await canvas.convertToBlob({ type: "image/png" });
+  const dataUrl = await new Promise<string>((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.readAsDataURL(blob);
+  });
+
+  const safeName = (page.name || "page").replace(/[^a-z0-9_-]/gi, "_");
+  const win = window.open("", "_blank");
+  if (!win) {
+    // Popup blocked: fall back to PNG download
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${safeName}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+    return;
+  }
+
+  win.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>${page.name}</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+@page { size: A4 portrait; margin: 0; }
+html, body { width: 210mm; height: 297mm; overflow: hidden; background: #fff; }
+img { width: 210mm; height: 297mm; display: block; }
+@media screen {
+  body { display: flex; align-items: center; justify-content: center; min-width: 100vw; min-height: 100vh; background: #e5e7eb; }
+  img { box-shadow: 0 4px 24px rgba(0,0,0,.18); }
+}
+</style>
+</head>
+<body><img src="${dataUrl}" alt="${page.name}"></body>
+</html>`);
+  win.document.close();
+  win.addEventListener("load", () => {
+    setTimeout(() => win.print(), 250);
+  });
 }

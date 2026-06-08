@@ -24,6 +24,8 @@ interface EditorState {
   camera: { x: number; y: number; zoom: number };
   isDrawing: boolean;
   notebookMode: "off" | "notebook" | "strict";
+  pageOriginX: number;
+  pageOriginY: number;
 }
 
 export const useEditorStore = defineStore("editor", {
@@ -45,6 +47,8 @@ export const useEditorStore = defineStore("editor", {
     camera: { x: 0, y: 0, zoom: 1 },
     isDrawing: false,
     notebookMode: "off",
+    pageOriginX: 0,
+    pageOriginY: 0,
   }),
   getters: {
     currentPage(state): Page | undefined {
@@ -418,6 +422,10 @@ export const useEditorStore = defineStore("editor", {
     },
     setNotebookMode(mode: "off" | "notebook" | "strict") {
       this.notebookMode = mode;
+    },
+    setPageOrigin(x: number, y: number) {
+      this.pageOriginX = x;
+      this.pageOriginY = y;
     },
   },
 });

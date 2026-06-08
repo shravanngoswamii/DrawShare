@@ -304,7 +304,7 @@ onBeforeUnmount(() => removeProbe?.());
 .help-fab {
   position: absolute;
   bottom: 16px;
-  left: 16px;
+  right: 16px;
   z-index: 20;
   width: 32px;
   height: 32px;
