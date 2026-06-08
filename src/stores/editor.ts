@@ -343,11 +343,8 @@ export const useEditorStore = defineStore("editor", {
           survivors.push(stroke);
           continue;
         }
-        // Expand the hit threshold by the stroke's visible half-width so the
-        // eraser circle correctly erases down to the rendered stroke edge, not
-        // just the invisible centerline point.
-        const threshold = radius + stroke.size / 2;
-        const t2 = threshold * threshold;
+        // Only remove points whose center falls within the eraser circle/square.
+        const r2 = radius * radius;
         const runs: Stroke["points"][] = [];
         let run: Stroke["points"] = [];
         let hit = false;
@@ -355,8 +352,8 @@ export const useEditorStore = defineStore("editor", {
           const dx = p.x - wx;
           const dy = p.y - wy;
           const inside = square
-            ? Math.abs(dx) <= threshold && Math.abs(dy) <= threshold
-            : dx * dx + dy * dy <= t2;
+            ? Math.abs(dx) <= radius && Math.abs(dy) <= radius
+            : dx * dx + dy * dy <= r2;
           if (inside) {
             hit = true;
             if (run.length) {
