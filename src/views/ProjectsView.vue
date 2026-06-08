@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useProjectBackup } from "@/composables/useProjectBackup";
 import { useTheme } from "@/composables/useTheme";
+import { useThumbnails } from "@/composables/useThumbnails";
 import { useEditorStore } from "@/stores/editor";
 import { useProjectsStore } from "@/stores/projects";
 
@@ -11,6 +12,7 @@ const editor = useEditorStore();
 const router = useRouter();
 const { isDark, toggleTheme } = useTheme();
 const { exportAll, exportProject, importAll } = useProjectBackup();
+const { projectThumbnails, renderProjectThumbnail } = useThumbnails();
 const importInput = ref<HTMLInputElement | null>(null);
 const importing = ref(false);
 const query = ref("");
@@ -42,7 +44,25 @@ function joinSession() {
 
 onMounted(async () => {
   if (!projects.loaded) await projects.load();
+  // Always re-render so thumbnails reflect edits made since last visit.
+  for (const p of projects.projects) {
+    renderProjectThumbnail(p);
+  }
 });
+
+// Render thumbnails for projects that arrive after the initial load.
+watch(
+  () => projects.projects.map((p) => p.id).join(","),
+  (_, prev) => {
+    if (!prev) return;
+    const prevSet = new Set(prev.split(","));
+    for (const p of projects.projects) {
+      if (!prevSet.has(p.id) && !projectThumbnails.value[p.id]) {
+        renderProjectThumbnail(p);
+      }
+    }
+  },
+);
 
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase();
@@ -207,7 +227,14 @@ function formatDate(ts: number): string {
       <ul v-else class="grid">
         <li v-for="p in filtered" :key="p.id" class="card">
           <button class="card-thumb" @click="open(p.id)" aria-label="Open project">
-            <div class="thumb-grid"></div>
+            <img
+              v-if="projectThumbnails[p.id]"
+              :src="projectThumbnails[p.id]"
+              class="card-thumb-img"
+              :alt="`Preview of ${p.name}`"
+              aria-hidden="true"
+            />
+            <div v-else class="thumb-grid"></div>
           </button>
           <div class="card-body">
             <div class="card-title-row">
@@ -455,6 +482,15 @@ function formatDate(ts: number): string {
     linear-gradient(to right, var(--color-border) 1px, transparent 1px),
     linear-gradient(to bottom, var(--color-border) 1px, transparent 1px);
   background-size: 24px 24px;
+}
+
+.card-thumb-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .card-body {

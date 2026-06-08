@@ -212,6 +212,40 @@ onMounted(() => {
         </div>
       </div>
 
+      <!-- Pen type selector — visible only when pen tool is active -->
+      <template v-if="editor.tool === 'pen'">
+        <div class="divider"></div>
+        <div class="group pen-types">
+          <!-- Ballpoint: thin precise stroke -->
+          <button class="pen-type-btn" :class="{ active: editor.penType === 'ballpoint' }"
+                  title="Ballpoint" aria-label="Ballpoint"
+                  :aria-pressed="editor.penType === 'ballpoint'"
+                  @click="editor.setPenType('ballpoint')">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 20 C7 16 12 11 20 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </button>
+          <!-- Brush: calligraphic variable-width (thick start → thin end) -->
+          <button class="pen-type-btn" :class="{ active: editor.penType === 'brush' }"
+                  title="Brush" aria-label="Brush"
+                  :aria-pressed="editor.penType === 'brush'"
+                  @click="editor.setPenType('brush')">
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 21 C6 17 10 13 14 9 C17 6 20 4 21 3 C20 5 17 8 14 11 C10 15 7 18 4 22 Z" fill="currentColor"/>
+            </svg>
+          </button>
+          <!-- Marker: thick uniform flat-capped stroke -->
+          <button class="pen-type-btn" :class="{ active: editor.penType === 'marker' }"
+                  title="Marker" aria-label="Marker"
+                  :aria-pressed="editor.penType === 'marker'"
+                  @click="editor.setPenType('marker')">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 20 L19 5" stroke="currentColor" stroke-width="7" stroke-linecap="square"/>
+            </svg>
+          </button>
+        </div>
+      </template>
+
       <div class="divider"></div>
 
       <!-- Stroke size (hidden for eraser, which has its own) -->
@@ -355,6 +389,22 @@ onMounted(() => {
 .tool:hover:not(:disabled) { background: var(--color-surface-2); color: var(--color-text); }
 .tool:disabled { opacity: 0.4; cursor: not-allowed; }
 .tool.active { background: var(--color-accent-soft); color: var(--color-accent); }
+
+.pen-types { gap: var(--space-1); }
+
+.pen-type-btn {
+  width: 38px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  transition: background 80ms ease, color 80ms ease;
+  flex-shrink: 0;
+}
+.pen-type-btn:hover { background: var(--color-surface-2); color: var(--color-text); }
+.pen-type-btn.active { background: var(--color-accent-soft); color: var(--color-accent); }
 
 .size-dot { display: block; background: var(--color-text); border-radius: var(--radius-pill); }
 

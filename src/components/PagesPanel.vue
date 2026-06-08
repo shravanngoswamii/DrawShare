@@ -3,12 +3,13 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { exportPageAsPng } from "@/composables/useExport";
 import { useTheme } from "@/composables/useTheme";
+import { useThumbnails } from "@/composables/useThumbnails";
 import { devMode, setDevMode } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
 import { useProjectsStore } from "@/stores/projects";
 
-defineProps<{ open?: boolean; collapsed?: boolean }>();
+const props = defineProps<{ open?: boolean; collapsed?: boolean }>();
 const emit = defineEmits<{ close: []; toggle: []; share: [] }>();
 
 const editor = useEditorStore();
@@ -16,6 +17,7 @@ const live = useLiveStore();
 const projects = useProjectsStore();
 const router = useRouter();
 const { isDark, toggleTheme } = useTheme();
+const { thumbnails, renderThumbnail, loadAndRenderThumbnail } = useThumbnails();
 
 const renamingId = ref<string | null>(null);
 const renameValue = ref("");
@@ -30,6 +32,39 @@ watch(
 );
 
 const saveStatus = computed(() => (editor.saving > 0 ? "Saving…" : "Saved"));
+
+let thumbDebounce: ReturnType<typeof setTimeout> | undefined;
+
+// Render current page thumbnail whenever strokes or texts change.
+// Skips debounce on first render so the thumbnail appears immediately on load.
+watch(
+  () => [editor.strokes, editor.currentPage?.texts],
+  () => {
+    const page = editor.currentPage;
+    if (!page) return;
+    clearTimeout(thumbDebounce);
+    if (!thumbnails.value[page.id]) {
+      renderThumbnail(page, editor.strokes);
+    } else {
+      thumbDebounce = setTimeout(() => renderThumbnail(page, editor.strokes), 400);
+    }
+  },
+  { deep: false },
+);
+
+// When the project loads or current page changes, lazy-load thumbnails for all
+// other pages. Works on desktop (panel always visible) and mobile.
+watch(
+  () => editor.currentPageId,
+  (id) => {
+    if (!id) return;
+    for (const p of editor.pages) {
+      if (thumbnails.value[p.id] || p.id === id) continue;
+      loadAndRenderThumbnail(p);
+    }
+  },
+  { immediate: true },
+);
 
 async function commitName() {
   if (!editor.project) return;
@@ -184,7 +219,16 @@ async function exportCurrentPage() {
             :class="{ active: editor.currentPageId === page.id }"
           >
             <button class="page-main" @click="select(page.id)">
-              <div class="page-thumb">{{ page.index + 1 }}</div>
+              <div class="page-thumb">
+                <img
+                  v-if="thumbnails[page.id]"
+                  :src="thumbnails[page.id]"
+                  class="thumb-img"
+                  :alt="`Preview of ${page.name}`"
+                  aria-hidden="true"
+                />
+                <span v-else class="thumb-num">{{ page.index + 1 }}</span>
+              </div>
               <div class="page-meta">
                 <input
                   v-if="renamingId === page.id"
@@ -503,7 +547,7 @@ async function exportCurrentPage() {
 
 .page-thumb {
   width: 32px;
-  height: 42px;
+  height: 45px;
   background: var(--color-canvas-surface);
   border: 1px solid var(--color-border-strong);
   border-radius: 4px;
@@ -514,6 +558,19 @@ async function exportCurrentPage() {
   font-size: var(--text-xs);
   font-weight: 600;
   color: var(--color-text-muted);
+  overflow: hidden;
+}
+
+.thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: 3px;
+}
+
+.thumb-num {
+  line-height: 1;
 }
 
 .page-meta {
