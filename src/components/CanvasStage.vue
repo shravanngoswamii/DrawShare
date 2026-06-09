@@ -713,19 +713,16 @@ watch(
   { deep: true },
 );
 
-watch(
-  [() => replay.active, () => replay.time],
-  () => {
-    if (replay.active) {
-      dirtyBase = true;
-      schedule();
-    } else {
-      // Replay ended — redraw with the real strokes
-      dirtyBase = true;
-      schedule();
-    }
-  },
-);
+watch([() => replay.active, () => replay.time], () => {
+  if (replay.active) {
+    dirtyBase = true;
+    schedule();
+  } else {
+    // Replay ended — redraw with the real strokes
+    dirtyBase = true;
+    schedule();
+  }
+});
 
 // ── Lifecycle ──────────────────────────────────────────────────────────────
 
