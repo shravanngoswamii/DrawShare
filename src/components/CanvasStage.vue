@@ -10,10 +10,12 @@ import type { Page, Stroke, StrokePoint, TextItem } from "@/core/types";
 import { dlog } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
+import { useReplayStore } from "@/stores/replay";
 
 const props = defineProps<{ page: Page }>();
 const editor = useEditorStore();
 const live = useLiveStore();
+const replay = useReplayStore();
 const { isDark } = useTheme();
 
 function applyInkAdapter() {
@@ -186,17 +188,20 @@ function render() {
   if (dirtyBase) {
     baseRenderer.clear();
     baseRenderer.beginFrame();
-    for (const s of editor.strokes) baseRenderer.drawStroke(s);
-    for (const t of editor.currentPage?.texts ?? []) {
-      if (editing.value?.id === t.id) continue;
-      baseRenderer.drawText(t);
+    const strokesToRender = replay.active ? replay.displayStrokes : editor.strokes;
+    for (const s of strokesToRender) baseRenderer.drawStroke(s);
+    if (!replay.active) {
+      for (const t of editor.currentPage?.texts ?? []) {
+        if (editing.value?.id === t.id) continue;
+        baseRenderer.drawText(t);
+      }
     }
     baseRenderer.endFrame();
-    dlog(`render base strokes=${editor.strokes.length} cur=${currentStroke ? "y" : "n"}`);
+    dlog(`render base strokes=${strokesToRender.length} cur=${currentStroke ? "y" : "n"}`);
     dirtyBase = false;
   }
   liveRenderer.clear();
-  if (currentStroke && currentStroke.points.length > 0) {
+  if (!replay.active && currentStroke && currentStroke.points.length > 0) {
     liveRenderer.beginFrame();
     if (predictedPoints.length > 0) {
       liveRenderer.drawLive({
@@ -379,6 +384,7 @@ function commitEditing() {
 }
 
 function handleDown(s: InputSample) {
+  if (replay.active) return;
   if (panActive || pinchActive) return;
   // Commit a focused field (e.g. the project name) when drawing starts; the
   // canvas swallows the focus change otherwise so its blur never fires.
@@ -705,6 +711,20 @@ watch(
     schedule();
   },
   { deep: true },
+);
+
+watch(
+  [() => replay.active, () => replay.time],
+  () => {
+    if (replay.active) {
+      dirtyBase = true;
+      schedule();
+    } else {
+      // Replay ended — redraw with the real strokes
+      dirtyBase = true;
+      schedule();
+    }
+  },
 );
 
 // ── Lifecycle ──────────────────────────────────────────────────────────────
