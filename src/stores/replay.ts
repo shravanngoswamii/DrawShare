@@ -31,8 +31,7 @@ export const useReplayStore = defineStore("replay", {
         if (entry.endTime <= t) {
           result.push(entry.stroke);
         } else {
-          const pct =
-            (t - entry.startTime) / Math.max(1, entry.endTime - entry.startTime);
+          const pct = (t - entry.startTime) / Math.max(1, entry.endTime - entry.startTime);
           const nPts = Math.max(2, Math.ceil(entry.stroke.points.length * pct));
           result.push({ ...entry.stroke, points: entry.stroke.points.slice(0, nPts) });
         }

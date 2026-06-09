@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, watch } from "vue";
-import { useReplayStore } from "@/stores/replay";
 import type { ReplaySpeed } from "@/stores/replay";
+import { useReplayStore } from "@/stores/replay";
 
 const replay = useReplayStore();
 
