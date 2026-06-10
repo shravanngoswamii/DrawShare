@@ -159,11 +159,12 @@ async function exportCurrentPage() {
         <input
           v-model="projectName"
           class="project-name"
+          aria-label="Project name"
           @blur="commitName"
           @keydown.enter="onNameEnter"
           :placeholder="editor.project?.name ?? 'Untitled'"
         />
-        <span class="save-chip" :class="{ saving: editor.saving > 0 }">{{ saveStatus }}</span>
+        <span class="save-chip" :class="{ saving: editor.saving > 0 }" role="status" aria-live="polite">{{ saveStatus }}</span>
         <button class="head-icon" @click="toggleTheme" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'" :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'">
           <svg v-if="isDark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -189,7 +190,7 @@ async function exportCurrentPage() {
 
       <!-- ── Share ── -->
       <div class="share-section">
-        <button class="share-btn" :class="{ live: live.isHosting }" @click="emit('share')" :title="live.isHosting ? `Live session: ${live.code}` : 'Start a live session'">
+        <button class="share-btn" :class="{ live: live.isHosting }" @click="emit('share')" :title="live.isHosting ? `Live session: ${live.code}` : 'Start a live session'" :aria-label="live.isHosting ? `Live session active, code: ${live.code}` : 'Start a live session'">
           <span v-if="live.isHosting" class="live-dot" aria-hidden="true"></span>
           <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -203,7 +204,7 @@ async function exportCurrentPage() {
       <div class="section pages-section">
         <div class="section-title pages-head">
           <span>Pages</span>
-          <button class="add-page" @click="editor.addPage()" title="Add page">
+          <button class="add-page" @click="editor.addPage()" title="Add page" aria-label="Add new page">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M5 12h14" /><path d="M12 5v14" />
@@ -218,7 +219,7 @@ async function exportCurrentPage() {
             class="page"
             :class="{ active: editor.currentPageId === page.id }"
           >
-            <button class="page-main" @click="select(page.id)">
+            <button class="page-main" @click="select(page.id)" :aria-label="`Go to ${page.name}`" :aria-current="editor.currentPageId === page.id ? 'page' : undefined">
               <div class="page-thumb">
                 <img
                   v-if="thumbnails[page.id]"
@@ -234,6 +235,7 @@ async function exportCurrentPage() {
                   v-if="renamingId === page.id"
                   v-model="renameValue"
                   class="input page-rename"
+                  :aria-label="`Rename page: ${page.name}`"
                   @blur="commitRename"
                   @keydown.enter="commitRename"
                   @keydown.esc="renamingId = null"
@@ -243,10 +245,11 @@ async function exportCurrentPage() {
               </div>
             </button>
             <div class="page-actions">
-              <button class="page-action" @click="startRename(page.id, page.name)">Rename</button>
+              <button class="page-action" :aria-label="`Rename ${page.name}`" @click="startRename(page.id, page.name)">Rename</button>
               <button
                 v-if="editor.pages.length > 1"
                 class="page-action danger"
+                :aria-label="`Delete ${page.name}`"
                 @click="remove(page.id, page.name)"
               >Delete</button>
             </div>
@@ -255,7 +258,7 @@ async function exportCurrentPage() {
 
         <!-- Page-level tools: export, clear, fullscreen, dev -->
         <div class="page-tools">
-          <button class="tool-btn" @click="exportCurrentPage" title="Export page as PNG">
+          <button class="tool-btn" @click="exportCurrentPage" title="Export page as PNG" aria-label="Export page as PNG">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -264,21 +267,21 @@ async function exportCurrentPage() {
             </svg>
             <span>Export PNG</span>
           </button>
-          <button class="tool-btn" @click="clearPage" title="Clear all strokes">
+          <button class="tool-btn" @click="clearPage" title="Clear all strokes" aria-label="Clear all strokes on this page">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
             </svg>
             <span>Clear page</span>
           </button>
-          <button class="tool-btn" @click="toggleFullscreen" :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'">
+          <button class="tool-btn" @click="toggleFullscreen" :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'" :aria-label="isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'" :aria-pressed="isFullscreen">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M21 8V5a2 2 0 0 0-2-2h-3" /><path d="M3 16v3a2 2 0 0 0 2 2h3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" />
             </svg>
             <span>{{ isFullscreen ? 'Exit full' : 'Fullscreen' }}</span>
           </button>
-          <button class="tool-btn" :class="{ 'tool-active': devMode }" @click="setDevMode(!devMode)" title="Dev mode">
+          <button class="tool-btn" :class="{ 'tool-active': devMode }" @click="setDevMode(!devMode)" title="Dev mode" aria-label="Toggle developer mode" :aria-pressed="devMode">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="m8 9-3 3 3 3" /><path d="m16 9 3 3-3 3" /><path d="M13.5 7.5 10 17" />
@@ -297,6 +300,8 @@ async function exportCurrentPage() {
             :key="b.id"
             class="bg-btn"
             :class="{ active: editor.currentPage?.background === b.id }"
+            :aria-pressed="editor.currentPage?.background === b.id"
+            :aria-label="`${b.label} background`"
             @click="setBackground(b.id)"
           >
             {{ b.label }}
