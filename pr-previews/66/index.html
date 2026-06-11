@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="DrawShare" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="supported-color-schemes" content="light dark" />
+    <link rel="manifest" href="/DrawShare/pr-previews/66/manifest.webmanifest" />
+    <title>DrawShare</title>
+    <!-- Prevent flash of wrong theme: apply data-theme before CSS renders -->
+    <script>
+      (() => {
+        var t;
+        try {
+          t = localStorage.getItem("drawshare-theme");
+          if (t === "dark" || (t !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+            document.documentElement.setAttribute("data-theme", "dark");
+          } else if (t === "light") {
+            document.documentElement.setAttribute("data-theme", "light");
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <script type="module" crossorigin src="/DrawShare/pr-previews/66/assets/index-D58IP_Yz.js"></script>
+    <link rel="stylesheet" crossorigin href="/DrawShare/pr-previews/66/assets/style-BufT4bIe.css">
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
+</html>
