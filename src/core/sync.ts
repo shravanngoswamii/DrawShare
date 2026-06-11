@@ -42,7 +42,9 @@ export type SyncMessage =
   | { t: "stroke-delete"; pageId: string; strokeId: string }
   | { t: "text-commit"; text: TextItem }
   | { t: "text-delete"; pageId: string; textId: string }
-  | { t: "clear-page"; pageId: string };
+  | { t: "clear-page"; pageId: string }
+  | { t: "presenter"; mode: "laser" | "spotlight"; x: number; y: number }
+  | { t: "presenter-off" };
 
 export interface SessionHostHandlers {
   onViewerJoin(viewerId: string): void;

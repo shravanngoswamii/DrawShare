@@ -56,6 +56,10 @@ const editStyle = ref<Record<string, string>>({});
 // Eraser cursor overlay (screen coords relative to the stage)
 const eraseCursor = ref<{ x: number; y: number } | null>(null);
 
+// Presenter mode overlay (screen coords)
+const presenterPos = ref<{ x: number; y: number } | null>(null);
+let presenterThrottle = 0;
+
 let currentStroke: Stroke | undefined;
 let isErasing = false;
 let textDrag: {
@@ -561,6 +565,35 @@ async function handleCancel(sample?: InputSample) {
   }
 }
 
+// ── Presenter aids ─────────────────────────────────────────────────────────
+
+function onPresenterMove(e: MouseEvent) {
+  if (editor.presenterMode === "off") return;
+  if (!wrap.value) return;
+  const rect = wrap.value.getBoundingClientRect();
+  const sx = e.clientX - rect.left;
+  const sy = e.clientY - rect.top;
+  presenterPos.value = { x: sx, y: sy };
+  const now = Date.now();
+  if (live.mode === "host" && now - presenterThrottle >= 50) {
+    presenterThrottle = now;
+    const w = toWorld(sx, sy);
+    live.broadcast({
+      t: "presenter",
+      mode: editor.presenterMode as "laser" | "spotlight",
+      x: w.x,
+      y: w.y,
+    });
+  }
+}
+
+function onPresenterLeave() {
+  presenterPos.value = null;
+  if (live.mode === "host" && editor.presenterMode !== "off") {
+    live.broadcast({ t: "presenter-off" });
+  }
+}
+
 // ── Navigation ─────────────────────────────────────────────────────────────
 
 function onWheel(e: WheelEvent) {
@@ -760,7 +793,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="stage" ref="wrap" :class="{ 'pan-cursor': panCursor }">
+  <div class="stage" ref="wrap" :class="{ 'pan-cursor': panCursor }" @mousemove="onPresenterMove" @mouseleave="onPresenterLeave">
     <div class="page-bg" :class="`bg-${props.page.background}`" :style="bgStyle" aria-hidden="true"></div>
     <canvas ref="baseEl" class="layer base"></canvas>
     <canvas ref="liveEl" class="layer live"></canvas>
@@ -784,6 +817,18 @@ onBeforeUnmount(() => {
       class="eraser-cursor"
       :class="editor.eraserShape"
       :style="{ left: `${eraseCursor.x}px`, top: `${eraseCursor.y}px`, width: `${editor.size * 2}px`, height: `${editor.size * 2}px` }"
+    ></div>
+    <div
+      v-if="editor.presenterMode === 'laser' && presenterPos"
+      class="laser-dot"
+      :style="{ left: `${presenterPos.x}px`, top: `${presenterPos.y}px` }"
+      aria-hidden="true"
+    ></div>
+    <div
+      v-if="editor.presenterMode === 'spotlight' && presenterPos"
+      class="spotlight-overlay"
+      :style="{ '--sx': `${presenterPos.x}px`, '--sy': `${presenterPos.y}px` }"
+      aria-hidden="true"
     ></div>
     <div class="cam-controls">
       <button class="cam-btn" title="Zoom out" @click="zoomOut">
@@ -938,5 +983,36 @@ onBeforeUnmount(() => {
 
 .cam-btn:hover {
   background: rgba(15, 23, 42, 0.07);
+}
+
+.laser-dot {
+  position: absolute;
+  z-index: 10;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.92);
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.28), 0 0 18px rgba(239, 68, 68, 0.55);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  animation: laser-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes laser-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.28), 0 0 18px rgba(239, 68, 68, 0.55); }
+  50% { box-shadow: 0 0 0 9px rgba(239, 68, 68, 0.12), 0 0 30px rgba(239, 68, 68, 0.35); }
+}
+
+.spotlight-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  background: radial-gradient(
+    circle 130px at var(--sx, 50%) var(--sy, 50%),
+    transparent 0%,
+    transparent 85px,
+    rgba(0, 0, 0, 0.72) 130px
+  );
 }
 </style>
