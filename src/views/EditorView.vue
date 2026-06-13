@@ -42,7 +42,7 @@ onMounted(async () => {
   try {
     await editor.open(props.id);
   } catch {
-    router.replace({ name: "projects" });
+    router.replace({ name: "app" });
   }
 });
 
@@ -54,7 +54,7 @@ watch(
       try {
         await editor.open(next);
       } catch {
-        router.replace({ name: "projects" });
+        router.replace({ name: "app" });
       }
     }
   },
