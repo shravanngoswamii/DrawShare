@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { getStroke } from "perfect-freehand";
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useTheme } from "@/composables/useTheme";
 
@@ -17,6 +18,109 @@ function joinSession() {
   if (code.length < 4) return;
   router.push({ name: "viewer", params: { code } });
 }
+
+// ── Interactive canvas ───────────────────────────────────────────────────────
+
+const DRAW_COLORS = ["#3b82f6", "#ef4444", "#f59e0b", "#10b981", "#8b5cf6", "#000000"];
+
+const drawCanvas = ref<HTMLCanvasElement | null>(null);
+const drawMode = ref(false);
+const penColor = ref(DRAW_COLORS[0]);
+
+type StrokeRecord = { pts: [number, number, number][]; color: string };
+const committed = ref<StrokeRecord[]>([]);
+let live: [number, number, number][] = [];
+let painting = false;
+let ctx: CanvasRenderingContext2D | null = null;
+let rafId = 0;
+
+const STROKE_OPTS = { size: 10, thinning: 0.55, smoothing: 0.5, streamline: 0.5 };
+
+function strokePath(pts: [number, number, number][]): Path2D {
+  const out = getStroke(pts, STROKE_OPTS);
+  const p = new Path2D();
+  if (!out.length) return p;
+  p.moveTo(out[0][0], out[0][1]);
+  for (let i = 1; i < out.length; i++) p.lineTo(out[i][0], out[i][1]);
+  p.closePath();
+  return p;
+}
+
+function renderCanvas() {
+  const canvas = drawCanvas.value;
+  if (!ctx || !canvas) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  for (const s of committed.value) {
+    ctx.fillStyle = s.color;
+    ctx.fill(strokePath(s.pts));
+  }
+  if (live.length > 1) {
+    ctx.fillStyle = penColor.value;
+    ctx.fill(strokePath(live));
+  }
+}
+
+function scheduleRender() {
+  cancelAnimationFrame(rafId);
+  rafId = requestAnimationFrame(renderCanvas);
+}
+
+function resizeCanvas() {
+  const canvas = drawCanvas.value;
+  if (!canvas) return;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  // Preserve drawn content across resize by redrawing
+  canvas.width = w;
+  canvas.height = h;
+  ctx = canvas.getContext("2d");
+  renderCanvas();
+}
+
+function onPointerDown(e: PointerEvent) {
+  if (!drawMode.value) return;
+  e.preventDefault();
+  painting = true;
+  live = [[e.clientX, e.clientY, e.pressure || 0.5]];
+  scheduleRender();
+}
+
+function onPointerMove(e: PointerEvent) {
+  if (!drawMode.value || !painting) return;
+  e.preventDefault();
+  live.push([e.clientX, e.clientY, e.pressure || 0.5]);
+  scheduleRender();
+}
+
+function onPointerUp(_e: PointerEvent) {
+  if (!drawMode.value || !painting) return;
+  painting = false;
+  if (live.length > 1) {
+    committed.value = [...committed.value, { pts: [...live], color: penColor.value }];
+  }
+  live = [];
+  scheduleRender();
+}
+
+function clearCanvas() {
+  committed.value = [];
+  live = [];
+  scheduleRender();
+}
+
+function toggleDrawMode() {
+  drawMode.value = !drawMode.value;
+}
+
+onMounted(() => {
+  resizeCanvas();
+  window.addEventListener("resize", resizeCanvas);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("resize", resizeCanvas);
+  cancelAnimationFrame(rafId);
+});
 </script>
 
 <template>
@@ -236,6 +340,61 @@ function joinSession() {
         </div>
       </div>
     </footer>
+
+    <!-- ── Interactive drawing layer ─────────────────────────────────────── -->
+    <canvas
+      ref="drawCanvas"
+      class="draw-canvas"
+      :class="{ 'draw-active': drawMode }"
+      @pointerdown="onPointerDown"
+      @pointermove="onPointerMove"
+      @pointerup="onPointerUp"
+      @pointerleave="onPointerUp"
+      @touchstart.prevent
+      @touchmove.prevent
+      aria-hidden="true"
+    />
+
+    <!-- Color + clear toolbar (visible in draw mode) -->
+    <transition name="palette-slide">
+      <div v-if="drawMode" class="draw-palette" role="toolbar" aria-label="Drawing controls">
+        <button
+          v-for="c in DRAW_COLORS"
+          :key="c"
+          class="swatch"
+          :class="{ active: penColor === c }"
+          :style="{ '--c': c }"
+          :aria-label="`Pick colour ${c}`"
+          :aria-pressed="penColor === c"
+          @click.stop="penColor = c"
+        />
+        <div class="palette-divider" />
+        <button class="palette-btn" title="Clear canvas" aria-label="Clear drawing" @click.stop="clearCanvas">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+          </svg>
+        </button>
+      </div>
+    </transition>
+
+    <!-- Draw FAB -->
+    <button
+      class="draw-fab"
+      :class="{ 'draw-fab-active': drawMode }"
+      :title="drawMode ? 'Stop drawing' : 'Draw on this page'"
+      :aria-label="drawMode ? 'Stop drawing' : 'Draw on this page'"
+      @click="toggleDrawMode"
+    >
+      <!-- Pencil icon (browse mode) -->
+      <svg v-if="!drawMode" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
+        <path d="m15 5 4 4"/>
+      </svg>
+      <!-- X icon (draw mode active) -->
+      <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+        <path d="M18 6 6 18M6 6l12 12"/>
+      </svg>
+    </button>
   </div>
 </template>
 
@@ -655,4 +814,120 @@ function joinSession() {
   .features-grid { grid-template-columns: repeat(2, 1fr); }
   .hero { padding: 64px var(--space-5) 56px; }
 }
+
+/* ── Interactive drawing layer ──────────────────────────────────────────── */
+.draw-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 30;
+  pointer-events: none;
+  touch-action: none;
+  cursor: default;
+}
+
+.draw-canvas.draw-active {
+  pointer-events: all;
+  cursor: crosshair;
+}
+
+/* FAB */
+.draw-fab {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 40;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-pill);
+  background: var(--color-glass-bg-strong, var(--color-surface));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-glass-border, var(--color-border));
+  box-shadow: 0 4px 20px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.1);
+  color: var(--color-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 140ms ease, box-shadow 140ms ease, background 100ms;
+}
+
+.draw-fab:hover {
+  transform: scale(1.07);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.22);
+}
+
+.draw-fab:active { transform: scale(0.95); }
+
+.draw-fab-active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+/* Color palette toolbar */
+.draw-palette {
+  position: fixed;
+  bottom: 88px;
+  right: 16px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 8px;
+  border-radius: 999px;
+  background: var(--color-glass-bg-strong, var(--color-surface));
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--color-glass-border, var(--color-border));
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+}
+
+.swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--c);
+  border: 2px solid transparent;
+  flex-shrink: 0;
+  transition: transform 100ms, border-color 100ms;
+}
+
+.swatch:hover { transform: scale(1.15); }
+
+.swatch.active {
+  border-color: var(--color-text);
+  transform: scale(1.2);
+}
+
+.palette-divider {
+  width: 16px;
+  height: 1px;
+  background: var(--color-border);
+  margin: 2px 0;
+}
+
+.palette-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  transition: background 100ms, color 100ms;
+}
+
+.palette-btn:hover {
+  background: var(--color-surface-2);
+  color: var(--color-danger, #ef4444);
+}
+
+/* Slide-in/out animation for the palette */
+.palette-slide-enter-active { transition: opacity 180ms ease, transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+.palette-slide-leave-active { transition: opacity 140ms ease, transform 140ms ease; }
+.palette-slide-enter-from  { opacity: 0; transform: translateY(10px) scale(0.9); }
+.palette-slide-leave-to    { opacity: 0; transform: translateY(8px) scale(0.9); }
 </style>
