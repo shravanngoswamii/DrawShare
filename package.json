@@ -21,9 +21,9 @@
     "format:check": "biome format .",
     "check": "biome check .",
     "prepare": "lefthook install",
-    "docs:dev": "vitepress dev docs",
-    "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs"
+    "docs:dev": "npm --prefix docs run dev",
+    "docs:build": "npm --prefix docs run build",
+    "docs:preview": "npm --prefix docs run preview"
   },
   "dependencies": {
     "idb": "^8.0.0",
@@ -39,7 +39,6 @@
     "lefthook": "^2.1.9",
     "typescript": "^6.0.3",
     "vite": "^8.0.13",
-    "vitepress": "^1.6.4",
     "vue-tsc": "^3.2.9"
   }
 }
