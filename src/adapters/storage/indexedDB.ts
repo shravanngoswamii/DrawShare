@@ -1,9 +1,9 @@
 import { type IDBPDatabase, openDB } from "idb";
 import type { StorageAdapter } from "@/core/ports";
-import type { ID, Page, Project, Stroke } from "@/core/types";
+import type { ID, Layer, Page, Project, Stroke } from "@/core/types";
 
 const DB_NAME = "drawshare";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 // Strip Vue reactive Proxies: structured clone (IndexedDB) throws on them.
 function toPlain<T>(value: T): T {
@@ -14,6 +14,7 @@ interface Schema {
   projects: { key: string; value: Project };
   pages: { key: string; value: Page; indexes: { byProject: string } };
   strokes: { key: string; value: Stroke; indexes: { byPage: string } };
+  layers: { key: string; value: Layer; indexes: { byPage: string } };
 }
 
 export class IndexedDBStorage implements StorageAdapter {
@@ -32,6 +33,10 @@ export class IndexedDBStorage implements StorageAdapter {
         if (!db.objectStoreNames.contains("strokes")) {
           const strokes = db.createObjectStore("strokes", { keyPath: "id" });
           strokes.createIndex("byPage", "pageId");
+        }
+        if (!db.objectStoreNames.contains("layers")) {
+          const layers = db.createObjectStore("layers", { keyPath: "id" });
+          layers.createIndex("byPage", "pageId");
         }
       },
     });
@@ -57,7 +62,7 @@ export class IndexedDBStorage implements StorageAdapter {
 
   async deleteProject(id: ID): Promise<void> {
     const db = this.require();
-    const tx = db.transaction(["projects", "pages", "strokes"], "readwrite");
+    const tx = db.transaction(["projects", "pages", "strokes", "layers"], "readwrite");
     const pages = await tx.objectStore("pages").index("byProject").getAllKeys(id);
     for (const pageId of pages) {
       const strokeIds = await tx
@@ -66,6 +71,13 @@ export class IndexedDBStorage implements StorageAdapter {
         .getAllKeys(pageId as string);
       for (const sid of strokeIds) {
         await tx.objectStore("strokes").delete(sid);
+      }
+      const layerIds = await tx
+        .objectStore("layers")
+        .index("byPage")
+        .getAllKeys(pageId as string);
+      for (const lid of layerIds) {
+        await tx.objectStore("layers").delete(lid);
       }
       await tx.objectStore("pages").delete(pageId);
     }
@@ -88,6 +100,7 @@ export class IndexedDBStorage implements StorageAdapter {
 
   async deletePage(id: ID): Promise<void> {
     await this.deleteStrokesForPage(id);
+    await this.deleteLayersForPage(id);
     await this.require().delete("pages", id);
   }
 
@@ -106,6 +119,27 @@ export class IndexedDBStorage implements StorageAdapter {
   async deleteStrokesForPage(pageId: ID): Promise<void> {
     const db = this.require();
     const tx = db.transaction("strokes", "readwrite");
+    const keys = await tx.store.index("byPage").getAllKeys(pageId);
+    for (const k of keys) await tx.store.delete(k);
+    await tx.done;
+  }
+
+  async listLayers(pageId: ID): Promise<Layer[]> {
+    const all = await this.require().getAllFromIndex("layers", "byPage", pageId);
+    return all.sort((a, b) => a.index - b.index);
+  }
+
+  async putLayer(layer: Layer): Promise<void> {
+    await this.require().put("layers", toPlain(layer));
+  }
+
+  async deleteLayer(id: ID): Promise<void> {
+    await this.require().delete("layers", id);
+  }
+
+  async deleteLayersForPage(pageId: ID): Promise<void> {
+    const db = this.require();
+    const tx = db.transaction("layers", "readwrite");
     const keys = await tx.store.index("byPage").getAllKeys(pageId);
     for (const k of keys) await tx.store.delete(k);
     await tx.done;

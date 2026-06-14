@@ -1,4 +1,4 @@
-import type { Page, Project, Stroke, StrokePoint, TextItem } from "./types";
+import type { ID, Layer, Page, Project, Stroke, StrokePoint, TextItem } from "./types";
 
 export type SyncMessage =
   | { t: "viewer-ready" }
@@ -42,7 +42,10 @@ export type SyncMessage =
   | { t: "stroke-delete"; pageId: string; strokeId: string }
   | { t: "text-commit"; text: TextItem }
   | { t: "text-delete"; pageId: string; textId: string }
-  | { t: "clear-page"; pageId: string };
+  | { t: "clear-page"; pageId: string }
+  | { t: "layer-add"; layer: Layer }
+  | { t: "layer-delete"; layerId: ID }
+  | { t: "layer-update"; layer: Layer };
 
 export interface SessionHostHandlers {
   onViewerJoin(viewerId: string): void;

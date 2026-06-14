@@ -1,6 +1,6 @@
 import { getStroke } from "perfect-freehand";
 import type { Camera, Renderer } from "@/core/ports";
-import type { PenType, Stroke, StrokePoint, TextItem } from "@/core/types";
+import type { Layer, PenType, Stroke, StrokePoint, TextItem } from "@/core/types";
 
 type DrawCtx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -60,6 +60,7 @@ export class Canvas2DRenderer implements Renderer {
   private ctx: CanvasRenderingContext2D | undefined;
   private dpr = 1;
   private camera: Camera = { x: 0, y: 0, zoom: 1 };
+  private layers: Layer[] = [];
 
   // Maps a stored ink color to the color actually painted (theme adaptation).
   // Identity by default; callers set this from the active theme. Stored stroke
@@ -103,6 +104,28 @@ export class Canvas2DRenderer implements Renderer {
     this.liveCacheCount = 0;
   }
 
+  setLayers(layers: Layer[]): void {
+    this.layers = layers;
+  }
+
+  isStrokeVisible(stroke: Stroke): boolean {
+    // Strokes with no layerId (old/legacy strokes) are always visible
+    if (!stroke.layerId) return true;
+    if (this.layers.length === 0) return true;
+    const layer = this.layers.find((l) => l.id === stroke.layerId);
+    // If layer not found (orphan), render it
+    if (!layer) return true;
+    return layer.visible;
+  }
+
+  isTextVisible(text: TextItem): boolean {
+    if (!text.layerId) return true;
+    if (this.layers.length === 0) return true;
+    const layer = this.layers.find((l) => l.id === text.layerId);
+    if (!layer) return true;
+    return layer.visible;
+  }
+
   clear(): void {
     if (!this.ctx || !this.canvas) return;
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -122,6 +145,7 @@ export class Canvas2DRenderer implements Renderer {
 
   drawStroke(stroke: Stroke): void {
     if (!this.ctx || stroke.points.length === 0) return;
+    if (!this.isStrokeVisible(stroke)) return;
     this.renderToCtx(
       this.ctx,
       stroke.points,
@@ -136,6 +160,7 @@ export class Canvas2DRenderer implements Renderer {
   drawText(item: TextItem): void {
     const ctx = this.ctx;
     if (!ctx || !item.text) return;
+    if (!this.isTextVisible(item)) return;
     ctx.save();
     ctx.fillStyle = this.inkAdapt(item.color);
     ctx.font = `${item.size}px ui-sans-serif, system-ui, -apple-system, sans-serif`;

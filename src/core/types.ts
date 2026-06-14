@@ -11,6 +11,16 @@ export interface StrokePoint {
   t: number;
 }
 
+export interface Layer {
+  id: ID;
+  pageId: ID;
+  name: string;
+  visible: boolean;
+  locked: boolean;
+  index: number; // render order (lower = bottom)
+  createdAt: number;
+}
+
 export interface Stroke {
   id: ID;
   pageId: ID;
@@ -21,6 +31,7 @@ export interface Stroke {
   opacity: number;
   points: StrokePoint[];
   createdAt: number;
+  layerId?: ID;
 }
 
 export interface TextItem {
@@ -32,6 +43,7 @@ export interface TextItem {
   color: string;
   size: number;
   createdAt: number;
+  layerId?: ID;
 }
 
 export interface Page {
@@ -61,7 +73,9 @@ export type HistoryEntry =
   | { kind: "stroke-erase"; stroke: Stroke }
   | { kind: "text-upsert"; prev: TextItem | null; next: TextItem }
   | { kind: "text-delete"; text: TextItem }
-  | { kind: "area-erase"; pageId: string; before: Stroke[]; after: Stroke[] };
+  | { kind: "area-erase"; pageId: string; before: Stroke[]; after: Stroke[] }
+  | { kind: "layer-add"; layer: Layer }
+  | { kind: "layer-delete"; layer: Layer; strokes: Stroke[]; texts: TextItem[] };
 
 export interface BoundingBox {
   minX: number;

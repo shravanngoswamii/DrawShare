@@ -380,6 +380,15 @@ function commitEditing() {
 
 function handleDown(s: InputSample) {
   if (panActive || pinchActive) return;
+  // Block drawing on locked or hidden layers
+  const activeLayer = editor.currentLayer;
+  if (
+    activeLayer &&
+    (activeLayer.locked || !activeLayer.visible) &&
+    editor.tool !== "eraser" &&
+    editor.tool !== "text"
+  )
+    return;
   // Commit a focused field (e.g. the project name) when drawing starts; the
   // canvas swallows the focus change otherwise so its blur never fires.
   const active = document.activeElement as HTMLElement | null;
@@ -706,6 +715,16 @@ watch(
   },
   { deep: true },
 );
+watch(
+  () => editor.layers,
+  (layers) => {
+    baseRenderer.setLayers([...layers]);
+    liveRenderer.setLayers([...layers]);
+    dirtyBase = true;
+    schedule();
+  },
+  { deep: true },
+);
 
 // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -716,6 +735,8 @@ onMounted(() => {
   baseRenderer.attach(baseEl.value);
   liveRenderer.attach(liveEl.value);
   applyInkAdapter();
+  baseRenderer.setLayers([...editor.layers]);
+  liveRenderer.setLayers([...editor.layers]);
   fitCanvas();
   wrap.value.addEventListener("wheel", onWheel, { passive: false });
   wrap.value.addEventListener("pointerdown", onNavPointerDown, { capture: true, passive: false });

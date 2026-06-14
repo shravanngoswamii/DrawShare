@@ -1,7 +1,16 @@
 import { defineStore } from "pinia";
 import { storage } from "@/adapters/storage/indexedDB";
 import { newId } from "@/core/ids";
-import type { HistoryEntry, Page, PenType, Project, Stroke, TextItem, Tool } from "@/core/types";
+import type {
+  HistoryEntry,
+  Layer,
+  Page,
+  PenType,
+  Project,
+  Stroke,
+  TextItem,
+  Tool,
+} from "@/core/types";
 import { dlog } from "@/debug";
 import { useLiveStore } from "./live";
 import { DEFAULT_PAGE_SIZE, useProjectsStore } from "./projects";
@@ -11,6 +20,8 @@ interface EditorState {
   pages: Page[];
   currentPageId: string | undefined;
   strokes: Stroke[];
+  layers: Layer[];
+  currentLayerId: string | null;
   tool: Tool;
   penType: PenType;
   color: string;
@@ -32,6 +43,8 @@ export const useEditorStore = defineStore("editor", {
     pages: [],
     currentPageId: undefined,
     strokes: [],
+    layers: [],
+    currentLayerId: null,
     tool: "pen",
     penType: "ballpoint",
     color: "#0f172a",
@@ -53,6 +66,9 @@ export const useEditorStore = defineStore("editor", {
     size(state): number {
       return state.toolSizes[state.tool];
     },
+    currentLayer(state): Layer | undefined {
+      return state.layers.find((l) => l.id === state.currentLayerId) ?? state.layers[0];
+    },
   },
   actions: {
     async open(projectId: string) {
@@ -68,6 +84,7 @@ export const useEditorStore = defineStore("editor", {
       }
       this.currentPageId = this.pages[0].id;
       await this.loadStrokes(this.currentPageId);
+      await this.loadLayers(this.currentPageId);
       this.history = [];
       this.redoStack = [];
     },
@@ -76,16 +93,42 @@ export const useEditorStore = defineStore("editor", {
       this.pages = [page];
       this.currentPageId = page.id;
       this.strokes = [];
+      this.layers = [];
+      this.currentLayerId = null;
       this.history = [];
       this.redoStack = [];
+      // Load layers async (will create default layer)
+      void this.loadLayers(page.id);
     },
     async loadStrokes(pageId: string) {
       this.strokes = await storage.listStrokes(pageId);
+    },
+    async loadLayers(pageId: string) {
+      let layers = await storage.listLayers(pageId);
+      if (layers.length === 0) {
+        // Create default layer
+        const defaultLayer: Layer = {
+          id: newId(),
+          pageId,
+          name: "Layer 1",
+          visible: true,
+          locked: false,
+          index: 0,
+          createdAt: Date.now(),
+        };
+        await storage.putLayer(defaultLayer);
+        layers = [defaultLayer];
+      }
+      this.layers = layers;
+      // Select the first visible+unlocked layer, or just the first layer
+      const preferred = layers.find((l) => l.visible && !l.locked) ?? layers[0];
+      this.currentLayerId = preferred?.id ?? null;
     },
     async selectPage(pageId: string) {
       if (this.currentPageId === pageId) return;
       this.currentPageId = pageId;
       await this.loadStrokes(pageId);
+      await this.loadLayers(pageId);
       this.history = [];
       this.redoStack = [];
       useLiveStore().broadcast({
@@ -175,14 +218,16 @@ export const useEditorStore = defineStore("editor", {
     async commitStroke(stroke: Stroke) {
       this.saving++;
       try {
-        this.strokes = [...this.strokes, stroke];
+        // Attach current layer to stroke
+        const strokeWithLayer: Stroke = { ...stroke, layerId: this.currentLayerId ?? undefined };
+        this.strokes = [...this.strokes, strokeWithLayer];
         dlog(
-          `commit id${stroke.id.slice(-4)} pts${stroke.points.length} total${this.strokes.length}`,
+          `commit id${strokeWithLayer.id.slice(-4)} pts${strokeWithLayer.points.length} total${this.strokes.length}`,
         );
-        this.history = [...this.history, { kind: "stroke-add", stroke }];
+        this.history = [...this.history, { kind: "stroke-add", stroke: strokeWithLayer }];
         this.redoStack = [];
-        await storage.putStroke(stroke);
-        useLiveStore().broadcast({ t: "stroke-commit", stroke });
+        await storage.putStroke(strokeWithLayer);
+        useLiveStore().broadcast({ t: "stroke-commit", stroke: strokeWithLayer });
         if (this.project) await useProjectsStore().touch(this.project.id);
       } finally {
         this.saving--;
@@ -193,13 +238,18 @@ export const useEditorStore = defineStore("editor", {
       if (!page) return;
       this.saving++;
       try {
-        const prev = (page.texts ?? []).find((t) => t.id === text.id) ?? null;
-        page.texts = [...(page.texts ?? []).filter((t) => t.id !== text.id), text];
+        // Attach current layer to text
+        const textWithLayer: TextItem = { ...text, layerId: this.currentLayerId ?? undefined };
+        const prev = (page.texts ?? []).find((t) => t.id === textWithLayer.id) ?? null;
+        page.texts = [
+          ...(page.texts ?? []).filter((t) => t.id !== textWithLayer.id),
+          textWithLayer,
+        ];
         page.updatedAt = Date.now();
         await storage.putPage({ ...page });
-        this.history = [...this.history, { kind: "text-upsert", prev, next: text }];
+        this.history = [...this.history, { kind: "text-upsert", prev, next: textWithLayer }];
         this.redoStack = [];
-        useLiveStore().broadcast({ t: "text-commit", text });
+        useLiveStore().broadcast({ t: "text-commit", text: textWithLayer });
         if (this.project) await useProjectsStore().touch(this.project.id);
       } finally {
         this.saving--;
@@ -264,6 +314,36 @@ export const useEditorStore = defineStore("editor", {
           pages: [...this.pages],
           strokes: entry.before,
         });
+      } else if (entry.kind === "layer-add") {
+        // Undo add: remove the layer
+        this.layers = this.layers.filter((l) => l.id !== entry.layer.id);
+        await storage.deleteLayer(entry.layer.id);
+        // Select another layer
+        const remaining = this.layers;
+        if (this.currentLayerId === entry.layer.id) {
+          const preferred = remaining.find((l) => l.visible && !l.locked) ?? remaining[0];
+          this.currentLayerId = preferred?.id ?? null;
+        }
+      } else if (entry.kind === "layer-delete") {
+        // Undo delete: restore the layer and its strokes/texts
+        this.layers = [...this.layers, entry.layer].sort((a, b) => a.index - b.index);
+        await storage.putLayer(entry.layer);
+        // Restore strokes
+        for (const s of entry.strokes) {
+          if (!this.strokes.find((x) => x.id === s.id)) {
+            this.strokes = [...this.strokes, s];
+            await storage.putStroke(s);
+          }
+        }
+        // Restore texts
+        const pageId = entry.layer.pageId;
+        const page = this.pages.find((p) => p.id === pageId);
+        if (page && entry.texts.length > 0) {
+          const existingIds = new Set((page.texts ?? []).map((t) => t.id));
+          const toRestore = entry.texts.filter((t) => !existingIds.has(t.id));
+          page.texts = [...(page.texts ?? []), ...toRestore];
+          await storage.putPage({ ...page });
+        }
       }
     },
     async redo() {
@@ -307,6 +387,40 @@ export const useEditorStore = defineStore("editor", {
           pages: [...this.pages],
           strokes: entry.after,
         });
+      } else if (entry.kind === "layer-add") {
+        // Redo add: restore the layer
+        this.layers = [...this.layers, entry.layer].sort((a, b) => a.index - b.index);
+        await storage.putLayer(entry.layer);
+        this.currentLayerId = entry.layer.id;
+      } else if (entry.kind === "layer-delete") {
+        // Redo delete: remove the layer and orphan its strokes to bottom layer
+        this.layers = this.layers.filter((l) => l.id !== entry.layer.id);
+        await storage.deleteLayer(entry.layer.id);
+        const bottomLayer = this.layers[0];
+        if (bottomLayer) {
+          // Reassign orphaned strokes to bottom layer
+          const reassigned = this.strokes.map((s) =>
+            s.layerId === entry.layer.id ? { ...s, layerId: bottomLayer.id } : s,
+          );
+          this.strokes = reassigned;
+          for (const s of reassigned.filter(
+            (s) => s.layerId === bottomLayer.id && entry.strokes.some((es) => es.id === s.id),
+          )) {
+            await storage.putStroke(s);
+          }
+          // Reassign orphaned texts
+          const page = this.pages.find((p) => p.id === entry.layer.pageId);
+          if (page?.texts) {
+            page.texts = page.texts.map((t) =>
+              t.layerId === entry.layer.id ? { ...t, layerId: bottomLayer.id } : t,
+            );
+            await storage.putPage({ ...page });
+          }
+        }
+        if (this.currentLayerId === entry.layer.id) {
+          const preferred = this.layers.find((l) => l.visible && !l.locked) ?? this.layers[0];
+          this.currentLayerId = preferred?.id ?? null;
+        }
       }
     },
     async clearPage() {
@@ -317,6 +431,136 @@ export const useEditorStore = defineStore("editor", {
       this.history = [];
       this.redoStack = [];
       useLiveStore().broadcast({ t: "clear-page", pageId });
+    },
+    // Layer actions
+    async addLayer() {
+      if (!this.currentPageId) return;
+      const nextIndex = this.layers.length;
+      const layer: Layer = {
+        id: newId(),
+        pageId: this.currentPageId,
+        name: `Layer ${nextIndex + 1}`,
+        visible: true,
+        locked: false,
+        index: nextIndex,
+        createdAt: Date.now(),
+      };
+      await storage.putLayer(layer);
+      this.layers = [...this.layers, layer];
+      this.currentLayerId = layer.id;
+      this.history = [...this.history, { kind: "layer-add", layer }];
+      this.redoStack = [];
+    },
+    async deleteLayer(layerId: string) {
+      if (this.layers.length <= 1) return; // can't delete the last layer
+      const layer = this.layers.find((l) => l.id === layerId);
+      if (!layer) return;
+
+      // Collect orphaned strokes and texts on this layer
+      const orphanedStrokes = this.strokes.filter((s) => s.layerId === layerId);
+      const page = this.pages.find((p) => p.id === layer.pageId);
+      const orphanedTexts = (page?.texts ?? []).filter((t) => t.layerId === layerId);
+
+      // Move orphaned strokes/texts to the bottom-most remaining layer
+      const remaining = this.layers.filter((l) => l.id !== layerId);
+      const bottomLayer = remaining[0]; // already sorted by index
+
+      // Reassign strokes
+      const updatedStrokes = this.strokes.map((s) =>
+        s.layerId === layerId ? { ...s, layerId: bottomLayer.id } : s,
+      );
+      this.strokes = updatedStrokes;
+      for (const s of orphanedStrokes) {
+        await storage.putStroke({ ...s, layerId: bottomLayer.id });
+      }
+
+      // Reassign texts
+      if (page && orphanedTexts.length > 0) {
+        page.texts = (page.texts ?? []).map((t) =>
+          t.layerId === layerId ? { ...t, layerId: bottomLayer.id } : t,
+        );
+        await storage.putPage({ ...page });
+      }
+
+      await storage.deleteLayer(layerId);
+      this.layers = remaining;
+
+      // Renumber indexes
+      const renumbered = this.layers.map((l, i) => ({ ...l, index: i }));
+      this.layers = renumbered;
+      for (const l of renumbered) await storage.putLayer(l);
+
+      // Select another layer if this was current
+      if (this.currentLayerId === layerId) {
+        const preferred = remaining.find((l) => l.visible && !l.locked) ?? remaining[0];
+        this.currentLayerId = preferred?.id ?? null;
+      }
+
+      this.history = [
+        ...this.history,
+        { kind: "layer-delete", layer, strokes: orphanedStrokes, texts: orphanedTexts },
+      ];
+      this.redoStack = [];
+    },
+    async renameLayer(layerId: string, name: string) {
+      const layer = this.layers.find((l) => l.id === layerId);
+      if (!layer) return;
+      const trimmed = name.trim() || layer.name;
+      layer.name = trimmed;
+      await storage.putLayer({ ...layer });
+    },
+    async toggleLayerVisibility(layerId: string) {
+      const layer = this.layers.find((l) => l.id === layerId);
+      if (!layer) return;
+      layer.visible = !layer.visible;
+      await storage.putLayer({ ...layer });
+      // If we just hid the current layer, pick another
+      if (!layer.visible && this.currentLayerId === layerId) {
+        const preferred = this.layers.find((l) => l.id !== layerId && l.visible && !l.locked);
+        if (preferred) this.currentLayerId = preferred.id;
+      }
+    },
+    async toggleLayerLock(layerId: string) {
+      const layer = this.layers.find((l) => l.id === layerId);
+      if (!layer) return;
+      layer.locked = !layer.locked;
+      await storage.putLayer({ ...layer });
+      // If we just locked the current layer, pick the next unlocked layer
+      if (layer.locked && this.currentLayerId === layerId) {
+        const preferred = this.layers.find((l) => l.id !== layerId && l.visible && !l.locked);
+        if (preferred) this.currentLayerId = preferred.id;
+      }
+    },
+    selectLayer(layerId: string) {
+      const layer = this.layers.find((l) => l.id === layerId);
+      if (!layer) return;
+      if (!layer.visible || layer.locked) return;
+      this.currentLayerId = layerId;
+    },
+    async reorderLayer(layerId: string, newIndex: number) {
+      const layer = this.layers.find((l) => l.id === layerId);
+      if (!layer) return;
+      const clampedIndex = Math.max(0, Math.min(this.layers.length - 1, newIndex));
+      if (layer.index === clampedIndex) return;
+
+      // Remove layer from current position and insert at new position
+      const withoutLayer = this.layers.filter((l) => l.id !== layerId);
+      withoutLayer.splice(clampedIndex, 0, { ...layer, index: clampedIndex });
+
+      // Renumber all
+      const renumbered = withoutLayer.map((l, i) => ({ ...l, index: i }));
+      this.layers = renumbered;
+      for (const l of renumbered) await storage.putLayer(l);
+    },
+    async moveLayerUp(layerId: string) {
+      const layer = this.layers.find((l) => l.id === layerId);
+      if (!layer) return;
+      await this.reorderLayer(layerId, layer.index + 1);
+    },
+    async moveLayerDown(layerId: string) {
+      const layer = this.layers.find((l) => l.id === layerId);
+      if (!layer) return;
+      await this.reorderLayer(layerId, layer.index - 1);
     },
     setTool(t: Tool) {
       this.tool = t;
