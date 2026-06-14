@@ -241,12 +241,14 @@ function joinSession() {
 
 <style scoped>
 .landing {
-  min-height: 100dvh;
-  min-height: 100vh;
+  height: 100dvh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   padding-top: var(--safe-top);
+  overflow-y: auto;
   overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* ── Nav ── */
