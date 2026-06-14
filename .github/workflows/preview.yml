@@ -45,6 +45,20 @@ jobs:
           BASE_PATH: /${{ github.event.repository.name }}/pr-previews/${{ github.event.pull_request.number }}/
         run: npm run build
 
+      - name: Check for docs
+        id: docs
+        run: echo "present=$(test -f docs/package.json && echo 'true' || echo 'false')" >> "$GITHUB_OUTPUT"
+
+      - name: Install docs dependencies
+        if: steps.docs.outputs.present == 'true'
+        run: npm --prefix docs ci
+
+      - name: Build docs for preview
+        if: steps.docs.outputs.present == 'true'
+        env:
+          VITEPRESS_BASE: /${{ github.event.repository.name }}/pr-previews/${{ github.event.pull_request.number }}/docs/
+        run: npm --prefix docs run build && cp -r docs/.vitepress/dist dist/docs
+
       - name: Add SPA fallback
         run: cp dist/index.html dist/404.html
 
@@ -70,6 +84,8 @@ jobs:
             Preview deployed for this pull request.
 
             **<https://shravangoswami.com/${{ github.event.repository.name }}/pr-previews/${{ github.event.pull_request.number }}/>**
+
+            ${{ steps.docs.outputs.present == 'true' && format('**Docs preview:** <https://shravangoswami.com/{0}/pr-previews/{1}/docs/>', github.event.repository.name, github.event.pull_request.number) || '' }}
 
             Latest commit: ${{ github.event.pull_request.head.sha }}
           comment-tag: preview-url-comment

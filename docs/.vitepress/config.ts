@@ -3,7 +3,7 @@ import { defineConfig } from "vitepress";
 export default defineConfig({
   title: "DrawShare Docs",
   description: "Local-first collaborative whiteboard",
-  base: "/DrawShare/docs/",
+  base: process.env.VITEPRESS_BASE ?? "/DrawShare/docs/",
 
   themeConfig: {
     nav: [
