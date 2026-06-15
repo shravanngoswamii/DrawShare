@@ -17,11 +17,12 @@ function toBase64Url(buf: ArrayBuffer): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function fromBase64Url(s: string): Uint8Array {
+function fromBase64Url(s: string): Uint8Array<ArrayBuffer> {
   const padded = s.replace(/-/g, "+").replace(/_/g, "/");
   const pad = (4 - (padded.length % 4)) % 4;
   const binary = atob(padded + "=".repeat(pad));
-  const bytes = new Uint8Array(binary.length);
+  const buf = new ArrayBuffer(binary.length);
+  const bytes = new Uint8Array(buf);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
 }
