@@ -42,11 +42,24 @@ export type SyncMessage =
   | { t: "stroke-delete"; pageId: string; strokeId: string }
   | { t: "text-commit"; text: TextItem }
   | { t: "text-delete"; pageId: string; textId: string }
-  | { t: "clear-page"; pageId: string };
+  | { t: "clear-page"; pageId: string }
+  | { t: "grant-edit" }
+  | { t: "revoke-edit" }
+  | { t: "viewer-stroke-begin"; stroke: Stroke }
+  | {
+      t: "viewer-stroke-points";
+      pageId: string;
+      strokeId: string;
+      points: StrokePoint[];
+      from: number;
+    }
+  | { t: "viewer-stroke-commit"; stroke: Stroke }
+  | { t: "viewer-stroke-cancel"; pageId: string; strokeId: string };
 
 export interface SessionHostHandlers {
   onViewerJoin(viewerId: string): void;
   onViewerLeave(viewerId: string): void;
+  onViewerMessage?(msg: SyncMessage): void;
   onError(err: Error): void;
 }
 

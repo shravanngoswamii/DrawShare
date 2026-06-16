@@ -199,6 +199,24 @@ async function exportCurrentPage() {
         </button>
       </div>
 
+      <!-- ── Collaboration ── -->
+      <div class="section collab-section" v-if="live.isHosting && live.viewerCount > 0">
+        <div class="section-title">Collaboration</div>
+        <button
+          class="collab-toggle"
+          :class="{ 'collab-active': live.hostGrantedEdit }"
+          @click="live.hostGrantedEdit ? live.revokeEdit() : live.grantEdit()"
+          :title="live.hostGrantedEdit ? 'Revoke drawing permission' : 'Grant drawing permission to viewer'"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+            <path d="m15 5 4 4" />
+          </svg>
+          <span>{{ live.hostGrantedEdit ? 'Viewer drawing: On' : 'Viewer drawing: Off' }}</span>
+        </button>
+      </div>
+
       <!-- ── Pages ── -->
       <div class="section pages-section">
         <div class="section-title pages-head">
@@ -645,6 +663,38 @@ async function exportCurrentPage() {
   background: var(--color-success-soft);
   border-color: var(--color-success);
   color: var(--color-success-strong);
+}
+
+/* ── Collaboration ── */
+.collab-section {
+  padding: var(--space-3) var(--space-3) var(--space-3);
+}
+
+.collab-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+}
+
+.collab-toggle:hover {
+  background: var(--color-surface-3, var(--color-surface-2));
+  color: var(--color-text);
+}
+
+.collab-active {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 
 /* ── Background ── */

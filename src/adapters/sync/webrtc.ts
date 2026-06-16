@@ -166,14 +166,17 @@ export class WebRTCSession implements SessionAdapter {
       }
     };
     channel.onmessage = (event) => {
-      if (this.role !== "viewer") return;
       try {
         const msg = JSON.parse(String(event.data)) as SyncMessage;
-        this.viewerHandlers?.onMessage(msg);
+        if (this.role === "viewer") {
+          this.viewerHandlers?.onMessage(msg);
+        } else if (this.role === "host") {
+          this.hostHandlers?.onViewerMessage?.(msg);
+        }
       } catch (err) {
-        this.viewerHandlers?.onError(
-          err instanceof Error ? err : new Error("Invalid sync message."),
-        );
+        const errObj = err instanceof Error ? err : new Error("Invalid sync message.");
+        if (this.role === "viewer") this.viewerHandlers?.onError(errObj);
+        else this.hostHandlers?.onError(errObj);
       }
     };
     channel.onclose = () => {

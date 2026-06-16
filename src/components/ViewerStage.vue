@@ -2,11 +2,18 @@
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Canvas2DRenderer } from "@/adapters/render/canvas2d";
 import { useTheme } from "@/composables/useTheme";
+import { newId } from "@/core/ids";
 import { adaptInk } from "@/core/ink";
-import type { Page } from "@/core/types";
+import type { Page, Stroke, StrokePoint } from "@/core/types";
 import { useLiveStore } from "@/stores/live";
 
-const props = defineProps<{ page: Page }>();
+const props = defineProps<{
+  page: Page;
+  tool?: "pen" | "eraser";
+  color?: string;
+  size?: number;
+}>();
+
 const live = useLiveStore();
 const { isDark } = useTheme();
 
@@ -33,6 +40,8 @@ const pageBgStyle = ref({ backgroundSize: "32px 32px", backgroundPosition: "0px 
 let viewW = 0;
 let viewH = 0;
 
+const effectiveCam = ref({ x: 0, y: 0, zoom: 1 });
+
 function fitCanvas() {
   if (!wrap.value || !baseEl.value || !liveEl.value) return;
   const rect = wrap.value.getBoundingClientRect();
@@ -52,6 +61,7 @@ function computeCamera() {
   if (!host.width || !host.height || !viewW || !viewH) {
     baseRenderer.setCamera({ x: 0, y: 0, zoom: 1 });
     liveRenderer.setCamera({ x: 0, y: 0, zoom: 1 });
+    effectiveCam.value = { x: 0, y: 0, zoom: 1 };
     pageBgStyle.value = { backgroundSize: "32px 32px", backgroundPosition: "0px 0px" };
     return;
   }
@@ -64,6 +74,7 @@ function computeCamera() {
   const y = hc.y - padY / zoom;
   baseRenderer.setCamera({ x, y, zoom });
   liveRenderer.setCamera({ x, y, zoom });
+  effectiveCam.value = { x, y, zoom };
   // Scrolling grid background that follows the camera
   let worldStep = 40;
   let screenStep = worldStep * zoom;
@@ -81,6 +92,11 @@ function computeCamera() {
     backgroundSize: `${screenStep}px ${screenStep}px`,
     backgroundPosition: `${ox}px ${oy}px`,
   };
+}
+
+function screenToWorld(sx: number, sy: number): { x: number; y: number } {
+  const { x, y, zoom } = effectiveCam.value;
+  return { x: sx / zoom + x, y: sy / zoom + y };
 }
 
 function schedule() {
@@ -102,11 +118,114 @@ function render() {
     dirtyBase = false;
   }
   liveRenderer.clear();
+  liveRenderer.beginFrame();
   if (live.viewerLive && live.viewerLive.points.length > 0) {
-    liveRenderer.beginFrame();
     liveRenderer.drawLive(live.viewerLive);
-    liveRenderer.endFrame();
   }
+  if (live.viewerOwnLive && live.viewerOwnLive.points.length > 0) {
+    liveRenderer.drawLive(live.viewerOwnLive);
+  }
+  liveRenderer.endFrame();
+}
+
+// ── Pointer event handling for viewer editing ──
+
+let drawingStroke: Stroke | undefined;
+let activePointerId: number | undefined;
+
+function onPointerDown(ev: PointerEvent) {
+  if (!live.viewerCanEdit) return;
+  if (props.tool === "eraser") return;
+  if (activePointerId !== undefined) return;
+  if (!wrap.value) return;
+
+  ev.preventDefault();
+  wrap.value.setPointerCapture(ev.pointerId);
+  activePointerId = ev.pointerId;
+
+  const rect = wrap.value.getBoundingClientRect();
+  const sx = ev.clientX - rect.left;
+  const sy = ev.clientY - rect.top;
+  const wp = screenToWorld(sx, sy);
+
+  const now = Date.now();
+  const point: StrokePoint = { x: wp.x, y: wp.y, p: ev.pressure || 0.5, t: now };
+
+  const stroke: Stroke = {
+    id: newId(),
+    pageId: props.page.id,
+    tool: "pen",
+    penType: "ballpoint",
+    color: props.color ?? "#0f172a",
+    size: props.size ?? 4,
+    opacity: 1,
+    points: [point],
+    createdAt: now,
+  };
+
+  drawingStroke = stroke;
+  live.setViewerOwnLive({ ...stroke });
+  live.sendViewerStroke({ t: "viewer-stroke-begin", stroke: { ...stroke } });
+  schedule();
+}
+
+function onPointerMove(ev: PointerEvent) {
+  if (!live.viewerCanEdit) return;
+  if (activePointerId !== ev.pointerId) return;
+  if (!drawingStroke || !wrap.value) return;
+
+  ev.preventDefault();
+
+  const rect = wrap.value.getBoundingClientRect();
+  const sx = ev.clientX - rect.left;
+  const sy = ev.clientY - rect.top;
+  const wp = screenToWorld(sx, sy);
+
+  const now = Date.now();
+  const point: StrokePoint = { x: wp.x, y: wp.y, p: ev.pressure || 0.5, t: now };
+  const from = drawingStroke.points.length;
+  drawingStroke.points = [...drawingStroke.points, point];
+  live.setViewerOwnLive({ ...drawingStroke });
+  live.sendViewerStroke({
+    t: "viewer-stroke-points",
+    pageId: drawingStroke.pageId,
+    strokeId: drawingStroke.id,
+    points: [point],
+    from,
+  });
+  schedule();
+}
+
+function onPointerUp(ev: PointerEvent) {
+  if (activePointerId !== ev.pointerId) return;
+  if (!drawingStroke) {
+    activePointerId = undefined;
+    return;
+  }
+
+  const finalized = { ...drawingStroke };
+  drawingStroke = undefined;
+  activePointerId = undefined;
+
+  // Optimistic local commit
+  live.viewerStrokes = [...live.viewerStrokes, finalized];
+  dirtyBase = true;
+  live.setViewerOwnLive(undefined);
+  live.sendViewerStroke({ t: "viewer-stroke-commit", stroke: finalized });
+  schedule();
+}
+
+function onPointerCancel(ev: PointerEvent) {
+  if (activePointerId !== ev.pointerId) return;
+  if (drawingStroke) {
+    const pageId = drawingStroke.pageId;
+    const strokeId = drawingStroke.id;
+    live.sendViewerStroke({ t: "viewer-stroke-cancel", pageId, strokeId });
+  }
+  drawingStroke = undefined;
+  activePointerId = undefined;
+  live.setViewerOwnLive(undefined);
+  schedule();
 }
 
 watch(
@@ -119,6 +238,12 @@ watch(
 
 watch(
   () => live.viewerLive,
+  () => schedule(),
+  { deep: true },
+);
+
+watch(
+  () => live.viewerOwnLive,
   () => schedule(),
   { deep: true },
 );
@@ -187,10 +312,17 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="stage" ref="wrap">
+  <div
+    class="stage"
+    ref="wrap"
+    @pointerdown="onPointerDown"
+    @pointermove="onPointerMove"
+    @pointerup="onPointerUp"
+    @pointercancel="onPointerCancel"
+  >
     <div class="page-bg" :class="`bg-${props.page.background}`" :style="pageBgStyle" aria-hidden="true"></div>
     <canvas ref="baseEl" class="layer"></canvas>
-    <canvas ref="liveEl" class="layer"></canvas>
+    <canvas ref="liveEl" class="layer" :class="{ 'layer-interactive': live.viewerCanEdit }"></canvas>
   </div>
 </template>
 
@@ -238,5 +370,10 @@ onBeforeUnmount(() => {
   pointer-events: none;
   background: transparent;
   forced-color-adjust: none;
+}
+
+.layer-interactive {
+  pointer-events: auto;
+  cursor: crosshair;
 }
 </style>

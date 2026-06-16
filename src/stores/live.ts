@@ -41,6 +41,10 @@ interface LiveState {
   viewerLive: Stroke | undefined;
   viewerHostViewport: { width: number; height: number };
   viewerHostCamera: { x: number; y: number; zoom: number };
+  viewerCanEdit: boolean;
+  viewerOwnLive: Stroke | undefined;
+  hostGrantedEdit: boolean;
+  pendingViewerStrokes: Stroke[];
 }
 
 let session: WebRTCSession | undefined;
@@ -70,6 +74,10 @@ export const useLiveStore = defineStore("live", {
     viewerLive: undefined,
     viewerHostViewport: { width: 1920, height: 1080 },
     viewerHostCamera: { x: 0, y: 0, zoom: 1 },
+    viewerCanEdit: false,
+    viewerOwnLive: undefined,
+    hostGrantedEdit: false,
+    pendingViewerStrokes: [],
   }),
   getters: {
     viewerCurrentPage(state): Page | undefined {
@@ -119,6 +127,12 @@ export const useLiveStore = defineStore("live", {
           onViewerLeave: () => {
             if (session !== activeSession) return;
             this.viewerCount = Math.max(0, this.viewerCount - 1);
+          },
+          onViewerMessage: (msg) => {
+            if (session !== activeSession) return;
+            if (msg.t === "viewer-stroke-commit") {
+              this.pendingViewerStrokes = [...this.pendingViewerStrokes, msg.stroke];
+            }
           },
           onError: (err) => {
             if (session !== activeSession) return;
@@ -179,6 +193,10 @@ export const useLiveStore = defineStore("live", {
       this.viewerHostCamera = { x: 0, y: 0, zoom: 1 };
       this.offerToken = "";
       this.viewerResponseToken = "";
+      this.viewerCanEdit = false;
+      this.viewerOwnLive = undefined;
+      this.hostGrantedEdit = false;
+      this.pendingViewerStrokes = [];
     },
 
     async startPollingForAnswer(code: string) {
@@ -316,6 +334,33 @@ export const useLiveStore = defineStore("live", {
       session?.send(msg);
     },
 
+    grantEdit() {
+      if (this.mode !== "host") return;
+      this.hostGrantedEdit = true;
+      session?.send({ t: "grant-edit" });
+    },
+
+    revokeEdit() {
+      if (this.mode !== "host") return;
+      this.hostGrantedEdit = false;
+      session?.send({ t: "revoke-edit" });
+    },
+
+    setViewerOwnLive(stroke: Stroke | undefined) {
+      this.viewerOwnLive = stroke;
+    },
+
+    sendViewerStroke(msg: SyncMessage) {
+      if (this.mode !== "viewer") return;
+      session?.send(msg);
+    },
+
+    clearPendingViewerStrokes(): Stroke[] {
+      const pending = [...this.pendingViewerStrokes];
+      this.pendingViewerStrokes = [];
+      return pending;
+    },
+
     applyMessage(msg: SyncMessage) {
       switch (msg.t) {
         case "hello": {
@@ -408,6 +453,18 @@ export const useLiveStore = defineStore("live", {
           if (msg.pageId === this.viewerCurrentPageId) this.viewerStrokes = [];
           break;
         }
+        case "grant-edit":
+          this.viewerCanEdit = true;
+          break;
+        case "revoke-edit":
+          this.viewerCanEdit = false;
+          this.viewerOwnLive = undefined;
+          break;
+        case "viewer-stroke-begin":
+        case "viewer-stroke-points":
+        case "viewer-stroke-cancel":
+        case "viewer-stroke-commit":
+          break; // handled on host side only
         case "viewer-ready":
           break;
       }
