@@ -2,9 +2,18 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { PointerInputAdapter } from "@/adapters/input/pointerInput";
 import { Canvas2DRenderer } from "@/adapters/render/canvas2d";
+import { drawStack, resolveSheetColors, type SheetColors } from "@/composables/useStackRenderer";
 import { useTheme } from "@/composables/useTheme";
 import { newId } from "@/core/ids";
 import { adaptInk } from "@/core/ink";
+import {
+  nearestSheetIndex,
+  PAGE_H,
+  PAGE_W,
+  sheetWorldPos,
+  visibleSheetRange,
+  worldToSheet,
+} from "@/core/layout";
 import type { InputSample } from "@/core/ports";
 import type { Page, Stroke, StrokePoint, TextItem } from "@/core/types";
 import { dlog } from "@/debug";
@@ -32,23 +41,35 @@ const input = new PointerInputAdapter();
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 10;
 
-// A4 page dimensions in world units (794 × 1123 px at 96 DPI), anchored at world (0,0).
-const PAGE_W = 794;
-const PAGE_H = 1123;
-
 // Camera – plain object for perf (mutated directly, not reactive)
 const cam = { x: 0, y: 0, zoom: 1 };
 
 // Reactive state for template only
 const zoomLabel = ref("100%");
 const bgStyle = ref({ backgroundSize: "32px 32px", backgroundPosition: "0px 0px" });
-const pageOverlayStyle = ref<Record<string, string>>({});
 const panCursor = ref(false);
+
+// ── Notebook stack (continuous A4 sheets) ───────────────────────────────────
+const isNotebook = () => editor.notebookMode !== "off";
+// Screen-space frame boxes for each visible sheet (notebook mode only).
+const sheetFrames = ref<
+  Array<{ id: string; left: number; top: number; width: number; height: number; active: boolean }>
+>([]);
+// World origin of the sheet the in-progress stroke is anchored to (0,0 in Free mode).
+let drawOffsetX = 0;
+let drawOffsetY = 0;
+// Sheet paper/pattern colours, resolved from the theme on mount + theme change.
+let sheetColors: SheetColors = {
+  paper: "#ffffff",
+  line: "rgba(148,163,184,0.4)",
+  dot: "rgba(148,163,184,0.6)",
+};
 
 // Text tool editing overlay
 const textInput = ref<HTMLTextAreaElement | null>(null);
 const editing = ref<{
   id: string;
+  pageId: string;
   x: number;
   y: number;
   text: string;
@@ -78,13 +99,14 @@ let dirtyBase = true;
 let viewW = 0;
 let viewH = 0;
 
-// Strict notebook mode: once a stroke exits the page boundary, block further points.
+// Strict notebook mode: once a stroke exits the sheet boundary, block further points.
 let strictBlocked = false;
 
-// Render-time offset applied to strokes/texts while the page frame is being dragged.
-// Avoids mutating all stroke data on every pointermove; committed on pointer-up.
-let pageDragDeltaX = 0;
-let pageDragDeltaY = 0;
+// Area-erase is locked to the sheet it started on (notebook mode), so its single
+// before/after snapshot stays correct even if the eraser drifts across a gap.
+let eraseLockId: string | undefined;
+let eraseOffX = 0;
+let eraseOffY = 0;
 
 // Navigation state (plain booleans – not reactive)
 let spaceHeld = false;
@@ -123,92 +145,107 @@ function updateBg() {
   };
 }
 
-function isInPage(wx: number, wy: number): boolean {
-  return (
-    wx >= editor.pageOriginX &&
-    wx <= editor.pageOriginX + PAGE_W &&
-    wy >= editor.pageOriginY &&
-    wy <= editor.pageOriginY + PAGE_H
-  );
+// World origin of a page's sheet (0,0 in Free mode or when not found).
+function pageOffset(pageId: string | undefined): { x: number; y: number } {
+  if (!pageId || editor.notebookMode === "off") return { x: 0, y: 0 };
+  const i = editor.pages.findIndex((p) => p.id === pageId);
+  return i >= 0 ? sheetWorldPos(i, editor.notebookLayout) : { x: 0, y: 0 };
+}
+
+// Strict-mode boundary in the active sheet's page-local coords (0,0)..(PAGE_W,PAGE_H).
+function isInSheet(lx: number, ly: number): boolean {
+  return lx >= 0 && lx <= PAGE_W && ly >= 0 && ly <= PAGE_H;
 }
 
 function strictFinalSampleOutOfBounds(sample?: InputSample): boolean {
   if (!sample || editor.notebookMode !== "strict") return false;
-  const w = toWorld(sample.x, sample.y);
-  return !isInPage(w.x, w.y);
+  const p = toPagePoint(sample);
+  return !isInSheet(p.x, p.y);
 }
 
-// World point where the segment from an in-page point to an out-of-page point
-// crosses the page boundary. Used in strict mode so a stroke ends exactly on the
-// edge instead of stopping short of it or leaking past it on fast moves.
-function clampToPageBoundary(
+// Page-local point where the segment from an in-sheet point to an out-of-sheet
+// point crosses the sheet boundary, so a strict stroke ends exactly on the edge.
+function clampToSheetBoundary(
   inside: { x: number; y: number },
   outside: { x: number; y: number },
 ): { x: number; y: number } {
-  const left = editor.pageOriginX;
-  const right = editor.pageOriginX + PAGE_W;
-  const top = editor.pageOriginY;
-  const bottom = editor.pageOriginY + PAGE_H;
   const dx = outside.x - inside.x;
   const dy = outside.y - inside.y;
   let t = 1;
-  if (dx > 0) t = Math.min(t, (right - inside.x) / dx);
-  else if (dx < 0) t = Math.min(t, (left - inside.x) / dx);
-  if (dy > 0) t = Math.min(t, (bottom - inside.y) / dy);
-  else if (dy < 0) t = Math.min(t, (top - inside.y) / dy);
+  if (dx > 0) t = Math.min(t, (PAGE_W - inside.x) / dx);
+  else if (dx < 0) t = Math.min(t, -inside.x / dx);
+  if (dy > 0) t = Math.min(t, (PAGE_H - inside.y) / dy);
+  else if (dy < 0) t = Math.min(t, -inside.y / dy);
   t = Math.max(0, Math.min(1, t));
   return { x: inside.x + dx * t, y: inside.y + dy * t };
 }
 
+// Recompute the notebook sheet frame boxes (no-op in Free mode — no A4 guide).
 function updatePageOverlay() {
-  pageOverlayStyle.value = {
-    left: `${(editor.pageOriginX - cam.x) * cam.zoom}px`,
-    top: `${(editor.pageOriginY - cam.y) * cam.zoom}px`,
-    width: `${PAGE_W * cam.zoom}px`,
-    height: `${PAGE_H * cam.zoom}px`,
-  };
+  if (isNotebook()) updateSheetFrames();
 }
 
-function centerOnPage() {
+// Notebook mode: screen-space frame boxes for every visible sheet.
+function updateSheetFrames() {
+  const layout = editor.notebookLayout;
+  const count = editor.pages.length;
+  const frames: typeof sheetFrames.value = [];
+  for (let i = 0; i < count; i++) {
+    const page = editor.pages[i];
+    const { x, y } = sheetWorldPos(i, layout);
+    frames.push({
+      id: page.id,
+      left: (x - cam.x) * cam.zoom,
+      top: (y - cam.y) * cam.zoom,
+      width: PAGE_W * cam.zoom,
+      height: PAGE_H * cam.zoom,
+      active: page.id === editor.currentPageId,
+    });
+  }
+  sheetFrames.value = frames;
+}
+
+// Fit a single sheet to the viewport (used on open / mode switch).
+function centerOnSheet(pageId: string) {
+  const { x, y } = pageOffset(pageId);
   const MARGIN = 40;
   const fitZoom = Math.min((viewW - MARGIN * 2) / PAGE_W, (viewH - MARGIN * 2) / PAGE_H, MAX_ZOOM);
   cam.zoom = Math.max(MIN_ZOOM, fitZoom);
-  cam.x = editor.pageOriginX + PAGE_W / 2 - viewW / (2 * cam.zoom);
-  cam.y = editor.pageOriginY + PAGE_H / 2 - viewH / (2 * cam.zoom);
+  cam.x = x + PAGE_W / 2 - viewW / (2 * cam.zoom);
+  cam.y = y + PAGE_H / 2 - viewH / (2 * cam.zoom);
   syncCamera();
 }
 
-function startPageDrag(e: PointerEvent) {
-  e.preventDefault();
-  const el = e.currentTarget as HTMLElement;
-  el.setPointerCapture(e.pointerId);
-  const startX = e.clientX;
-  const startY = e.clientY;
-  const origX = editor.pageOriginX;
-  const origY = editor.pageOriginY;
-  function onMove(ev: PointerEvent) {
-    const newX = origX + (ev.clientX - startX) / cam.zoom;
-    const newY = origY + (ev.clientY - startY) / cam.zoom;
-    editor.setPageOrigin(newX, newY);
-    pageDragDeltaX = newX - origX;
-    pageDragDeltaY = newY - origY;
-    dirtyBase = true;
-    schedule();
-    updatePageOverlay();
-  }
-  async function onUp() {
-    window.removeEventListener("pointermove", onMove);
-    window.removeEventListener("pointerup", onUp);
-    const dx = pageDragDeltaX;
-    const dy = pageDragDeltaY;
-    pageDragDeltaX = 0;
-    pageDragDeltaY = 0;
-    if (editor.currentPageId) await editor.translatePageContent(editor.currentPageId, dx, dy);
-    dirtyBase = true;
-    schedule();
-  }
-  window.addEventListener("pointermove", onMove);
-  window.addEventListener("pointerup", onUp);
+// Animate the camera to bring a sheet into view, keeping the current zoom.
+let scrollAnim = 0;
+function scrollToSheet(pageId: string) {
+  const { x, y } = pageOffset(pageId);
+  const targetX = x + PAGE_W / 2 - viewW / (2 * cam.zoom);
+  const targetY = y + PAGE_H / 2 - viewH / (2 * cam.zoom);
+  const fromX = cam.x;
+  const fromY = cam.y;
+  const start = performance.now();
+  const DUR = 260;
+  cancelAnimationFrame(scrollAnim);
+  const step = (now: number) => {
+    const t = Math.min(1, (now - start) / DUR);
+    const e = 1 - (1 - t) ** 3; // ease-out cubic
+    cam.x = fromX + (targetX - fromX) * e;
+    cam.y = fromY + (targetY - fromY) * e;
+    syncCamera();
+    if (t < 1) scrollAnim = requestAnimationFrame(step);
+  };
+  scrollAnim = requestAnimationFrame(step);
+}
+
+// Notebook mode: track which sheet is centered in the viewport as the "active sheet".
+function updateActiveSheet() {
+  if (!isNotebook() || editor.pages.length === 0) return;
+  const cx = cam.x + viewW / (2 * cam.zoom);
+  const cy = cam.y + viewH / (2 * cam.zoom);
+  const idx = nearestSheetIndex(cx, cy, editor.pages.length, editor.notebookLayout);
+  const id = editor.pages[idx]?.id;
+  if (id && id !== editor.currentPageId) editor.setActiveSheet(id);
 }
 
 function syncCamera() {
@@ -217,6 +254,7 @@ function syncCamera() {
   zoomLabel.value = `${Math.round(cam.zoom * 100)}%`;
   updateBg();
   updatePageOverlay();
+  updateActiveSheet();
   updateEditStyle();
   live.setHostCamera(cam.x, cam.y, cam.zoom);
   dirtyBase = true;
@@ -284,37 +322,46 @@ function schedule() {
   requestAnimationFrame(render);
 }
 
+function visibleRange() {
+  const layout = editor.notebookLayout;
+  const min = layout === "horizontal" ? cam.x : cam.y;
+  const span = layout === "horizontal" ? viewW / cam.zoom : viewH / cam.zoom;
+  return visibleSheetRange(editor.pages.length, layout, min, min + span);
+}
+
 function render() {
   frameQueued = false;
   if (dirtyBase) {
     baseRenderer.clear();
-    baseRenderer.beginFrame();
-    const hasDragOffset = pageDragDeltaX !== 0 || pageDragDeltaY !== 0;
-    for (const s of editor.strokes) {
-      if (hasDragOffset && s.pageId === editor.currentPageId) {
-        baseRenderer.drawStroke({
-          ...s,
-          points: s.points.map((p) => ({ ...p, x: p.x + pageDragDeltaX, y: p.y + pageDragDeltaY })),
-        });
-      } else {
-        baseRenderer.drawStroke(s);
-      }
-    }
-    for (const t of editor.currentPage?.texts ?? []) {
-      if (editing.value?.id === t.id) continue;
-      if (hasDragOffset) {
-        baseRenderer.drawText({ ...t, x: t.x + pageDragDeltaX, y: t.y + pageDragDeltaY });
-      } else {
+    if (isNotebook()) {
+      drawStack(baseRenderer, editor.pages, editor.strokes, editor.notebookLayout, sheetColors, {
+        range: visibleRange(),
+        editingTextId: editing.value?.id,
+        clip: editor.notebookMode === "strict",
+      });
+    } else {
+      baseRenderer.beginFrame();
+      for (const s of editor.strokes) baseRenderer.drawStroke(s);
+      for (const t of editor.currentPage?.texts ?? []) {
+        if (editing.value?.id === t.id) continue;
         baseRenderer.drawText(t);
       }
+      baseRenderer.endFrame();
     }
-    baseRenderer.endFrame();
     dlog(`render base strokes=${editor.strokes.length} cur=${currentStroke ? "y" : "n"}`);
     dirtyBase = false;
   }
   liveRenderer.clear();
   if (currentStroke && currentStroke.points.length > 0) {
+    // The in-progress stroke is page-local; shift the live camera by the active
+    // sheet origin so drawLive paints it at the sheet's world position (no-op in
+    // Free mode where drawOffset is 0).
+    liveRenderer.setCamera({ x: cam.x - drawOffsetX, y: cam.y - drawOffsetY, zoom: cam.zoom });
     liveRenderer.beginFrame();
+    // Strict mode keeps the in-progress stroke inside its sheet; notebook mode
+    // lets it show outside (matching the committed layer).
+    const clipLive = editor.notebookMode === "strict";
+    if (clipLive) liveRenderer.pushClip(PAGE_W, PAGE_H);
     if (predictedPoints.length > 0) {
       liveRenderer.drawLive({
         ...currentStroke,
@@ -323,6 +370,7 @@ function render() {
     } else {
       liveRenderer.drawLive(currentStroke);
     }
+    if (clipLive) liveRenderer.popClip();
     liveRenderer.endFrame();
     if (live.mode === "host" && currentStroke.points.length > liveSendCursor) {
       const newPoints = currentStroke.points.slice(liveSendCursor);
@@ -338,9 +386,11 @@ function render() {
   }
 }
 
+// Screen sample → stored stroke point. In notebook mode this is page-local
+// (relative to the active sheet); in Free mode drawOffset is 0 so it's world.
 function toPagePoint(s: InputSample): StrokePoint {
   const w = toWorld(s.x, s.y);
-  return { x: w.x, y: w.y, p: s.pressure, t: s.t };
+  return { x: w.x - drawOffsetX, y: w.y - drawOffsetY, p: s.pressure, t: s.t };
 }
 
 function distToSegment(
@@ -363,21 +413,45 @@ let areaErased = false;
 
 function eraseAt(wx: number, wy: number) {
   const r = editor.size / cam.zoom;
+  // Area erase stays on the sheet it started on (keeps its snapshot coherent).
   if (editor.eraserMode === "area") {
-    if (editor.eraseArea(props.page.id, wx, wy, r)) {
+    if (!eraseLockId) return;
+    const lx = wx - eraseOffX;
+    const ly = wy - eraseOffY;
+    if (editor.eraseArea(eraseLockId, lx, ly, r)) {
       areaErased = true;
       dirtyBase = true;
       schedule();
     }
     return;
   }
+  // Stroke erase routes to a sheet and may cross sheets. Strict only erases on a
+  // sheet; notebook uses the nearest sheet so gap ink is also erasable.
+  let pageId = props.page.id;
+  let lx = wx;
+  let ly = wy;
+  if (isNotebook()) {
+    const count = editor.pages.length;
+    let idx: number;
+    if (editor.notebookMode === "strict") {
+      const hit = worldToSheet(wx, wy, count, editor.notebookLayout);
+      if (!hit) return;
+      idx = hit.index;
+    } else {
+      idx = nearestSheetIndex(wx, wy, count, editor.notebookLayout);
+    }
+    pageId = editor.pages[idx].id;
+    const o = sheetWorldPos(idx, editor.notebookLayout);
+    lx = wx - o.x;
+    ly = wy - o.y;
+  }
   const toDelete = editor.strokes.filter((stroke) => {
-    if (stroke.pageId !== props.page.id) return false;
+    if (stroke.pageId !== pageId) return false;
     const pts = stroke.points;
     if (pts.length === 0) return false;
-    if (pts.length === 1) return Math.hypot(pts[0].x - wx, pts[0].y - wy) < r;
+    if (pts.length === 1) return Math.hypot(pts[0].x - lx, pts[0].y - ly) < r;
     for (let i = 0; i < pts.length - 1; i++) {
-      if (distToSegment(wx, wy, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y) < r) return true;
+      if (distToSegment(lx, ly, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y) < r) return true;
     }
     return false;
   });
@@ -445,19 +519,29 @@ function onEditPointerDown(e: PointerEvent) {
   window.addEventListener("pointerup", onUp);
 }
 
+// Hit-test a tap (world coords) against a text. Texts are page-local in notebook
+// mode, so add the sheet offset to compare in world space (no-op in Free mode).
 function hitText(t: TextItem, wx: number, wy: number): boolean {
+  const off = pageOffset(t.pageId);
+  const tx = t.x + off.x;
+  const ty = t.y + off.y;
   const lines = t.text.split("\n");
   const longest = lines.reduce((m, l) => Math.max(m, l.length), 1);
   const w = longest * t.size * 0.6;
   const h = lines.length * t.size * 1.3;
-  return wx >= t.x && wx <= t.x + w && wy >= t.y && wy <= t.y + h;
+  return wx >= tx && wx <= tx + w && wy >= ty && wy <= ty + h;
 }
 
-function beginTextAt(wx: number, wy: number, existing?: TextItem) {
+// The editing overlay works in WORLD coords (so it positions correctly); stored
+// text is page-local, so convert on the way in (existing) and out (commit).
+function beginTextAt(wx: number, wy: number, existing?: TextItem, pageId?: string) {
+  const pid = existing?.pageId ?? pageId ?? props.page.id;
+  const off = pageOffset(pid);
   editing.value = {
     id: existing?.id ?? newId(),
-    x: existing?.x ?? wx,
-    y: existing?.y ?? wy,
+    pageId: pid,
+    x: existing ? existing.x + off.x : wx,
+    y: existing ? existing.y + off.y : wy,
     text: existing?.text ?? "",
     size: existing?.size ?? editor.size * 6,
     color: existing?.color ?? editor.color,
@@ -478,13 +562,14 @@ function commitEditing() {
   editing.value = null;
   const text = e.text.replace(/\s+$/g, "");
   if (!text) {
-    if (e.existed) editor.deleteText(props.page.id, e.id);
+    if (e.existed) editor.deleteText(e.pageId, e.id);
   } else {
+    const off = pageOffset(e.pageId);
     editor.commitText({
       id: e.id,
-      pageId: props.page.id,
-      x: e.x,
-      y: e.y,
+      pageId: e.pageId,
+      x: e.x - off.x,
+      y: e.y - off.y,
       text,
       color: e.color,
       size: e.size,
@@ -507,19 +592,53 @@ function handleDown(s: InputSample) {
   ) {
     active.blur();
   }
-  if (editor.notebookMode === "strict" && editor.tool !== "eraser") {
-    const w = toWorld(s.x, s.y);
-    if (!isInPage(w.x, w.y)) return;
+  const w = toWorld(s.x, s.y);
+  // Resolve which sheet this gesture targets and its page-local origin. Free mode
+  // treats the whole canvas as one surface (offset 0).
+  let targetPageId = props.page.id;
+  let onSheet = !isNotebook();
+  drawOffsetX = 0;
+  drawOffsetY = 0;
+  if (isNotebook()) {
+    const count = editor.pages.length;
+    if (editor.notebookMode === "strict") {
+      // Strict: drawing/text only land on a sheet, never in the gaps.
+      const hit = worldToSheet(w.x, w.y, count, editor.notebookLayout);
+      if (!hit && editor.tool !== "eraser") return;
+      if (hit) {
+        onSheet = true;
+        targetPageId = editor.pages[hit.index].id;
+        const o = sheetWorldPos(hit.index, editor.notebookLayout);
+        drawOffsetX = o.x;
+        drawOffsetY = o.y;
+      }
+    } else {
+      // Notebook: the sheet is a guide — anchor the gesture to the nearest sheet
+      // so you can draw anywhere, including the gaps, and see it.
+      const idx = nearestSheetIndex(w.x, w.y, count, editor.notebookLayout);
+      onSheet = true;
+      targetPageId = editor.pages[idx].id;
+      const o = sheetWorldPos(idx, editor.notebookLayout);
+      drawOffsetX = o.x;
+      drawOffsetY = o.y;
+    }
   }
   if (editor.tool === "text") {
-    const w = toWorld(s.x, s.y);
     if (editing.value) commitEditing();
-    const hit = (props.page.texts ?? []).find((t) => hitText(t, w.x, w.y));
-    if (hit) {
+    const page = editor.pages.find((p) => p.id === targetPageId) ?? props.page;
+    const existing = (page.texts ?? []).find((t) => hitText(t, w.x, w.y));
+    if (existing) {
       // Drag to move, or tap (no move) to edit — decided in move/up.
-      textDrag = { item: hit, downX: w.x, downY: w.y, origX: hit.x, origY: hit.y, moved: false };
+      textDrag = {
+        item: existing,
+        downX: w.x,
+        downY: w.y,
+        origX: existing.x,
+        origY: existing.y,
+        moved: false,
+      };
     } else {
-      beginTextAt(w.x, w.y);
+      beginTextAt(w.x, w.y, undefined, targetPageId);
     }
     return;
   }
@@ -527,15 +646,17 @@ function handleDown(s: InputSample) {
   if (editor.tool === "eraser") {
     isErasing = true;
     eraseCursor.value = { x: s.x, y: s.y };
-    if (editor.eraserMode === "area") editor.beginAreaErase(props.page.id);
-    const w = toWorld(s.x, s.y);
+    eraseLockId = onSheet ? targetPageId : undefined;
+    eraseOffX = drawOffsetX;
+    eraseOffY = drawOffsetY;
+    if (editor.eraserMode === "area" && eraseLockId) editor.beginAreaErase(eraseLockId);
     eraseAt(w.x, w.y);
     return;
   }
   const point = toPagePoint(s);
   currentStroke = {
     id: newId(),
-    pageId: props.page.id,
+    pageId: targetPageId,
     tool: editor.tool,
     ...(editor.tool === "pen" ? { penType: editor.penType } : {}),
     color: editor.color,
@@ -562,18 +683,18 @@ function handleMove(samples: InputSample[]) {
     }
     predictedPoints = [];
     for (const pt of samples) {
-      const w = toWorld(pt.x, pt.y);
-      if (!isInPage(w.x, w.y)) {
-        // Stroke is leaving the page — end it exactly on the boundary.
+      const lp = toPagePoint(pt);
+      if (!isInSheet(lp.x, lp.y)) {
+        // Stroke is leaving the sheet — end it exactly on the boundary.
         const prev = currentStroke.points[currentStroke.points.length - 1];
-        if (prev && isInPage(prev.x, prev.y)) {
-          const edge = clampToPageBoundary(prev, w);
+        if (prev && isInSheet(prev.x, prev.y)) {
+          const edge = clampToSheetBoundary(prev, lp);
           currentStroke.points.push({ x: edge.x, y: edge.y, p: pt.pressure, t: pt.t });
         }
         strictBlocked = true;
         break;
       }
-      currentStroke.points.push(toPagePoint(pt));
+      currentStroke.points.push(lp);
     }
     schedule();
     return;
@@ -618,17 +739,16 @@ function handlePredict(samples: InputSample[]) {
     const pts: StrokePoint[] = [];
     let prev: StrokePoint | undefined = currentStroke.points[currentStroke.points.length - 1];
     for (const s of samples) {
-      const w = toWorld(s.x, s.y);
-      if (!isInPage(w.x, w.y)) {
-        if (prev && isInPage(prev.x, prev.y)) {
-          const edge = clampToPageBoundary(prev, w);
+      const lp = toPagePoint(s);
+      if (!isInSheet(lp.x, lp.y)) {
+        if (prev && isInSheet(prev.x, prev.y)) {
+          const edge = clampToSheetBoundary(prev, lp);
           pts.push({ x: edge.x, y: edge.y, p: s.pressure, t: s.t });
         }
         break;
       }
-      const p = toPagePoint(s);
-      pts.push(p);
-      prev = p;
+      pts.push(lp);
+      prev = lp;
     }
     predictedPoints = pts;
     schedule();
@@ -666,10 +786,10 @@ function appendStrictAwareFinalPoint(
   if (!sample) return;
   if (editor.notebookMode === "strict" && strictFinalSampleOutOfBounds(sample)) {
     if (alreadyClamped) return;
-    const w = toWorld(sample.x, sample.y);
+    const lp = toPagePoint(sample);
     const prev = stroke.points[stroke.points.length - 1];
-    if (prev && isInPage(prev.x, prev.y)) {
-      const edge = clampToPageBoundary(prev, w);
+    if (prev && isInSheet(prev.x, prev.y)) {
+      const edge = clampToSheetBoundary(prev, lp);
       stroke.points.push({ x: edge.x, y: edge.y, p: sample.pressure, t: sample.t });
     }
     return;
@@ -698,8 +818,9 @@ async function handleUp(sample?: InputSample) {
     eraseCursor.value = null;
     if (areaErased) {
       areaErased = false;
-      editor.flushPage(props.page.id);
+      editor.flushPage(eraseLockId ?? props.page.id);
     }
+    eraseLockId = undefined;
     return;
   }
   if (!currentStroke) return;
@@ -729,8 +850,9 @@ async function handleCancel(sample?: InputSample) {
     eraseCursor.value = null;
     if (areaErased) {
       areaErased = false;
-      editor.flushPage(props.page.id);
+      editor.flushPage(eraseLockId ?? props.page.id);
     }
+    eraseLockId = undefined;
     return;
   }
   if (!currentStroke) return;
@@ -882,25 +1004,20 @@ watch(
 watch(
   () => props.page.id,
   () => {
+    // In notebook mode props.page is the active sheet, which changes as you
+    // scroll — that's not a page switch, so don't disturb the camera or editor.
+    if (isNotebook()) return;
     commitEditing();
-    // Each page carries its own A4 guide origin, so fit the new page's sheet
-    // when flipping pages in notebook mode; otherwise just refresh the overlay.
-    if (editor.notebookMode !== "off") centerOnPage();
-    else updatePageOverlay();
+    updatePageOverlay();
     dirtyBase = true;
     schedule();
   },
 );
+// Repaint when any sheet's content changes (texts, background, order, add/delete).
 watch(
-  () => props.page.background,
+  () => editor.pages,
   () => {
-    dirtyBase = true;
-    schedule();
-  },
-);
-watch(
-  () => editor.currentPage?.texts,
-  () => {
+    updatePageOverlay();
     dirtyBase = true;
     schedule();
   },
@@ -909,12 +1026,31 @@ watch(
 watch(
   () => editor.notebookMode,
   (mode, prev) => {
-    if (mode !== "off" && prev === "off") centerOnPage();
+    if (mode !== "off" && prev === "off" && editor.currentPageId) {
+      centerOnSheet(editor.currentPageId);
+    }
+    updatePageOverlay();
+    dirtyBase = true;
+    schedule();
   },
 );
-watch([() => editor.pageOriginX, () => editor.pageOriginY], () => {
-  updatePageOverlay();
-});
+// Switching tiling direction moves every sheet — re-fit on the active one.
+watch(
+  () => editor.notebookLayout,
+  () => {
+    if (editor.currentPageId) centerOnSheet(editor.currentPageId);
+    updatePageOverlay();
+    dirtyBase = true;
+    schedule();
+  },
+);
+// Overview-panel clicks ask the canvas to scroll to a sheet.
+watch(
+  () => editor.scrollRequestNonce,
+  () => {
+    if (editor.scrollRequestPageId) scrollToSheet(editor.scrollRequestPageId);
+  },
+);
 
 // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -925,9 +1061,10 @@ onMounted(() => {
   baseRenderer.attach(baseEl.value);
   liveRenderer.attach(liveEl.value);
   applyInkAdapter();
+  if (wrap.value) sheetColors = resolveSheetColors(wrap.value);
   fitCanvas();
-  // A project saved in notebook mode opens centered on its sheet.
-  if (editor.notebookMode !== "off") centerOnPage();
+  // A project saved in notebook mode opens centered/fit on its first sheet.
+  if (isNotebook() && editor.currentPageId) centerOnSheet(editor.currentPageId);
   else updatePageOverlay();
   wrap.value.addEventListener("wheel", onWheel, { passive: false });
   wrap.value.addEventListener("pointerdown", onNavPointerDown, { capture: true, passive: false });
@@ -950,6 +1087,7 @@ onMounted(() => {
 // Re-paint ink when the theme flips (dark-mode ink adaptation is render-time).
 watch(isDark, () => {
   applyInkAdapter();
+  if (wrap.value) sheetColors = resolveSheetColors(wrap.value);
   updateEditStyle();
   dirtyBase = true;
   schedule();
@@ -972,8 +1110,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="stage" ref="wrap" :class="{ 'pan-cursor': panCursor }">
-    <div class="page-bg" :class="`bg-${props.page.background}`" :style="bgStyle" aria-hidden="true"></div>
+  <div class="stage" ref="wrap" :class="{ 'pan-cursor': panCursor, 'is-notebook': editor.notebookMode !== 'off' }">
+    <div v-if="editor.notebookMode === 'off'" class="page-bg" :class="`bg-${props.page.background}`" :style="bgStyle" aria-hidden="true"></div>
     <canvas ref="baseEl" class="layer base"></canvas>
     <canvas ref="liveEl" class="layer live"></canvas>
     <textarea
@@ -991,21 +1129,16 @@ onBeforeUnmount(() => {
       @keydown.escape.prevent="commitEditing"
       @keydown.enter.exact.prevent="commitEditing"
     ></textarea>
-    <div
-      v-if="editor.notebookMode !== 'off'"
-      class="page-frame"
-      :class="{ 'is-strict': editor.notebookMode === 'strict' }"
-      :style="pageOverlayStyle"
-      aria-hidden="true"
-    >
-      <div class="page-frame-grip" @pointerdown="startPageDrag" title="Drag to move page">
-        <svg width="14" height="8" viewBox="0 0 14 8" fill="currentColor" aria-hidden="true">
-          <circle cx="2" cy="2" r="1.2"/><circle cx="7" cy="2" r="1.2"/><circle cx="12" cy="2" r="1.2"/>
-          <circle cx="2" cy="6" r="1.2"/><circle cx="7" cy="6" r="1.2"/><circle cx="12" cy="6" r="1.2"/>
-        </svg>
-      </div>
-      <span class="page-frame-label">{{ editor.notebookMode === 'strict' ? 'A4 strict' : 'A4' }}</span>
-    </div>
+    <template v-if="editor.notebookMode !== 'off'">
+      <div
+        v-for="f in sheetFrames"
+        :key="f.id"
+        class="page-frame"
+        :class="{ 'is-strict': editor.notebookMode === 'strict', 'is-active': f.active }"
+        :style="{ left: `${f.left}px`, top: `${f.top}px`, width: `${f.width}px`, height: `${f.height}px` }"
+        aria-hidden="true"
+      ></div>
+    </template>
     <div
       v-if="eraseCursor"
       class="eraser-cursor"
@@ -1050,6 +1183,11 @@ onBeforeUnmount(() => {
   cursor: grabbing;
 }
 
+/* Notebook mode: a neutral "desk" backdrop behind the white A4 sheets. */
+.stage.is-notebook {
+  background: var(--color-bg);
+}
+
 .page-bg {
   position: absolute;
   inset: 0;
@@ -1090,61 +1228,24 @@ onBeforeUnmount(() => {
   touch-action: none;
 }
 
+/* Notebook sheets: a soft drop shadow lifts each A4 page off the desk backdrop. */
 .page-frame {
   position: absolute;
   z-index: 3;
   pointer-events: none;
-  border: 2px dashed color-mix(in srgb, var(--color-accent) 60%, transparent);
+  border: 1px solid var(--color-border);
   border-radius: 2px;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 12%, transparent);
+  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.12);
+}
+
+.page-frame.is-active {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+  box-shadow: 0 3px 16px rgba(15, 23, 42, 0.16);
 }
 
 .page-frame.is-strict {
   border-style: solid;
   border-color: color-mix(in srgb, #f59e0b 70%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, #f59e0b 15%, transparent);
-}
-
-.page-frame-label {
-  position: absolute;
-  top: 4px;
-  right: 6px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--color-accent);
-  opacity: 0.7;
-  user-select: none;
-}
-
-.page-frame.is-strict .page-frame-label {
-  color: #f59e0b;
-}
-
-.page-frame-grip {
-  position: absolute;
-  top: 6px;
-  left: 50%;
-  transform: translateX(-50%);
-  color: var(--color-accent);
-  opacity: 0.5;
-  cursor: grab;
-  pointer-events: auto;
-  padding: 3px 6px;
-  border-radius: 4px;
-  line-height: 0;
-  transition: opacity 80ms ease, background 80ms ease;
-}
-.page-frame-grip:hover {
-  opacity: 0.85;
-  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
-}
-.page-frame-grip:active {
-  cursor: grabbing;
-}
-.page-frame.is-strict .page-frame-grip {
-  color: #f59e0b;
 }
 
 .eraser-cursor {
