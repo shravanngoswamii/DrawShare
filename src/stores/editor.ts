@@ -88,6 +88,7 @@ interface EditorState {
   _areaEraseShapesBefore: Shape[] | null;
   camera: { x: number; y: number; zoom: number };
   isDrawing: boolean;
+  presenterMode: "off" | "laser" | "spotlight";
   // Bumped to ask the canvas to scroll/animate to a sheet (notebook overview clicks).
   scrollRequestPageId: string | undefined;
   scrollRequestNonce: number;
@@ -124,6 +125,7 @@ export const useEditorStore = defineStore("editor", {
     _areaEraseShapesBefore: null,
     camera: { x: 0, y: 0, zoom: 1 },
     isDrawing: false,
+    presenterMode: "off",
     scrollRequestPageId: undefined,
     scrollRequestNonce: 0,
   }),
@@ -891,6 +893,12 @@ export const useEditorStore = defineStore("editor", {
     },
     setDrawing(active: boolean) {
       this.isDrawing = active;
+    },
+    setPresenterMode(mode: "off" | "laser" | "spotlight") {
+      this.presenterMode = mode;
+      if (mode === "off") {
+        useLiveStore().broadcast({ t: "presenter-off" });
+      }
     },
     async setNotebookMode(mode: NotebookMode) {
       if (!this.project || this.project.notebookMode === mode) return;

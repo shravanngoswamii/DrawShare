@@ -42,6 +42,7 @@ interface LiveState {
   viewerLive: Stroke | undefined;
   viewerHostViewport: { width: number; height: number };
   viewerHostCamera: { x: number; y: number; zoom: number };
+  viewerPresenter: { mode: "laser" | "spotlight"; x: number; y: number } | null;
   // Notebook stack mirror: every sheet's page-local strokes/shapes + the mode/layout.
   viewerNotebookMode: NotebookMode;
   viewerNotebookLayout: NotebookLayout;
@@ -92,6 +93,7 @@ export const useLiveStore = defineStore("live", {
     viewerLive: undefined,
     viewerHostViewport: { width: 1920, height: 1080 },
     viewerHostCamera: { x: 0, y: 0, zoom: 1 },
+    viewerPresenter: null,
     viewerNotebookMode: "off",
     viewerNotebookLayout: "vertical",
     viewerAllStrokes: [],
@@ -224,6 +226,7 @@ export const useLiveStore = defineStore("live", {
       this.viewerLive = undefined;
       this.viewerHostViewport = { width: 1920, height: 1080 };
       this.viewerHostCamera = { x: 0, y: 0, zoom: 1 };
+      this.viewerPresenter = null;
       this.viewerNotebookMode = "off";
       this.viewerNotebookLayout = "vertical";
       this.viewerAllStrokes = [];
@@ -566,6 +569,14 @@ export const useLiveStore = defineStore("live", {
             this.viewerStrokes = [];
             this.viewerShapes = [];
           }
+          break;
+        }
+        case "presenter": {
+          this.viewerPresenter = { mode: msg.mode, x: msg.x, y: msg.y };
+          break;
+        }
+        case "presenter-off": {
+          this.viewerPresenter = null;
           break;
         }
         case "viewer-ready":

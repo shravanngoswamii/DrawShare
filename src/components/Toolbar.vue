@@ -428,6 +428,43 @@ onMounted(() => {
           </svg>
         </button>
       </div>
+
+      <div class="divider"></div>
+
+      <!-- Presenter aids: laser pointer + spotlight -->
+      <div class="group">
+        <button
+          class="tool"
+          :class="{ active: editor.presenterMode === 'laser' }"
+          :aria-pressed="editor.presenterMode === 'laser'"
+          title="Laser pointer"
+          aria-label="Laser pointer"
+          @click="editor.setPresenterMode(editor.presenterMode === 'laser' ? 'off' : 'laser')"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/>
+            <line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/>
+            <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/>
+            <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/>
+            <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/>
+            <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>
+          </svg>
+        </button>
+        <button
+          class="tool"
+          :class="{ active: editor.presenterMode === 'spotlight' }"
+          :aria-pressed="editor.presenterMode === 'spotlight'"
+          title="Spotlight"
+          aria-label="Spotlight"
+          @click="editor.setPresenterMode(editor.presenterMode === 'spotlight' ? 'off' : 'spotlight')"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" />
+            <circle cx="12" cy="12" r="9" stroke-dasharray="3 3" stroke-opacity="0.5" />
+          </svg>
+        </button>
+      </div>
     </div>
 
     <div v-if="popover" class="pop-backdrop" @click="popover = null"></div>

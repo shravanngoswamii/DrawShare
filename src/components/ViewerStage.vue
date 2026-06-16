@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Canvas2DRenderer } from "@/adapters/render/canvas2d";
 import { drawStack, resolveSheetColors, type SheetColors } from "@/composables/useStackRenderer";
 import { useTheme } from "@/composables/useTheme";
@@ -47,6 +47,7 @@ function dpr() {
 }
 
 const pageBgStyle = ref({ backgroundSize: "32px 32px", backgroundPosition: "0px 0px" });
+const screenCam = ref({ x: 0, y: 0, zoom: 1 });
 let viewW = 0;
 let viewH = 0;
 
@@ -84,6 +85,7 @@ function computeCamera() {
   cam.zoom = zoom;
   baseRenderer.setCamera({ x, y, zoom });
   liveRenderer.setCamera({ x, y, zoom });
+  screenCam.value = { x, y, zoom };
   // Scrolling grid background that follows the camera
   let worldStep = 40;
   let screenStep = worldStep * zoom;
@@ -237,6 +239,39 @@ watch(
   },
 );
 
+const presenterScreen = computed(() => {
+  const p = live.viewerPresenter;
+  if (!p) return null;
+  const { x: cx, y: cy, zoom } = screenCam.value;
+  return {
+    x: (p.x - cx) * zoom,
+    y: (p.y - cy) * zoom,
+    mode: p.mode,
+  };
+});
+
+// Stitch the host's laser points (world coords) into a glowing trail, mirroring
+// the editor. Cleared when the host releases (presenter-off → viewerPresenter null)
+// or switches to spotlight.
+const viewerLaserTrail = ref<{ x: number; y: number }[]>([]);
+watch(
+  () => live.viewerPresenter,
+  (p) => {
+    if (p && p.mode === "laser") {
+      const next = [...viewerLaserTrail.value, { x: p.x, y: p.y }];
+      if (next.length > 1200) next.shift();
+      viewerLaserTrail.value = next;
+    } else {
+      viewerLaserTrail.value = [];
+    }
+  },
+);
+const viewerLaserPath = computed(() => {
+  if (viewerLaserTrail.value.length < 2) return "";
+  const { x: cx, y: cy, zoom } = screenCam.value;
+  return viewerLaserTrail.value.map((p) => `${(p.x - cx) * zoom},${(p.y - cy) * zoom}`).join(" ");
+});
+
 let resizeObserver: ResizeObserver | undefined;
 
 onMounted(() => {
@@ -267,6 +302,25 @@ onBeforeUnmount(() => {
     <div v-if="!live.viewerIsNotebook" class="page-bg" :class="`bg-${props.page.background}`" :style="pageBgStyle" aria-hidden="true"></div>
     <canvas ref="baseEl" class="layer"></canvas>
     <canvas ref="liveEl" class="layer"></canvas>
+    <svg
+      v-if="presenterScreen && presenterScreen.mode === 'laser' && viewerLaserTrail.length > 1"
+      class="laser-trail"
+      aria-hidden="true"
+    >
+      <polyline :points="viewerLaserPath" />
+    </svg>
+    <div
+      v-if="presenterScreen && presenterScreen.mode === 'laser'"
+      class="laser-dot"
+      :style="{ left: `${presenterScreen.x}px`, top: `${presenterScreen.y}px` }"
+      aria-hidden="true"
+    ></div>
+    <div
+      v-if="presenterScreen && presenterScreen.mode === 'spotlight'"
+      class="spotlight-overlay"
+      :style="{ '--sx': `${presenterScreen.x}px`, '--sy': `${presenterScreen.y}px` }"
+      aria-hidden="true"
+    ></div>
   </div>
 </template>
 
@@ -319,5 +373,54 @@ onBeforeUnmount(() => {
   pointer-events: none;
   background: transparent;
   forced-color-adjust: none;
+}
+
+.laser-trail {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+  pointer-events: none;
+  overflow: visible;
+}
+.laser-trail polyline {
+  fill: none;
+  stroke: rgba(239, 68, 68, 0.92);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.75));
+}
+
+.laser-dot {
+  position: absolute;
+  z-index: 10;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.92);
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.28), 0 0 18px rgba(239, 68, 68, 0.55);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  animation: laser-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes laser-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.28), 0 0 18px rgba(239, 68, 68, 0.55); }
+  50% { box-shadow: 0 0 0 9px rgba(239, 68, 68, 0.12), 0 0 30px rgba(239, 68, 68, 0.35); }
+}
+
+.spotlight-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  background: radial-gradient(
+    circle 130px at var(--sx, 50%) var(--sy, 50%),
+    transparent 0%,
+    transparent 85px,
+    rgba(0, 0, 0, 0.72) 130px
+  );
 }
 </style>

@@ -78,7 +78,9 @@ export type SyncMessage =
   | { t: "text-delete"; pageId: string; textId: string }
   | { t: "clear-page"; pageId: string }
   | { t: "shape-commit"; shape: Shape }
-  | { t: "shape-delete"; pageId: string; shapeId: string };
+  | { t: "shape-delete"; pageId: string; shapeId: string }
+  | { t: "presenter"; mode: "laser" | "spotlight"; x: number; y: number }
+  | { t: "presenter-off" };
 
 export interface SessionHostHandlers {
   onViewerJoin(viewerId: string): void;
