@@ -14,15 +14,23 @@ export interface SheetColors {
 //
 // `range` lets the caller cull off-screen sheets; `editingTextId` skips a text
 // currently being edited in a DOM overlay so it isn't double-drawn.
+export interface DrawStackOptions {
+  range?: { first: number; last: number };
+  editingTextId?: string;
+  // Strict mode clips ink to each sheet; non-strict ("notebook") leaves the sheet
+  // a guide and shows ink drawn outside it. Defaults to clipped.
+  clip?: boolean;
+}
+
 export function drawStack(
   renderer: Renderer,
   pages: Page[],
   strokes: Stroke[],
   layout: NotebookLayout,
   colors: SheetColors,
-  range?: { first: number; last: number },
-  editingTextId?: string,
+  opts: DrawStackOptions = {},
 ): void {
+  const { range, editingTextId, clip = true } = opts;
   const byPage = new Map<string, Stroke[]>();
   for (const s of strokes) {
     const arr = byPage.get(s.pageId);
@@ -32,6 +40,8 @@ export function drawStack(
   const first = Math.max(0, range?.first ?? 0);
   const last = Math.min(pages.length - 1, range?.last ?? pages.length - 1);
   renderer.beginFrame();
+  // Pass 1: paint every sheet's paper + pattern first so a later sheet never
+  // covers ink that overflowed onto it from an earlier one.
   for (let i = first; i <= last; i++) {
     const page = pages[i];
     if (!page) continue;
@@ -39,11 +49,21 @@ export function drawStack(
     renderer.setOrigin(x, y);
     renderer.pushClip(PAGE_W, PAGE_H);
     renderer.drawSheetBackground(PAGE_W, PAGE_H, page.background, colors);
+    renderer.popClip();
+  }
+  // Pass 2: ink. Clipped to the sheet in strict mode; free (visible outside the
+  // sheet) in notebook mode.
+  for (let i = first; i <= last; i++) {
+    const page = pages[i];
+    if (!page) continue;
+    const { x, y } = sheetWorldPos(i, layout);
+    renderer.setOrigin(x, y);
+    if (clip) renderer.pushClip(PAGE_W, PAGE_H);
     const ps = byPage.get(page.id);
     if (ps) for (const s of ps) renderer.drawStroke(s);
     const texts = page.texts;
     if (texts) for (const t of texts) if (t.id !== editingTextId) renderer.drawText(t);
-    renderer.popClip();
+    if (clip) renderer.popClip();
   }
   renderer.endFrame();
 }

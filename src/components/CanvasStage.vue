@@ -334,15 +334,11 @@ function render() {
   if (dirtyBase) {
     baseRenderer.clear();
     if (isNotebook()) {
-      drawStack(
-        baseRenderer,
-        editor.pages,
-        editor.strokes,
-        editor.notebookLayout,
-        sheetColors,
-        visibleRange(),
-        editing.value?.id,
-      );
+      drawStack(baseRenderer, editor.pages, editor.strokes, editor.notebookLayout, sheetColors, {
+        range: visibleRange(),
+        editingTextId: editing.value?.id,
+        clip: editor.notebookMode === "strict",
+      });
     } else {
       baseRenderer.beginFrame();
       for (const s of editor.strokes) baseRenderer.drawStroke(s);
@@ -362,8 +358,10 @@ function render() {
     // Free mode where drawOffset is 0).
     liveRenderer.setCamera({ x: cam.x - drawOffsetX, y: cam.y - drawOffsetY, zoom: cam.zoom });
     liveRenderer.beginFrame();
-    // Keep the in-progress stroke inside its sheet, matching the committed layer.
-    if (isNotebook()) liveRenderer.pushClip(PAGE_W, PAGE_H);
+    // Strict mode keeps the in-progress stroke inside its sheet; notebook mode
+    // lets it show outside (matching the committed layer).
+    const clipLive = editor.notebookMode === "strict";
+    if (clipLive) liveRenderer.pushClip(PAGE_W, PAGE_H);
     if (predictedPoints.length > 0) {
       liveRenderer.drawLive({
         ...currentStroke,
@@ -372,7 +370,7 @@ function render() {
     } else {
       liveRenderer.drawLive(currentStroke);
     }
-    if (isNotebook()) liveRenderer.popClip();
+    if (clipLive) liveRenderer.popClip();
     liveRenderer.endFrame();
     if (live.mode === "host" && currentStroke.points.length > liveSendCursor) {
       const newPoints = currentStroke.points.slice(liveSendCursor);
@@ -427,16 +425,25 @@ function eraseAt(wx: number, wy: number) {
     }
     return;
   }
-  // Stroke erase routes to the sheet under the pointer and may cross sheets.
+  // Stroke erase routes to a sheet and may cross sheets. Strict only erases on a
+  // sheet; notebook uses the nearest sheet so gap ink is also erasable.
   let pageId = props.page.id;
   let lx = wx;
   let ly = wy;
   if (isNotebook()) {
-    const hit = worldToSheet(wx, wy, editor.pages.length, editor.notebookLayout);
-    if (!hit) return;
-    pageId = editor.pages[hit.index].id;
-    lx = hit.localX;
-    ly = hit.localY;
+    const count = editor.pages.length;
+    let idx: number;
+    if (editor.notebookMode === "strict") {
+      const hit = worldToSheet(wx, wy, count, editor.notebookLayout);
+      if (!hit) return;
+      idx = hit.index;
+    } else {
+      idx = nearestSheetIndex(wx, wy, count, editor.notebookLayout);
+    }
+    pageId = editor.pages[idx].id;
+    const o = sheetWorldPos(idx, editor.notebookLayout);
+    lx = wx - o.x;
+    ly = wy - o.y;
   }
   const toDelete = editor.strokes.filter((stroke) => {
     if (stroke.pageId !== pageId) return false;
@@ -593,13 +600,25 @@ function handleDown(s: InputSample) {
   drawOffsetX = 0;
   drawOffsetY = 0;
   if (isNotebook()) {
-    const hit = worldToSheet(w.x, w.y, editor.pages.length, editor.notebookLayout);
-    // Drawing/text only land on a sheet, never in the gaps between them.
-    if (!hit && editor.tool !== "eraser") return;
-    if (hit) {
+    const count = editor.pages.length;
+    if (editor.notebookMode === "strict") {
+      // Strict: drawing/text only land on a sheet, never in the gaps.
+      const hit = worldToSheet(w.x, w.y, count, editor.notebookLayout);
+      if (!hit && editor.tool !== "eraser") return;
+      if (hit) {
+        onSheet = true;
+        targetPageId = editor.pages[hit.index].id;
+        const o = sheetWorldPos(hit.index, editor.notebookLayout);
+        drawOffsetX = o.x;
+        drawOffsetY = o.y;
+      }
+    } else {
+      // Notebook: the sheet is a guide — anchor the gesture to the nearest sheet
+      // so you can draw anywhere, including the gaps, and see it.
+      const idx = nearestSheetIndex(w.x, w.y, count, editor.notebookLayout);
       onSheet = true;
-      targetPageId = editor.pages[hit.index].id;
-      const o = sheetWorldPos(hit.index, editor.notebookLayout);
+      targetPageId = editor.pages[idx].id;
+      const o = sheetWorldPos(idx, editor.notebookLayout);
       drawOffsetX = o.x;
       drawOffsetY = o.y;
     }

@@ -121,6 +121,9 @@ function render() {
         live.viewerAllStrokes,
         live.viewerNotebookLayout,
         sheetColors,
+        {
+          clip: live.viewerNotebookMode === "strict",
+        },
       );
     } else {
       baseRenderer.beginFrame();
@@ -137,11 +140,12 @@ function render() {
     if (live.viewerIsNotebook) {
       // The live stroke is page-local; shift the camera by its sheet origin.
       const off = liveSheetOffset();
+      const clipLive = live.viewerNotebookMode === "strict";
       liveRenderer.setCamera({ x: cam.x - off.x, y: cam.y - off.y, zoom: cam.zoom });
       liveRenderer.beginFrame();
-      liveRenderer.pushClip(PAGE_W, PAGE_H);
+      if (clipLive) liveRenderer.pushClip(PAGE_W, PAGE_H);
       liveRenderer.drawLive(live.viewerLive);
-      liveRenderer.popClip();
+      if (clipLive) liveRenderer.popClip();
       liveRenderer.endFrame();
     } else {
       liveRenderer.beginFrame();

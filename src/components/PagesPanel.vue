@@ -333,8 +333,8 @@ async function exportNotebookPdf() {
         </div>
         <p class="mode-hint">
           <template v-if="editor.notebookMode === 'off'">Infinite canvas — draw anywhere.</template>
-          <template v-else-if="editor.notebookMode === 'notebook'">A4 sheets you scroll through; draw anywhere on a sheet.</template>
-          <template v-else>A4 sheets; drawing outside a sheet is blocked.</template>
+          <template v-else-if="editor.notebookMode === 'notebook'">A4 sheets as a guide; draw anywhere, only the sheets export.</template>
+          <template v-else>A4 sheets; drawing is locked to the sheet.</template>
         </p>
         <div v-if="editor.notebookMode !== 'off'" class="layout-row">
           <span class="layout-label">Scroll</span>
