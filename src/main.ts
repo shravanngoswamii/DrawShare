@@ -21,9 +21,32 @@ if ("serviceWorker" in navigator) {
       });
     }
   } else {
+    // Reload once when a freshly-deployed worker takes control, so the running
+    // tab swaps to the new build's assets before it can request a stale lazy
+    // chunk. Guard against the initial first-install claim and reload loops.
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloading = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!hadController || reloading) return;
+      reloading = true;
+      location.reload();
+    });
     navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
   }
 }
+
+// A lazy route chunk can 404 if its content-hashed name changed in a deploy that
+// landed while this tab was open. Reload once (guarded) to fetch the current
+// build instead of dying on a failed dynamic import.
+router.onError((err) => {
+  const msg = String((err as Error)?.message ?? "");
+  if (/dynamically imported module|Importing a module script|ChunkLoadError/i.test(msg)) {
+    if (!sessionStorage.getItem("ds-chunk-reload")) {
+      sessionStorage.setItem("ds-chunk-reload", "1");
+      location.reload();
+    }
+  }
+});
 
 async function bootstrap() {
   await storage.init();

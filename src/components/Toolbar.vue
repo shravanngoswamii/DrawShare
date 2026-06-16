@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import type { Tool } from "@/core/types";
+import type { ShapeType, Tool } from "@/core/types";
 import { useEditorStore } from "@/stores/editor";
 
 defineProps<{ collapsed?: boolean }>();
-const emit = defineEmits<{ toggle: [] }>();
+const emit = defineEmits<{ toggle: []; "image-import": [] }>();
 
 const editor = useEditorStore();
 
@@ -12,6 +12,13 @@ const penTools: { id: Tool; label: string; icon: string }[] = [
   { id: "pen", label: "Pen", icon: "pen" },
   { id: "highlighter", label: "Highlighter", icon: "highlight" },
   { id: "text", label: "Text", icon: "text" },
+];
+
+const shapeTools: { id: ShapeType; label: string }[] = [
+  { id: "rect", label: "Rectangle" },
+  { id: "ellipse", label: "Ellipse" },
+  { id: "line", label: "Line" },
+  { id: "arrow", label: "Arrow" },
 ];
 
 const presetColors = [
@@ -48,6 +55,7 @@ function setSize(v: number) {
 const COLOR_KEY = "drawshare:color";
 const RECENT_KEY = "drawshare:recentColors";
 const DOCK_KEY = "drawshare:dock";
+const DOCK_POSITIONS_KEY = "drawshare:dock-positions";
 const recentColors = ref<string[]>([]);
 const hexInput = ref("");
 
@@ -74,19 +82,57 @@ function chooseColor(c: string) {
   }
 }
 
-// Magnetic docking: drag the toolbar, snap to the nearest of left / top / bottom.
-type Dock = "left" | "top" | "bottom";
+// Magnetic docking: drag the toolbar, snap to nearest of left / right / top / bottom.
+// Each side remembers its last position (fraction 0–1 along the edge).
+type Dock = "left" | "right" | "top" | "bottom";
+
+interface DockPositions {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
 const dock = ref<Dock>("left");
+const dockPositions = ref<DockPositions>({ left: 0.5, right: 0.5, top: 0.5, bottom: 0.5 });
 const dragging = ref(false);
+const noTransition = ref(false);
 const dragStyle = ref<Record<string, string>>({});
-const horizontal = computed(() => dock.value !== "left");
+const horizontal = computed(() => dock.value === "top" || dock.value === "bottom");
+
+// Compute the inline style that positions the toolbar on its docked edge.
+const dockStyle = computed(() => {
+  if (Object.keys(dragStyle.value).length > 0) return {} as Record<string, string>;
+  const frac = dockPositions.value[dock.value];
+  switch (dock.value) {
+    case "left":
+      return { left: "8px", top: `${frac * 100}%`, transform: "translateY(-50%)" };
+    case "right":
+      return { right: "8px", top: `${frac * 100}%`, transform: "translateY(-50%)" };
+    case "top":
+      return { top: "8px", left: `${frac * 100}%`, transform: "translateX(-50%)" };
+    case "bottom":
+      return { bottom: "8px", left: `${frac * 100}%`, transform: "translateX(-50%)" };
+  }
+});
+
+function saveDockPositions() {
+  try {
+    localStorage.setItem(DOCK_POSITIONS_KEY, JSON.stringify(dockPositions.value));
+  } catch {
+    /* ignore */
+  }
+}
 
 function onGripDown(e: PointerEvent) {
   e.preventDefault();
   popover.value = null;
   const aside = (e.currentTarget as HTMLElement).closest(".toolbar") as HTMLElement | null;
   if (!aside) return;
+  // Capture toolbar size at drag-start (before position: fixed takes over).
   const rect = aside.getBoundingClientRect();
+  const tbW = rect.width;
+  const tbH = rect.height;
   const offX = e.clientX - rect.left;
   const offY = e.clientY - rect.top;
   const startX = e.clientX;
@@ -107,28 +153,78 @@ function onGripDown(e: PointerEvent) {
       transform: "none",
       transition: "none",
       margin: "0",
-      maxHeight: "none",
     };
   };
   const up = (ev: PointerEvent) => {
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", up);
     if (!moved) {
-      emit("toggle"); // a tap (no drag) collapses the toolbar
+      emit("toggle");
       return;
     }
     dragging.value = false;
+
+    // Toolbar centre in viewport coords.
+    const centerX = ev.clientX - offX + tbW / 2;
+    const centerY = ev.clientY - offY + tbH / 2;
+    const PAD = 12;
+
+    // Use the container's bounding rect so frac matches what `top/left: X%`
+    // resolves to — percentage is relative to the containing block, not the
+    // full viewport (which can differ due to safe-area padding or flex sizing).
+    const parent = aside.parentElement;
+    const cRect = parent
+      ? parent.getBoundingClientRect()
+      : new DOMRect(0, 0, window.innerWidth, window.innerHeight);
+    const cW = cRect.width || window.innerWidth;
+    const cH = cRect.height || window.innerHeight;
+    // Centre in container-local coordinates.
+    const localX = centerX - cRect.left;
+    const localY = centerY - cRect.top;
+
+    // Which edge is nearest (use full viewport for the comparison).
+    const dl = centerX;
+    const dr = window.innerWidth - centerX;
+    const dt = centerY;
+    const db = window.innerHeight - centerY;
+    const min = Math.min(dl, dr, dt, db);
+
+    let newDock: Dock;
+    let frac: number;
+    if (min === dl) {
+      newDock = "left";
+      const safe = Math.max(tbH / 2 + PAD, Math.min(cH - tbH / 2 - PAD, localY));
+      frac = safe / cH;
+    } else if (min === dr) {
+      newDock = "right";
+      const safe = Math.max(tbH / 2 + PAD, Math.min(cH - tbH / 2 - PAD, localY));
+      frac = safe / cH;
+    } else if (min === dt) {
+      newDock = "top";
+      const safe = Math.max(tbW / 2 + PAD, Math.min(cW - tbW / 2 - PAD, localX));
+      frac = safe / cW;
+    } else {
+      newDock = "bottom";
+      const safe = Math.max(tbW / 2 + PAD, Math.min(cW - tbW / 2 - PAD, localX));
+      frac = safe / cW;
+    }
+
+    // Snap to final position immediately (no spring from stale coords).
+    noTransition.value = true;
     dragStyle.value = {};
-    const dl = ev.clientX;
-    const dt = ev.clientY;
-    const db = window.innerHeight - ev.clientY;
-    const min = Math.min(dl, dt, db);
-    dock.value = min === dl ? "left" : min === dt ? "top" : "bottom";
+    dock.value = newDock;
+    // Spread-replace so Vue reactivity sees a new object reference.
+    dockPositions.value = { ...dockPositions.value, [newDock]: frac };
+    requestAnimationFrame(() => {
+      noTransition.value = false;
+    });
+
     try {
       localStorage.setItem(DOCK_KEY, dock.value);
     } catch {
       /* ignore */
     }
+    saveDockPositions();
   };
   window.addEventListener("pointermove", move);
   window.addEventListener("pointerup", up);
@@ -140,7 +236,15 @@ onMounted(() => {
     if (saved && isHex(saved)) editor.setColor(saved);
     recentColors.value = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
     const d = localStorage.getItem(DOCK_KEY);
-    if (d === "left" || d === "top" || d === "bottom") dock.value = d;
+    if (d === "left" || d === "right" || d === "top" || d === "bottom") dock.value = d;
+    const savedPositions = localStorage.getItem(DOCK_POSITIONS_KEY);
+    if (savedPositions) {
+      const parsed = JSON.parse(savedPositions) as Partial<DockPositions>;
+      if (typeof parsed.left === "number") dockPositions.value.left = parsed.left;
+      if (typeof parsed.right === "number") dockPositions.value.right = parsed.right;
+      if (typeof parsed.top === "number") dockPositions.value.top = parsed.top;
+      if (typeof parsed.bottom === "number") dockPositions.value.bottom = parsed.bottom;
+    }
   } catch {
     /* ignore */
   }
@@ -151,8 +255,9 @@ onMounted(() => {
 <template>
   <aside
     class="toolbar"
-    :class="[`dock-${dock}`, { 'is-collapsed': collapsed, quiet: editor.isDrawing, horizontal, dragging }]"
-    :style="dragStyle"
+    data-tour="toolbar"
+    :class="[`dock-${dock}`, { 'is-collapsed': collapsed, quiet: editor.isDrawing, horizontal, dragging, 'no-transition': noTransition }]"
+    :style="Object.keys(dragStyle).length > 0 ? dragStyle : dockStyle"
     aria-label="Drawing tools"
   >
     <button class="grip" @pointerdown="onGripDown" title="Drag to move, tap to collapse" aria-label="Move or collapse toolbar">
@@ -212,6 +317,51 @@ onMounted(() => {
         </div>
       </div>
 
+      <!-- Pen type selector — visible only when pen tool is active -->
+      <template v-if="editor.tool === 'pen'">
+        <div class="divider"></div>
+        <div class="group pen-types">
+          <!-- Ballpoint: thin precise stroke -->
+          <button class="pen-type-btn" :class="{ active: editor.penType === 'ballpoint' }"
+                  title="Ballpoint" aria-label="Ballpoint"
+                  :aria-pressed="editor.penType === 'ballpoint'"
+                  @click="editor.setPenType('ballpoint')">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 20 C7 16 12 11 20 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </button>
+          <!-- Brush: calligraphic variable-width (thick start → thin end) -->
+          <button class="pen-type-btn" :class="{ active: editor.penType === 'brush' }"
+                  title="Brush" aria-label="Brush"
+                  :aria-pressed="editor.penType === 'brush'"
+                  @click="editor.setPenType('brush')">
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 21 C6 17 10 13 14 9 C17 6 20 4 21 3 C20 5 17 8 14 11 C10 15 7 18 4 22 Z" fill="currentColor"/>
+            </svg>
+          </button>
+          <!-- Marker: thick uniform flat-capped stroke -->
+          <button class="pen-type-btn" :class="{ active: editor.penType === 'marker' }"
+                  title="Marker" aria-label="Marker"
+                  :aria-pressed="editor.penType === 'marker'"
+                  @click="editor.setPenType('marker')">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 20 L19 5" stroke="currentColor" stroke-width="7" stroke-linecap="square"/>
+            </svg>
+          </button>
+        </div>
+      </template>
+
+      <div class="divider"></div>
+
+      <div class="group">
+        <button v-for="t in shapeTools" :key="t.id" class="tool" :class="{ active: editor.tool === t.id }" :aria-pressed="editor.tool === t.id" :title="t.label" @click="editor.setTool(t.id)">
+          <svg v-if="t.id === 'rect'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+          <svg v-else-if="t.id === 'ellipse'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="10" ry="6"/></svg>
+          <svg v-else-if="t.id === 'line'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="20" x2="20" y2="4"/></svg>
+          <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19L19 5"/><path d="M9 5h10v10"/></svg>
+        </button>
+      </div>
+
       <div class="divider"></div>
 
       <!-- Stroke size (hidden for eraser, which has its own) -->
@@ -250,6 +400,18 @@ onMounted(() => {
             <input type="text" class="hex" v-model="hexInput" maxlength="7" spellcheck="false" placeholder="#000000" @change="chooseColor(hexInput)" @keydown.enter="chooseColor(hexInput)" />
           </div>
         </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="group">
+        <button class="tool" title="Import image (or paste / drag & drop)" @click="emit('image-import')" aria-label="Import image">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <circle cx="9" cy="9" r="2"/>
+            <path d="m21 15-5-5L5 21"/>
+          </svg>
+        </button>
       </div>
 
       <div class="divider"></div>
@@ -296,9 +458,12 @@ onMounted(() => {
     transform 200ms ease, opacity 180ms ease;
 }
 
-.dock-left { left: 8px; top: 50%; transform: translateY(-50%); transform-origin: left center; }
-.dock-top { top: 8px; left: 50%; transform: translateX(-50%); transform-origin: top center; }
-.dock-bottom { bottom: 8px; left: 50%; transform: translateX(-50%); transform-origin: bottom center; }
+/* dock-* classes set transform-origin for scale animations only;
+   actual position is driven by dockStyle inline style. */
+.dock-left { transform-origin: left center; }
+.dock-right { transform-origin: right center; }
+.dock-top { transform-origin: top center; }
+.dock-bottom { transform-origin: bottom center; }
 
 .toolbar.horizontal {
   flex-direction: row;
@@ -311,6 +476,7 @@ onMounted(() => {
 .toolbar:not(.horizontal) .grip svg { transform: rotate(90deg); }
 
 .toolbar.dragging { cursor: grabbing; box-shadow: 0 16px 40px rgba(15, 23, 42, 0.2); }
+.toolbar.no-transition { transition: none !important; }
 
 .toolbar.is-collapsed { transform: scale(0); opacity: 0; pointer-events: none; }
 .toolbar.quiet { opacity: 0.12; pointer-events: none; transition: opacity 150ms ease; }
@@ -356,6 +522,22 @@ onMounted(() => {
 .tool:disabled { opacity: 0.4; cursor: not-allowed; }
 .tool.active { background: var(--color-accent-soft); color: var(--color-accent); }
 
+.pen-types { gap: var(--space-1); }
+
+.pen-type-btn {
+  width: 38px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  transition: background 80ms ease, color 80ms ease;
+  flex-shrink: 0;
+}
+.pen-type-btn:hover { background: var(--color-surface-2); color: var(--color-text); }
+.pen-type-btn.active { background: var(--color-accent-soft); color: var(--color-accent); }
+
 .size-dot { display: block; background: var(--color-text); border-radius: var(--radius-pill); }
 
 .color-chip {
@@ -384,6 +566,7 @@ onMounted(() => {
 }
 /* Open away from the docked edge */
 .pop-left { left: calc(100% + 10px); top: -6px; }
+.pop-right { right: calc(100% + 10px); top: -6px; }
 .pop-top { top: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
 .pop-bottom { bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
 
@@ -464,6 +647,7 @@ onMounted(() => {
 @media (max-width: 767px) {
   .toolbar,
   .toolbar.dock-left,
+  .toolbar.dock-right,
   .toolbar.dock-top,
   .toolbar.dock-bottom {
     position: static;
