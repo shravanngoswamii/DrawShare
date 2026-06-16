@@ -6,7 +6,7 @@
   "background_color": "#ffffff",
   "display": "standalone",
   "orientation": "any",
-  "start_url": ".",
+  "start_url": "./#/app",
   "scope": ".",
   "icons": [
     {
