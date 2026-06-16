@@ -1,9 +1,11 @@
 import { type IDBPDatabase, openDB } from "idb";
 import type { StorageAdapter } from "@/core/ports";
-import type { ID, Page, Project, Stroke } from "@/core/types";
+import type { ID, ImageItem, Page, Project, ReplayEvent, Shape, Stroke } from "@/core/types";
 
 const DB_NAME = "drawshare";
-const DB_VERSION = 1;
+// v2 added shapes; v3 added images; v4 adds the replay events log. The guarded
+// upgrade below is idempotent, so any prior version migrates by creating what's missing.
+const DB_VERSION = 4;
 
 // Strip Vue reactive Proxies: structured clone (IndexedDB) throws on them.
 function toPlain<T>(value: T): T {
@@ -14,6 +16,10 @@ interface Schema {
   projects: { key: string; value: Project };
   pages: { key: string; value: Page; indexes: { byProject: string } };
   strokes: { key: string; value: Stroke; indexes: { byPage: string } };
+  shapes: { key: string; value: Shape; indexes: { byPage: string } };
+  images: { key: string; value: ImageItem; indexes: { byPage: string } };
+  // Append-only recording log; autoincrement seq preserves order, byProject filters.
+  events: { key: number; value: ReplayEvent; indexes: { byProject: string } };
 }
 
 export class IndexedDBStorage implements StorageAdapter {
@@ -32,6 +38,18 @@ export class IndexedDBStorage implements StorageAdapter {
         if (!db.objectStoreNames.contains("strokes")) {
           const strokes = db.createObjectStore("strokes", { keyPath: "id" });
           strokes.createIndex("byPage", "pageId");
+        }
+        if (!db.objectStoreNames.contains("shapes")) {
+          const shapes = db.createObjectStore("shapes", { keyPath: "id" });
+          shapes.createIndex("byPage", "pageId");
+        }
+        if (!db.objectStoreNames.contains("images")) {
+          const images = db.createObjectStore("images", { keyPath: "id" });
+          images.createIndex("byPage", "pageId");
+        }
+        if (!db.objectStoreNames.contains("events")) {
+          const events = db.createObjectStore("events", { keyPath: "seq", autoIncrement: true });
+          events.createIndex("byProject", "projectId");
         }
       },
     });
@@ -57,7 +75,12 @@ export class IndexedDBStorage implements StorageAdapter {
 
   async deleteProject(id: ID): Promise<void> {
     const db = this.require();
-    const tx = db.transaction(["projects", "pages", "strokes"], "readwrite");
+    const tx = db.transaction(
+      ["projects", "pages", "strokes", "shapes", "images", "events"],
+      "readwrite",
+    );
+    const eventKeys = await tx.objectStore("events").index("byProject").getAllKeys(id);
+    for (const k of eventKeys) await tx.objectStore("events").delete(k);
     const pages = await tx.objectStore("pages").index("byProject").getAllKeys(id);
     for (const pageId of pages) {
       const strokeIds = await tx
@@ -66,6 +89,20 @@ export class IndexedDBStorage implements StorageAdapter {
         .getAllKeys(pageId as string);
       for (const sid of strokeIds) {
         await tx.objectStore("strokes").delete(sid);
+      }
+      const shapeIds = await tx
+        .objectStore("shapes")
+        .index("byPage")
+        .getAllKeys(pageId as string);
+      for (const sid of shapeIds) {
+        await tx.objectStore("shapes").delete(sid);
+      }
+      const imageIds = await tx
+        .objectStore("images")
+        .index("byPage")
+        .getAllKeys(pageId as string);
+      for (const iid of imageIds) {
+        await tx.objectStore("images").delete(iid);
       }
       await tx.objectStore("pages").delete(pageId);
     }
@@ -87,8 +124,15 @@ export class IndexedDBStorage implements StorageAdapter {
   }
 
   async deletePage(id: ID): Promise<void> {
-    await this.deleteStrokesForPage(id);
-    await this.require().delete("pages", id);
+    // Atomic: a mid-cascade failure must not leave a page with orphaned children.
+    const db = this.require();
+    const tx = db.transaction(["pages", "strokes", "shapes", "images"], "readwrite");
+    for (const store of ["strokes", "shapes", "images"] as const) {
+      const keys = await tx.objectStore(store).index("byPage").getAllKeys(id);
+      for (const k of keys) await tx.objectStore(store).delete(k);
+    }
+    await tx.objectStore("pages").delete(id);
+    await tx.done;
   }
 
   listStrokes(pageId: ID): Promise<Stroke[]> {
@@ -107,6 +151,65 @@ export class IndexedDBStorage implements StorageAdapter {
     const db = this.require();
     const tx = db.transaction("strokes", "readwrite");
     const keys = await tx.store.index("byPage").getAllKeys(pageId);
+    for (const k of keys) await tx.store.delete(k);
+    await tx.done;
+  }
+
+  listShapes(pageId: ID): Promise<Shape[]> {
+    return this.require().getAllFromIndex("shapes", "byPage", pageId);
+  }
+
+  async putShape(s: Shape): Promise<void> {
+    await this.require().put("shapes", toPlain(s));
+  }
+
+  async deleteShape(id: ID): Promise<void> {
+    await this.require().delete("shapes", id);
+  }
+
+  async deleteShapesForPage(pageId: ID): Promise<void> {
+    const db = this.require();
+    const tx = db.transaction("shapes", "readwrite");
+    const keys = await tx.store.index("byPage").getAllKeys(pageId);
+    for (const k of keys) await tx.store.delete(k);
+    await tx.done;
+  }
+
+  listImages(pageId: ID): Promise<ImageItem[]> {
+    return this.require().getAllFromIndex("images", "byPage", pageId);
+  }
+
+  async putImage(img: ImageItem): Promise<void> {
+    await this.require().put("images", toPlain(img));
+  }
+
+  async deleteImage(id: ID): Promise<void> {
+    await this.require().delete("images", id);
+  }
+
+  async deleteImagesForPage(pageId: ID): Promise<void> {
+    const db = this.require();
+    const tx = db.transaction("images", "readwrite");
+    const keys = await tx.store.index("byPage").getAllKeys(pageId);
+    for (const k of keys) await tx.store.delete(k);
+    await tx.done;
+  }
+
+  async appendEvent(e: ReplayEvent): Promise<void> {
+    // toPlain (JSON round-trip) drops an undefined seq, so the autoincrement key
+    // generator assigns it.
+    await this.require().add("events", toPlain(e));
+  }
+
+  async listEvents(projectId: ID): Promise<ReplayEvent[]> {
+    // getAllFromIndex returns in key (seq) order → chronological.
+    return this.require().getAllFromIndex("events", "byProject", projectId);
+  }
+
+  async clearEvents(projectId: ID): Promise<void> {
+    const db = this.require();
+    const tx = db.transaction("events", "readwrite");
+    const keys = await tx.store.index("byProject").getAllKeys(projectId);
     for (const k of keys) await tx.store.delete(k);
     await tx.done;
   }

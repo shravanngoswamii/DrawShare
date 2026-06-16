@@ -1,14 +1,31 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Canvas2DRenderer } from "@/adapters/render/canvas2d";
+import { drawStack, resolveSheetColors, type SheetColors } from "@/composables/useStackRenderer";
 import { useTheme } from "@/composables/useTheme";
 import { adaptInk } from "@/core/ink";
+import { PAGE_H, PAGE_W, sheetWorldPos } from "@/core/layout";
 import type { Page } from "@/core/types";
 import { useLiveStore } from "@/stores/live";
 
 const props = defineProps<{ page: Page }>();
 const live = useLiveStore();
 const { isDark } = useTheme();
+
+// World camera reconstructed from the host (used to offset the notebook live stroke).
+const cam = { x: 0, y: 0, zoom: 1 };
+let sheetColors: SheetColors = {
+  paper: "#ffffff",
+  line: "rgba(148,163,184,0.4)",
+  dot: "rgba(148,163,184,0.6)",
+};
+
+function liveSheetOffset() {
+  const id = live.viewerLive?.pageId;
+  if (!id) return { x: 0, y: 0 };
+  const i = live.viewerPages.findIndex((p) => p.id === id);
+  return i >= 0 ? sheetWorldPos(i, live.viewerNotebookLayout) : { x: 0, y: 0 };
+}
 
 function applyInkAdapter() {
   baseRenderer.setInkAdapter((c) => adaptInk(c, isDark.value));
@@ -63,6 +80,9 @@ function computeCamera() {
   const padY = (viewH - host.height * scale) / 2;
   const x = hc.x - padX / zoom;
   const y = hc.y - padY / zoom;
+  cam.x = x;
+  cam.y = y;
+  cam.zoom = zoom;
   baseRenderer.setCamera({ x, y, zoom });
   liveRenderer.setCamera({ x, y, zoom });
   screenCam.value = { x, y, zoom };
@@ -95,28 +115,82 @@ function render() {
   frameQueued = false;
   if (dirtyBase) {
     baseRenderer.clear();
-    baseRenderer.beginFrame();
-    for (const s of live.viewerStrokes) {
-      if (s.pageId === props.page.id) baseRenderer.drawStroke(s);
+    if (live.viewerIsNotebook) {
+      // Mirror the host's continuous A4 stack from page-local strokes.
+      drawStack(
+        baseRenderer,
+        live.viewerPages,
+        live.viewerAllStrokes,
+        live.viewerAllShapes,
+        // Images are not broadcast to viewers yet (large data URLs, no chunking).
+        [],
+        live.viewerNotebookLayout,
+        sheetColors,
+        {
+          clip: live.viewerNotebookMode === "strict",
+        },
+      );
+    } else {
+      baseRenderer.beginFrame();
+      for (const s of live.viewerStrokes) {
+        if (s.pageId === props.page.id) baseRenderer.drawStroke(s);
+      }
+      for (const sh of live.viewerShapes) {
+        if (sh.pageId === props.page.id) baseRenderer.drawShape(sh);
+      }
+      for (const t of props.page.texts ?? []) baseRenderer.drawText(t);
+      baseRenderer.endFrame();
     }
-    for (const t of props.page.texts ?? []) baseRenderer.drawText(t);
-    baseRenderer.endFrame();
     dirtyBase = false;
   }
   liveRenderer.clear();
   if (live.viewerLive && live.viewerLive.points.length > 0) {
-    liveRenderer.beginFrame();
-    liveRenderer.drawLive(live.viewerLive);
-    liveRenderer.endFrame();
+    if (live.viewerIsNotebook) {
+      // The live stroke is page-local; shift the camera by its sheet origin.
+      const off = liveSheetOffset();
+      const clipLive = live.viewerNotebookMode === "strict";
+      liveRenderer.setCamera({ x: cam.x - off.x, y: cam.y - off.y, zoom: cam.zoom });
+      liveRenderer.beginFrame();
+      if (clipLive) liveRenderer.pushClip(PAGE_W, PAGE_H);
+      liveRenderer.drawLive(live.viewerLive);
+      if (clipLive) liveRenderer.popClip();
+      liveRenderer.endFrame();
+    } else {
+      liveRenderer.beginFrame();
+      liveRenderer.drawLive(live.viewerLive);
+      liveRenderer.endFrame();
+    }
   }
 }
 
 watch(
-  () => live.viewerStrokes.length,
+  () => [live.viewerStrokes.length, live.viewerShapes.length],
   () => {
     dirtyBase = true;
     schedule();
   },
+);
+
+// Notebook stack: repaint on stroke/shape/layout/page changes across the whole stack.
+watch(
+  () => [
+    live.viewerAllStrokes.length,
+    live.viewerAllShapes.length,
+    live.viewerNotebookLayout,
+    live.viewerNotebookMode,
+  ],
+  () => {
+    dirtyBase = true;
+    schedule();
+  },
+);
+watch(
+  () => live.viewerPages,
+  () => {
+    dirtyBase = true;
+    schedule();
+  },
+  { deep: true },
 );
 
 watch(
@@ -183,6 +257,7 @@ onMounted(() => {
   baseRenderer.attach(baseEl.value);
   liveRenderer.attach(liveEl.value);
   applyInkAdapter();
+  sheetColors = resolveSheetColors(wrap.value);
   fitCanvas();
   resizeObserver = new ResizeObserver(() => fitCanvas());
   resizeObserver.observe(wrap.value);
@@ -190,6 +265,7 @@ onMounted(() => {
 
 watch(isDark, () => {
   applyInkAdapter();
+  if (wrap.value) sheetColors = resolveSheetColors(wrap.value);
   dirtyBase = true;
   schedule();
 });
@@ -200,8 +276,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="stage" ref="wrap">
-    <div class="page-bg" :class="`bg-${props.page.background}`" :style="pageBgStyle" aria-hidden="true"></div>
+  <div class="stage" ref="wrap" :class="{ 'is-notebook': live.viewerIsNotebook }">
+    <div v-if="!live.viewerIsNotebook" class="page-bg" :class="`bg-${props.page.background}`" :style="pageBgStyle" aria-hidden="true"></div>
     <canvas ref="baseEl" class="layer"></canvas>
     <canvas ref="liveEl" class="layer"></canvas>
     <div
@@ -226,6 +302,11 @@ onBeforeUnmount(() => {
   height: 100%;
   background: var(--color-surface-2);
   overflow: hidden;
+}
+
+/* Notebook mode: neutral desk backdrop behind the white A4 sheets. */
+.stage.is-notebook {
+  background: var(--color-bg);
 }
 
 .page-bg {

@@ -1,4 +1,13 @@
-import type { Page, Project, Stroke, StrokePoint, TextItem } from "./types";
+import type {
+  NotebookLayout,
+  NotebookMode,
+  Page,
+  Project,
+  Shape,
+  Stroke,
+  StrokePoint,
+  TextItem,
+} from "./types";
 
 export type SyncMessage =
   | { t: "viewer-ready" }
@@ -8,8 +17,16 @@ export type SyncMessage =
       pages: Page[];
       currentPageId: string;
       strokes: Stroke[];
+      shapes: Shape[];
       hostViewport: { width: number; height: number };
       hostCamera: { x: number; y: number; zoom: number };
+      // Notebook mode (continuous A4 stack): all sheets' page-local strokes/shapes
+      // plus the mode/layout, so a joiner can build the whole stack. The arrays are
+      // streamed in chunked follow-up messages. Absent in Free mode.
+      notebookMode?: NotebookMode;
+      notebookLayout?: NotebookLayout;
+      allStrokes?: Stroke[];
+      allShapes?: Shape[];
     }
   | {
       t: "viewport";
@@ -24,11 +41,28 @@ export type SyncMessage =
       pageId: string;
       pages: Page[];
       strokes: Stroke[];
+      shapes: Shape[];
     }
   | { t: "page-add"; page: Page; pages: Page[] }
   | { t: "page-delete"; pageId: string; pages: Page[]; fallbackPageId: string }
   | { t: "page-rename"; pageId: string; name: string }
   | { t: "page-background"; pageId: string; background: Page["background"] }
+  | { t: "page-size"; pageId: string; width: number; height: number }
+  // Notebook stack: re-snapshot all sheets (mode/layout change mid-session) and
+  // cheap layout-direction / reorder updates.
+  | {
+      t: "notebook-sync";
+      notebookMode: NotebookMode;
+      notebookLayout: NotebookLayout;
+      pages: Page[];
+      allStrokes: Stroke[];
+      allShapes: Shape[];
+    }
+  // A batch of the notebook's strokes/shapes, appended to the viewer's stack. The
+  // full snapshot is sent as several of these to stay under the data-channel size cap.
+  | { t: "notebook-strokes"; strokes: Stroke[] }
+  | { t: "notebook-shapes"; shapes: Shape[] }
+  | { t: "notebook-layout"; layout: NotebookLayout }
   | { t: "stroke-begin"; stroke: Stroke }
   | {
       t: "stroke-points";
@@ -43,6 +77,8 @@ export type SyncMessage =
   | { t: "text-commit"; text: TextItem }
   | { t: "text-delete"; pageId: string; textId: string }
   | { t: "clear-page"; pageId: string }
+  | { t: "shape-commit"; shape: Shape }
+  | { t: "shape-delete"; pageId: string; shapeId: string }
   | { t: "presenter"; mode: "laser" | "spotlight"; x: number; y: number }
   | { t: "presenter-off" };
 
