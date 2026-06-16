@@ -1,27 +1,64 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
 import { installPointerProbe } from "@/adapters/input/pointerDebug";
+import { storage } from "@/adapters/storage/indexedDB";
+// biome-ignore lint/style/useImportType: rendered in the template — needs a value import, not `import type` (would break runtime component resolution).
 import CanvasStage from "@/components/CanvasStage.vue";
 import DebugConsole from "@/components/DebugConsole.vue";
+import HelpPanel from "@/components/HelpPanel.vue";
 import PagesPanel from "@/components/PagesPanel.vue";
+import ReplayControls from "@/components/ReplayControls.vue";
 import ShareSessionModal from "@/components/ShareSessionModal.vue";
 import Toolbar from "@/components/Toolbar.vue";
+import { useOnboarding } from "@/composables/useOnboarding";
 import { devMode } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
 import { useProjectsStore } from "@/stores/projects";
+import { useReplayStore } from "@/stores/replay";
+
+const canvasStage = ref<InstanceType<typeof CanvasStage> | null>(null);
 
 const props = defineProps<{ id: string }>();
 const editor = useEditorStore();
 const live = useLiveStore();
 const projects = useProjectsStore();
+const replay = useReplayStore();
 const router = useRouter();
+const { maybeStart } = useOnboarding();
+
+// Replay is offered whenever the project has anything to replay (any content type).
+const hasContent = computed(
+  () =>
+    editor.strokes.length > 0 ||
+    editor.shapes.length > 0 ||
+    editor.images.length > 0 ||
+    editor.pages.some((p) => (p.texts?.length ?? 0) > 0),
+);
+
+// Prefer exact-history playback when a recorded event log exists; otherwise fall
+// back to reconstructing the drawing from its final content.
+async function startReplay() {
+  if (!editor.project) return;
+  const events = await storage.listEvents(editor.project.id);
+  if (events.length > 0) {
+    replay.startEvents(events);
+  } else {
+    replay.start({
+      strokes: editor.strokes,
+      shapes: editor.shapes,
+      images: editor.images,
+      pages: editor.pages,
+    });
+  }
+}
 
 const panelOpen = ref(false);
 const toolbarCollapsed = ref(false);
 const pagesCollapsed = ref(false);
 const shareOpen = ref(false);
+const helpOpen = ref(false);
 
 // Editor open/close animation. Closing plays the reverse (collapse-to-center)
 // before any navigation away from the editor — back button, browser back, or
@@ -41,6 +78,9 @@ onMounted(async () => {
   if (!projects.loaded) await projects.load();
   try {
     await editor.open(props.id);
+    // First-board feature tour, once the open animation has settled so intro.js
+    // measures the tools/panel at their final positions.
+    maybeStart("editor", 700);
   } catch {
     router.replace({ name: "projects" });
   }
@@ -80,6 +120,7 @@ function onKey(e: KeyboardEvent) {
   else if (e.key === "3") editor.setTool("eraser");
   else if (e.key === "Escape") {
     panelOpen.value = false;
+    helpOpen.value = false;
   }
 }
 
@@ -111,9 +152,9 @@ onBeforeUnmount(() => removeProbe?.());
           <path d="M4 6h16M4 12h16M4 18h16" />
         </svg>
       </button>
-      <Toolbar :collapsed="toolbarCollapsed" @toggle="toolbarCollapsed = !toolbarCollapsed" />
-      <main id="canvas-main" class="stage-wrap" aria-label="Drawing canvas">
-        <CanvasStage v-if="editor.currentPage" :page="editor.currentPage" />
+      <Toolbar :collapsed="toolbarCollapsed" @toggle="toolbarCollapsed = !toolbarCollapsed" @image-import="canvasStage?.triggerFileImport()" />
+      <main id="canvas-main" class="stage-wrap" aria-label="Drawing canvas" @pointerdown="helpOpen = false">
+        <CanvasStage v-if="editor.currentPage" ref="canvasStage" :page="editor.currentPage" />
         <div v-else class="loading muted" aria-live="polite">Loading.</div>
       </main>
       <PagesPanel :open="panelOpen" :collapsed="pagesCollapsed" @close="panelOpen = false" @toggle="pagesCollapsed = !pagesCollapsed" @share="shareOpen = true" />
@@ -131,10 +172,34 @@ onBeforeUnmount(() => removeProbe?.());
           <path fill="currentColor" fill-rule="evenodd" d="M10 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-8zM9 7H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3zM4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" clip-rule="evenodd"/>
         </svg>
       </button>
+      <!-- Replay FAB: shown when the page has any content and replay isn't active -->
+      <button
+        v-if="hasContent && !replay.active"
+        class="replay-fab"
+        :class="{ quiet: editor.isDrawing }"
+        title="Replay drawing"
+        aria-label="Replay drawing"
+        @click="startReplay()"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M8 5v14l11-7z"/>
+        </svg>
+      </button>
+      <!-- Replay controls overlay (absolutely positioned inside .body) -->
+      <ReplayControls v-if="replay.active" />
+      <button
+        class="help-fab"
+        :class="{ quiet: editor.isDrawing, active: helpOpen }"
+        @click="helpOpen = !helpOpen"
+        title="Help"
+        aria-label="Help"
+        :aria-expanded="helpOpen"
+      >?</button>
     </div>
-    <ShareSessionModal :open="shareOpen" @close="shareOpen = false" />
-    <DebugConsole v-if="devMode" />
   </div>
+  <HelpPanel :open="helpOpen" @close="helpOpen = false" />
+  <ShareSessionModal :open="shareOpen" @close="shareOpen = false" />
+  <DebugConsole v-if="devMode" />
 </template>
 
 <style scoped>
@@ -167,7 +232,6 @@ onBeforeUnmount(() => removeProbe?.());
      i.e. each time a project is opened from the projects list. */
   animation: editor-open 560ms cubic-bezier(0.16, 1, 0.3, 1);
   transform-origin: center;
-  will-change: clip-path, transform, opacity;
 }
 
 /* Closing: reverse of the open — collapse back toward the centre. Slightly
@@ -306,6 +370,65 @@ onBeforeUnmount(() => removeProbe?.());
   opacity: 0.06;
   pointer-events: none;
 }
+
+.replay-fab {
+  position: absolute;
+  bottom: 56px;
+  left: 12px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-pill);
+  background: var(--color-glass-bg-strong);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-glass-border);
+  box-shadow: 0 4px 14px var(--color-glass-shadow), 0 1px 2px var(--color-glass-shadow);
+  color: var(--color-accent);
+  transition: transform 100ms ease, box-shadow 150ms ease, opacity 150ms ease;
+}
+
+.replay-fab:hover {
+  transform: scale(1.05);
+  box-shadow: var(--shadow-md);
+}
+
+.replay-fab:active {
+  transform: scale(0.96);
+}
+
+.replay-fab.quiet {
+  opacity: 0.06;
+  pointer-events: none;
+}
+
+.help-fab {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  z-index: 20;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--color-glass-bg-strong);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-glass-border);
+  box-shadow: 0 2px 8px var(--color-glass-shadow);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: box-shadow 150ms, color 80ms, background 80ms, opacity 150ms;
+}
+.help-fab:hover { box-shadow: var(--shadow-md); color: var(--color-text); }
+.help-fab.active { background: var(--color-accent-soft); color: var(--color-accent); border-color: var(--color-accent); }
+.help-fab.quiet { opacity: 0.06; pointer-events: none; }
 
 .hub-btn {
   position: absolute;
