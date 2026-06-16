@@ -1,4 +1,12 @@
-import type { Page, Project, Stroke, StrokePoint, TextItem } from "./types";
+import type {
+  NotebookLayout,
+  NotebookMode,
+  Page,
+  Project,
+  Stroke,
+  StrokePoint,
+  TextItem,
+} from "./types";
 
 export type SyncMessage =
   | { t: "viewer-ready" }
@@ -10,6 +18,11 @@ export type SyncMessage =
       strokes: Stroke[];
       hostViewport: { width: number; height: number };
       hostCamera: { x: number; y: number; zoom: number };
+      // Notebook mode (continuous A4 stack): all sheets' page-local strokes plus
+      // the mode/layout, so a joiner can build the whole stack. Absent in Free mode.
+      notebookMode?: NotebookMode;
+      notebookLayout?: NotebookLayout;
+      allStrokes?: Stroke[];
     }
   | {
       t: "viewport";
@@ -29,6 +42,19 @@ export type SyncMessage =
   | { t: "page-delete"; pageId: string; pages: Page[]; fallbackPageId: string }
   | { t: "page-rename"; pageId: string; name: string }
   | { t: "page-background"; pageId: string; background: Page["background"] }
+  // Notebook stack: re-snapshot all sheets (mode/layout change mid-session) and
+  // cheap layout-direction / reorder updates.
+  | {
+      t: "notebook-sync";
+      notebookMode: NotebookMode;
+      notebookLayout: NotebookLayout;
+      pages: Page[];
+      allStrokes: Stroke[];
+    }
+  // A batch of the notebook's strokes, appended to the viewer's stack. The full
+  // snapshot is sent as several of these to stay under the data-channel size cap.
+  | { t: "notebook-strokes"; strokes: Stroke[] }
+  | { t: "notebook-layout"; layout: NotebookLayout }
   | { t: "stroke-begin"; stroke: Stroke }
   | {
       t: "stroke-points";
@@ -53,7 +79,7 @@ export interface SessionHostHandlers {
 export interface SessionViewerHandlers {
   onConnected(): void;
   onMessage(msg: SyncMessage): void;
-  onDisconnect(): void;
+  onDisconnect(reason?: string): void;
   onError(err: Error): void;
 }
 

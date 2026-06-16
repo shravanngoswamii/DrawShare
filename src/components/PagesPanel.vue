@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { exportPageAsPng } from "@/composables/useExport";
+import {
+  exportNotebookPdf as exportNotebookPdfToPrint,
+  exportPageAsPng,
+} from "@/composables/useExport";
 import { useTheme } from "@/composables/useTheme";
+import { useThumbnails } from "@/composables/useThumbnails";
 import { devMode, setDevMode } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
 import { useProjectsStore } from "@/stores/projects";
 
-defineProps<{ open?: boolean; collapsed?: boolean }>();
+const props = defineProps<{ open?: boolean; collapsed?: boolean }>();
 const emit = defineEmits<{ close: []; toggle: []; share: [] }>();
 
 const editor = useEditorStore();
@@ -16,6 +20,7 @@ const live = useLiveStore();
 const projects = useProjectsStore();
 const router = useRouter();
 const { isDark, toggleTheme } = useTheme();
+const { thumbnails, renderThumbnail, loadAndRenderThumbnail } = useThumbnails();
 
 const renamingId = ref<string | null>(null);
 const renameValue = ref("");
@@ -30,6 +35,39 @@ watch(
 );
 
 const saveStatus = computed(() => (editor.saving > 0 ? "Saving…" : "Saved"));
+
+let thumbDebounce: ReturnType<typeof setTimeout> | undefined;
+
+// Render current page thumbnail whenever strokes or texts change.
+// Skips debounce on first render so the thumbnail appears immediately on load.
+watch(
+  () => [editor.strokes, editor.currentPage?.texts],
+  () => {
+    const page = editor.currentPage;
+    if (!page) return;
+    clearTimeout(thumbDebounce);
+    if (!thumbnails.value[page.id]) {
+      renderThumbnail(page, editor.strokes);
+    } else {
+      thumbDebounce = setTimeout(() => renderThumbnail(page, editor.strokes), 400);
+    }
+  },
+  { deep: false },
+);
+
+// When the project loads or current page changes, lazy-load thumbnails for all
+// other pages. Works on desktop (panel always visible) and mobile.
+watch(
+  () => editor.currentPageId,
+  (id) => {
+    if (!id) return;
+    for (const p of editor.pages) {
+      if (thumbnails.value[p.id] || p.id === id) continue;
+      loadAndRenderThumbnail(p);
+    }
+  },
+  { immediate: true },
+);
 
 async function commitName() {
   if (!editor.project) return;
@@ -84,7 +122,10 @@ async function remove(id: string, name: string) {
 }
 
 async function select(id: string) {
-  await editor.selectPage(id);
+  // Notebook mode is one continuous canvas — scroll to the sheet instead of
+  // switching pages. Free mode switches the visible page.
+  if (editor.notebookMode !== "off") editor.requestScrollToSheet(id);
+  else await editor.selectPage(id);
   emit("close");
 }
 
@@ -105,6 +146,11 @@ async function exportCurrentPage() {
   const page = editor.currentPage;
   if (!page) return;
   await exportPageAsPng(page, editor.strokes);
+}
+
+async function exportNotebookPdf() {
+  if (editor.pages.length === 0) return;
+  await exportNotebookPdfToPrint(editor.pages, editor.strokes);
 }
 </script>
 
@@ -184,7 +230,16 @@ async function exportCurrentPage() {
             :class="{ active: editor.currentPageId === page.id }"
           >
             <button class="page-main" @click="select(page.id)">
-              <div class="page-thumb">{{ page.index + 1 }}</div>
+              <div class="page-thumb">
+                <img
+                  v-if="thumbnails[page.id]"
+                  :src="thumbnails[page.id]"
+                  class="thumb-img"
+                  :alt="`Preview of ${page.name}`"
+                  aria-hidden="true"
+                />
+                <span v-else class="thumb-num">{{ page.index + 1 }}</span>
+              </div>
               <div class="page-meta">
                 <input
                   v-if="renamingId === page.id"
@@ -234,6 +289,14 @@ async function exportCurrentPage() {
             </svg>
             <span>{{ isFullscreen ? 'Exit full' : 'Fullscreen' }}</span>
           </button>
+          <button v-if="editor.notebookMode !== 'off'" class="tool-btn" @click="exportNotebookPdf" title="Export A4 page as PDF">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>
+              <path d="M9 15h6M9 18h4"/>
+            </svg>
+            <span>Export PDF</span>
+          </button>
           <button class="tool-btn" :class="{ 'tool-active': devMode }" @click="setDevMode(!devMode)" title="Dev mode">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -257,6 +320,28 @@ async function exportCurrentPage() {
           >
             {{ b.label }}
           </button>
+        </div>
+      </div>
+
+      <!-- ── Canvas mode ── -->
+      <div class="section">
+        <div class="section-title">Canvas Mode</div>
+        <div class="mode-btns">
+          <button class="mode-btn" :class="{ active: editor.notebookMode === 'off' }" @click="editor.setNotebookMode('off')">Free</button>
+          <button class="mode-btn" :class="{ active: editor.notebookMode === 'notebook' }" @click="editor.setNotebookMode('notebook')">Notebook</button>
+          <button class="mode-btn mode-btn-strict" :class="{ active: editor.notebookMode === 'strict' }" @click="editor.setNotebookMode('strict')">Strict</button>
+        </div>
+        <p class="mode-hint">
+          <template v-if="editor.notebookMode === 'off'">Infinite canvas — draw anywhere.</template>
+          <template v-else-if="editor.notebookMode === 'notebook'">A4 sheets as a guide; draw anywhere, only the sheets export.</template>
+          <template v-else>A4 sheets; drawing is locked to the sheet.</template>
+        </p>
+        <div v-if="editor.notebookMode !== 'off'" class="layout-row">
+          <span class="layout-label">Scroll</span>
+          <div class="mode-btns layout-btns">
+            <button class="mode-btn" :class="{ active: editor.notebookLayout === 'vertical' }" @click="editor.setNotebookLayout('vertical')">Vertical</button>
+            <button class="mode-btn" :class="{ active: editor.notebookLayout === 'horizontal' }" @click="editor.setNotebookLayout('horizontal')">Horizontal</button>
+          </div>
         </div>
       </div>
 
@@ -503,7 +588,7 @@ async function exportCurrentPage() {
 
 .page-thumb {
   width: 32px;
-  height: 42px;
+  height: 45px;
   background: var(--color-canvas-surface);
   border: 1px solid var(--color-border-strong);
   border-radius: 4px;
@@ -514,6 +599,19 @@ async function exportCurrentPage() {
   font-size: var(--text-xs);
   font-weight: 600;
   color: var(--color-text-muted);
+  overflow: hidden;
+}
+
+.thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: 3px;
+}
+
+.thumb-num {
+  line-height: 1;
 }
 
 .page-meta {
@@ -588,6 +686,58 @@ async function exportCurrentPage() {
   background: var(--color-success-soft);
   border-color: var(--color-success);
   color: var(--color-success-strong);
+}
+
+/* ── Canvas mode ── */
+.mode-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.mode-btn {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-glass-bg);
+  padding: var(--space-2) var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+}
+.mode-btn:hover { background: var(--color-surface-2); color: var(--color-text); }
+.mode-btn.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-text);
+}
+.mode-btn-strict.active {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  color: #fff;
+}
+
+.mode-hint {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+.layout-row {
+  margin-top: var(--space-3);
+}
+.layout-label {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-2);
+}
+.layout-btns {
+  grid-template-columns: 1fr 1fr;
 }
 
 /* ── Background ── */
