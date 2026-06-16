@@ -1,13 +1,17 @@
-import type { Page, Stroke, TextItem } from "@/core/types";
+import type { ImageItem, Page, Shape, Stroke, TextItem } from "@/core/types";
 
 export interface SnapshotData {
-  v: 1;
+  // v1 = strokes + text only; v2 also carries shapes + images. Decoders treat the
+  // extra arrays as optional, so older v1 links still open.
+  v: 1 | 2;
   name: string;
   background: Page["background"];
   width: number;
   height: number;
   strokes: Stroke[];
   texts: TextItem[];
+  shapes?: Shape[];
+  images?: ImageItem[];
 }
 
 function toBase64Url(buf: ArrayBuffer): string {
@@ -31,15 +35,19 @@ export async function encodeSnapshot(
   page: Page,
   strokes: Stroke[],
   texts: TextItem[],
+  shapes: Shape[] = [],
+  images: ImageItem[] = [],
 ): Promise<string> {
   const data: SnapshotData = {
-    v: 1,
+    v: 2,
     name: page.name,
     background: page.background,
     width: page.width,
     height: page.height,
     strokes,
     texts,
+    shapes,
+    images,
   };
 
   const json = JSON.stringify(data);

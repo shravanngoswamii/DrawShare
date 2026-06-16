@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { Canvas2DRenderer } from "@/adapters/render/canvas2d";
 import { decodeSnapshot, type SnapshotData } from "@/composables/useSnapshot";
 import { useTheme } from "@/composables/useTheme";
+import { splitImageLayers } from "@/core/images";
 import { adaptInk } from "@/core/ink";
 
 const route = useRoute();
@@ -65,19 +66,25 @@ function schedule() {
 function renderFrame() {
   frameQueued = false;
   if (!snapshot.value) return;
+  const { strokes, texts, shapes = [], images = [] } = snapshot.value;
+  // Same paint order as the editor: back images, ink, shapes, text, front images.
+  const { behind, front } = splitImageLayers(images);
   renderer.setCamera({ x: camX, y: camY, zoom: camZoom });
   renderer.clear();
   renderer.beginFrame();
-  for (const s of snapshot.value.strokes) renderer.drawStroke(s);
-  for (const t of snapshot.value.texts) renderer.drawText(t);
+  for (const img of behind) renderer.drawImageItem(img);
+  for (const s of strokes) renderer.drawStroke(s);
+  for (const sh of shapes) renderer.drawShape(sh);
+  for (const t of texts) renderer.drawText(t);
+  for (const img of front) renderer.drawImageItem(img);
   renderer.endFrame();
 }
 
 function fitContent() {
   if (!snapshot.value) return;
-  const { strokes, texts, width, height } = snapshot.value;
+  const { strokes, texts, shapes = [], images = [], width, height } = snapshot.value;
 
-  if (strokes.length === 0 && texts.length === 0) {
+  if (strokes.length === 0 && texts.length === 0 && shapes.length === 0 && images.length === 0) {
     camZoom = Math.min(viewW / width, viewH / height) * 0.9;
     camX = (width - viewW / camZoom) / 2;
     camY = (height - viewH / camZoom) / 2;
@@ -106,6 +113,20 @@ function fitContent() {
     const approxH = t.size * 1.5;
     if (t.x + approxW > maxX) maxX = t.x + approxW;
     if (t.y + approxH > maxY) maxY = t.y + approxH;
+  }
+
+  for (const s of shapes) {
+    minX = Math.min(minX, s.x1, s.x2);
+    minY = Math.min(minY, s.y1, s.y2);
+    maxX = Math.max(maxX, s.x1, s.x2);
+    maxY = Math.max(maxY, s.y1, s.y2);
+  }
+
+  for (const img of images) {
+    minX = Math.min(minX, img.x);
+    minY = Math.min(minY, img.y);
+    maxX = Math.max(maxX, img.x + img.width);
+    maxY = Math.max(maxY, img.y + img.height);
   }
 
   const PAD = 40;
@@ -155,6 +176,8 @@ onMounted(async () => {
   if (!baseEl.value || !wrap.value) return;
   renderer.attach(baseEl.value);
   applyInkAdapter();
+  // Decode any images into the renderer's bitmap cache before the first paint.
+  await Promise.all((snapshot.value.images ?? []).map((img) => renderer.loadImage(img)));
   fitCanvas();
   resizeObserver = new ResizeObserver(() => fitCanvas());
   resizeObserver.observe(wrap.value);

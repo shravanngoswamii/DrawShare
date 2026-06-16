@@ -1,6 +1,6 @@
 import { getStroke } from "perfect-freehand";
 import type { Camera, Renderer } from "@/core/ports";
-import type { PenType, Stroke, StrokePoint, TextItem } from "@/core/types";
+import type { ImageItem, Layer, PenType, Shape, Stroke, StrokePoint, TextItem } from "@/core/types";
 
 type DrawCtx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -55,24 +55,46 @@ const PEN_TYPE_SIZE_SCALE: Record<PenType, number> = {
 const LIVE_LOOKAHEAD = 12;
 const LIVE_BATCH = 8;
 
+interface BBox {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  // Point count the bbox was computed for. The area-eraser/undo can replace a
+  // stroke's geometry while reusing its id, so a cached bbox is only valid while
+  // the point count matches — otherwise it's recomputed (prevents stale culling).
+  len: number;
+}
+
 export class Canvas2DRenderer implements Renderer {
   private canvas: HTMLCanvasElement | undefined;
   private ctx: CanvasRenderingContext2D | undefined;
   private dpr = 1;
   private camera: Camera = { x: 0, y: 0, zoom: 1 };
+  private layers: Layer[] = [];
+  private viewW = 0;
+  private viewH = 0;
+  // Active world origin offset from setOrigin (notebook sheets shift each sheet's
+  // page-local content here). Reset to 0 by beginFrame; used so viewport culling
+  // tests a stroke's effective world position, not its raw page-local coords.
+  private originX = 0;
+  private originY = 0;
 
   // Maps a stored ink color to the color actually painted (theme adaptation).
-  // Identity by default; callers set this from the active theme. Stored stroke
-  // data is never changed — only what gets drawn.
   private inkAdapt: (color: string) => string = (c) => c;
 
-  // Incremental live-stroke cache: stores the "stable" prefix of the current
-  // stroke rendered into an OffscreenCanvas so drawLive only computes the tail.
+  // Incremental live-stroke cache
   private liveCache: OffscreenCanvas | null = null;
   private liveCacheCtx: OffscreenCanvasRenderingContext2D | null = null;
   private liveCacheCount = 0;
   private liveCacheId = "";
   private liveCacheCam: Camera = { x: NaN, y: NaN, zoom: NaN };
+
+  // Per-stroke bounding box cache for viewport culling (strokes are immutable).
+  private bboxCache = new Map<string, BBox>();
+
+  // Decoded image bitmaps keyed by ImageItem.id.
+  private imageCache = new Map<string, ImageBitmap>();
 
   attach(canvas: HTMLCanvasElement): void {
     this.canvas = canvas;
@@ -86,6 +108,8 @@ export class Canvas2DRenderer implements Renderer {
   setViewport(width: number, height: number, dpr: number): void {
     if (!this.canvas) return;
     this.dpr = dpr;
+    this.viewW = width;
+    this.viewH = height;
     this.canvas.width = Math.round(width * dpr);
     this.canvas.height = Math.round(height * dpr);
     this.canvas.style.width = `${width}px`;
@@ -103,6 +127,19 @@ export class Canvas2DRenderer implements Renderer {
     this.liveCacheCount = 0;
   }
 
+  setLayers(layers: Layer[]): void {
+    this.layers = layers;
+  }
+
+  // Layer visibility gate (distinct from viewport culling below). Items with no
+  // layerId (legacy/unassigned) or on an unknown layer always render; otherwise
+  // they follow their layer's `visible` flag.
+  private isLayerVisible(layerId?: string): boolean {
+    if (!layerId || this.layers.length === 0) return true;
+    const layer = this.layers.find((l) => l.id === layerId);
+    return layer ? layer.visible : true;
+  }
+
   clear(): void {
     if (!this.ctx || !this.canvas) return;
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -111,6 +148,8 @@ export class Canvas2DRenderer implements Renderer {
 
   beginFrame(): void {
     if (!this.ctx) return;
+    this.originX = 0;
+    this.originY = 0;
     const { x, y, zoom } = this.camera;
     const s = this.dpr * zoom;
     this.ctx.setTransform(s, 0, 0, s, -x * s, -y * s);
@@ -120,8 +159,123 @@ export class Canvas2DRenderer implements Renderer {
     /* noop */
   }
 
+  // ── Viewport culling ────────────────────────────────────────────────────────
+
+  private isStrokeVisible(stroke: Stroke): boolean {
+    if (this.viewW === 0 || this.viewH === 0) return true;
+    let bbox = this.bboxCache.get(stroke.id);
+    // Recompute if absent or if the geometry changed under a reused id (the
+    // area-eraser truncates a stroke and undo restores it, both keeping the id).
+    if (!bbox || bbox.len !== stroke.points.length) {
+      const half = stroke.size / 2 + 2;
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const p of stroke.points) {
+        if (p.x - half < minX) minX = p.x - half;
+        if (p.y - half < minY) minY = p.y - half;
+        if (p.x + half > maxX) maxX = p.x + half;
+        if (p.y + half > maxY) maxY = p.y + half;
+      }
+      bbox = { minX, minY, maxX, maxY, len: stroke.points.length };
+      this.bboxCache.set(stroke.id, bbox);
+    }
+    const { x, y, zoom } = this.camera;
+    const vMaxX = x + this.viewW / zoom;
+    const vMaxY = y + this.viewH / zoom;
+    // Shift the (page-local) bbox into world space by the active sheet origin so
+    // the test is correct in notebook mode; originX/Y are 0 in Free mode.
+    const minX = bbox.minX + this.originX;
+    const maxX = bbox.maxX + this.originX;
+    const minY = bbox.minY + this.originY;
+    const maxY = bbox.maxY + this.originY;
+    return maxX >= x && minX <= vMaxX && maxY >= y && minY <= vMaxY;
+  }
+
+  invalidateStrokeBbox(id: string): void {
+    this.bboxCache.delete(id);
+  }
+
+  clearBboxCache(): void {
+    this.bboxCache.clear();
+  }
+
+  // ── Drawing ─────────────────────────────────────────────────────────────────
+
+  setOrigin(dx: number, dy: number): void {
+    if (!this.ctx) return;
+    this.originX = dx;
+    this.originY = dy;
+    const { x, y, zoom } = this.camera;
+    const s = this.dpr * zoom;
+    this.ctx.setTransform(s, 0, 0, s, (-x + dx) * s, (-y + dy) * s);
+  }
+
+  pushClip(width: number, height: number): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, width, height);
+    ctx.clip();
+  }
+
+  popClip(): void {
+    this.ctx?.restore();
+  }
+
+  drawSheetBackground(
+    width: number,
+    height: number,
+    background: "blank" | "ruled" | "grid" | "dotted",
+    colors: { paper: string; line: string; dot: string },
+  ): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    ctx.save();
+    ctx.fillStyle = colors.paper;
+    ctx.fillRect(0, 0, width, height);
+    const spacing = 32;
+    if (background === "ruled") {
+      ctx.strokeStyle = colors.line;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let y = spacing; y < height; y += spacing) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+      }
+      ctx.stroke();
+    } else if (background === "grid") {
+      ctx.strokeStyle = colors.line;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = spacing; x < width; x += spacing) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+      }
+      for (let y = spacing; y < height; y += spacing) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+      }
+      ctx.stroke();
+    } else if (background === "dotted") {
+      ctx.fillStyle = colors.dot;
+      for (let x = spacing; x < width; x += spacing) {
+        for (let y = spacing; y < height; y += spacing) {
+          ctx.beginPath();
+          ctx.arc(x, y, 1.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+    ctx.restore();
+  }
+
   drawStroke(stroke: Stroke): void {
     if (!this.ctx || stroke.points.length === 0) return;
+    if (!this.isLayerVisible(stroke.layerId)) return;
+    if (!this.isStrokeVisible(stroke)) return;
     this.renderToCtx(
       this.ctx,
       stroke.points,
@@ -133,9 +287,54 @@ export class Canvas2DRenderer implements Renderer {
     );
   }
 
+  drawShape(shape: Shape): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if (!this.isLayerVisible(shape.layerId)) return;
+    ctx.save();
+    ctx.strokeStyle = this.inkAdapt(shape.color);
+    ctx.lineWidth = shape.size;
+    ctx.globalAlpha = shape.opacity;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    const { x1, y1, x2, y2 } = shape;
+    ctx.beginPath();
+    if (shape.type === "rect") {
+      ctx.rect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+    } else if (shape.type === "ellipse") {
+      const cx = (x1 + x2) / 2,
+        cy = (y1 + y2) / 2;
+      const rx = Math.abs(x2 - x1) / 2,
+        ry = Math.abs(y2 - y1) / 2;
+      if (rx > 0 && ry > 0) ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    } else if (shape.type === "line") {
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+    } else if (shape.type === "arrow") {
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      const headLen = Math.max(10, shape.size * 5);
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(
+        x2 - headLen * Math.cos(angle - Math.PI / 6),
+        y2 - headLen * Math.sin(angle - Math.PI / 6),
+      );
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(
+        x2 - headLen * Math.cos(angle + Math.PI / 6),
+        y2 - headLen * Math.sin(angle + Math.PI / 6),
+      );
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
   drawText(item: TextItem): void {
     const ctx = this.ctx;
     if (!ctx || !item.text) return;
+    if (!this.isLayerVisible(item.layerId)) return;
     ctx.save();
     ctx.fillStyle = this.inkAdapt(item.color);
     ctx.font = `${item.size}px ui-sans-serif, system-ui, -apple-system, sans-serif`;
@@ -146,6 +345,54 @@ export class Canvas2DRenderer implements Renderer {
       ctx.fillText(lines[i], item.x, item.y + i * lineHeight);
     }
     ctx.restore();
+  }
+
+  drawImageItem(item: ImageItem): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if (!this.isLayerVisible(item.layerId)) return;
+    const bm = this.imageCache.get(item.id);
+    if (!bm) return;
+    ctx.save();
+    ctx.drawImage(bm, item.x, item.y, item.width, item.height);
+    ctx.restore();
+  }
+
+  async loadImage(item: ImageItem): Promise<void> {
+    if (this.imageCache.has(item.id)) return;
+    try {
+      const img = new Image();
+      await new Promise<void>((res, rej) => {
+        img.onload = () => res();
+        img.onerror = rej;
+        img.src = item.src;
+      });
+      const bm = await createImageBitmap(img);
+      this.imageCache.set(item.id, bm);
+    } catch {
+      // Silently skip undecodable images
+    }
+  }
+
+  releaseImage(id: string): void {
+    const bm = this.imageCache.get(id);
+    if (bm) {
+      bm.close();
+      this.imageCache.delete(id);
+    }
+  }
+
+  // Free every cached bitmap and forget the bbox cache. Called on unmount and
+  // when reconciling away from a project so ImageBitmaps don't leak.
+  retainImages(keepIds: Set<string>): void {
+    for (const id of [...this.imageCache.keys()]) {
+      if (!keepIds.has(id)) this.releaseImage(id);
+    }
+  }
+
+  clearImageCache(): void {
+    for (const bm of this.imageCache.values()) bm.close();
+    this.imageCache.clear();
   }
 
   drawLive(stroke: Stroke): void {
@@ -179,8 +426,7 @@ export class Canvas2DRenderer implements Renderer {
       ctx.setTransform(s, 0, 0, s, -cam.x * s, -cam.y * s);
     }
 
-    // Render only the tail — overlap with cache is safe for opaque strokes;
-    // for semi-transparent strokes the overlap region is small (~12 pts).
+    // Render only the tail — overlap with cache is safe for opaque strokes.
     const tailFrom = Math.max(0, this.liveCacheCount - LIVE_LOOKAHEAD);
     this.renderToCtx(
       ctx,
