@@ -1596,6 +1596,7 @@ watch(
       centerOnSheet(editor.currentPageId);
     }
     updatePageOverlay();
+    updatePageFrame();
     dirtyBase = true;
     schedule();
   },
@@ -1745,7 +1746,7 @@ onBeforeUnmount(() => {
     ></div>
     <div
       v-if="pageFrameStyle"
-      class="page-frame"
+      class="page-size-frame"
       :style="pageFrameStyle"
       aria-hidden="true"
     ></div>
@@ -1913,7 +1914,8 @@ onBeforeUnmount(() => {
 .eraser-cursor.circle { border-radius: 50%; }
 .eraser-cursor.square { border-radius: 3px; }
 
-.page-frame {
+/* Free-mode page-size boundary (distinct from the notebook .page-frame sheets). */
+.page-size-frame {
   position: absolute;
   z-index: 2;
   pointer-events: none;
