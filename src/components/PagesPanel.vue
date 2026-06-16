@@ -5,6 +5,7 @@ import {
   exportNotebookPdf as exportNotebookPdfToPrint,
   exportPageAsPng,
 } from "@/composables/useExport";
+import { encodeSnapshot } from "@/composables/useSnapshot";
 import { useTheme } from "@/composables/useTheme";
 import { useThumbnails } from "@/composables/useThumbnails";
 import { devMode, setDevMode } from "@/debug";
@@ -221,6 +222,68 @@ async function setNoPageSize() {
   const page = editor.currentPage;
   if (!page) return;
   await editor.setPageSize(page.id, 0, 0);
+}
+
+const snapshotUrl = ref<string | null>(null);
+const snapshotCopied = ref(false);
+
+function snapshotKey(pageId: string) {
+  return `drawshare:snapshot:${pageId}`;
+}
+
+watch(
+  () => editor.currentPageId,
+  (id) => {
+    if (!id) {
+      snapshotUrl.value = null;
+      return;
+    }
+    snapshotUrl.value = localStorage.getItem(snapshotKey(id));
+  },
+  { immediate: true },
+);
+
+async function publishSnapshot() {
+  const page = editor.currentPage;
+  if (!page) return;
+  // Snapshot only what's visible: drop content on hidden layers so the share
+  // matches the editor and doesn't leak a hidden draft layer.
+  const hidden = new Set(editor.layers.filter((l) => !l.visible).map((l) => l.id));
+  const onVisibleLayer = (item: { layerId?: string }) => !item.layerId || !hidden.has(item.layerId);
+  const pageStrokes = editor.strokes.filter((s) => s.pageId === page.id && onVisibleLayer(s));
+  const pageShapes = editor.shapes.filter((s) => s.pageId === page.id && onVisibleLayer(s));
+  const pageImages = editor.images.filter((i) => i.pageId === page.id && onVisibleLayer(i));
+  const pageTexts = (page.texts ?? []).filter(onVisibleLayer);
+  const encoded = await encodeSnapshot(page, pageStrokes, pageTexts, pageShapes, pageImages);
+  const base = window.location.href.replace(/#.*$/, "");
+  const url = `${base}#/s?d=${encoded}`;
+  localStorage.setItem(snapshotKey(page.id), url);
+  snapshotUrl.value = url;
+  try {
+    await navigator.clipboard.writeText(url);
+    snapshotCopied.value = true;
+    setTimeout(() => (snapshotCopied.value = false), 1500);
+  } catch {
+    /* noop */
+  }
+}
+
+async function copySnapshotUrl() {
+  if (!snapshotUrl.value) return;
+  try {
+    await navigator.clipboard.writeText(snapshotUrl.value);
+    snapshotCopied.value = true;
+    setTimeout(() => (snapshotCopied.value = false), 1500);
+  } catch {
+    /* noop */
+  }
+}
+
+function removeSnapshot() {
+  const id = editor.currentPageId;
+  if (!id) return;
+  localStorage.removeItem(snapshotKey(id));
+  snapshotUrl.value = null;
 }
 </script>
 
@@ -607,6 +670,39 @@ async function setNoPageSize() {
           Records every edit so replay shows exactly what happened — erasing, moving,
           undo. Off, replay reconstructs the drawing from its final state.
         </p>
+      </div>
+
+      <!-- ── Snapshot link ── -->
+      <div class="section">
+        <div class="section-title">Snapshot link</div>
+        <template v-if="!snapshotUrl">
+          <button class="share-btn" @click="publishSnapshot">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
+            <span class="share-label">Create snapshot link</span>
+          </button>
+        </template>
+        <template v-else>
+          <div class="snapshot-url-row">
+            <input
+              class="input snapshot-input"
+              :value="snapshotUrl"
+              readonly
+              aria-label="Snapshot link"
+              @focus="($event.target as HTMLInputElement).select()"
+            />
+            <button class="btn snapshot-copy-btn" @click="copySnapshotUrl">
+              {{ snapshotCopied ? 'Copied!' : 'Copy' }}
+            </button>
+          </div>
+          <div class="snapshot-actions">
+            <button class="page-action danger" @click="removeSnapshot">Remove link</button>
+          </div>
+          <p class="snapshot-note muted">Anyone with this link can still view it</p>
+        </template>
       </div>
 
     </aside>
@@ -1187,6 +1283,48 @@ async function setNoPageSize() {
   background: var(--color-accent);
   border-color: var(--color-accent);
   color: var(--color-accent-text);
+}
+
+/* ── Snapshot ── */
+.snapshot-url-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.snapshot-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.snapshot-copy-btn {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  padding: 0 var(--space-3);
+  height: 32px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-2);
+  color: var(--color-text-muted);
+  transition: background 80ms ease, color 80ms ease;
+}
+.snapshot-copy-btn:hover {
+  background: var(--color-surface-3, var(--color-surface-2));
+  color: var(--color-text);
+}
+
+.snapshot-actions {
+  display: flex;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.snapshot-note {
+  font-size: var(--text-xs);
+  margin-top: var(--space-2);
+  line-height: 1.4;
 }
 
 /* ── Mobile — slide-in drawer ── */

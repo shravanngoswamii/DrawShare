@@ -18,6 +18,11 @@ const routes: RouteRecordRaw[] = [
     component: () => import("./views/ViewerView.vue"),
     props: true,
   },
+  {
+    path: "/s",
+    name: "snapshot",
+    component: () => import("./views/SnapshotView.vue"),
+  },
 ];
 
 export const router = createRouter({
