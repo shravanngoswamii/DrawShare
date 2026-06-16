@@ -53,6 +53,9 @@ export interface Page {
 
 export type NotebookMode = "off" | "notebook" | "strict";
 
+// Direction the A4 sheets are tiled in notebook mode.
+export type NotebookLayout = "vertical" | "horizontal";
+
 export interface Project {
   id: ID;
   name: string;
@@ -62,6 +65,8 @@ export interface Project {
   // Canvas style for the whole project. Optional for backward compatibility;
   // absent means "off" (infinite canvas).
   notebookMode?: NotebookMode;
+  // Tiling direction of the A4 stack in notebook mode; absent means "vertical".
+  notebookLayout?: NotebookLayout;
   deletedAt?: number;
 }
 

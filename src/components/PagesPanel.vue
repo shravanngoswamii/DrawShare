@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { exportPageAsNotebookPdf, exportPageAsPng } from "@/composables/useExport";
+import {
+  exportNotebookPdf as exportNotebookPdfToPrint,
+  exportPageAsPng,
+} from "@/composables/useExport";
 import { useTheme } from "@/composables/useTheme";
 import { useThumbnails } from "@/composables/useThumbnails";
 import { devMode, setDevMode } from "@/debug";
@@ -119,7 +122,10 @@ async function remove(id: string, name: string) {
 }
 
 async function select(id: string) {
-  await editor.selectPage(id);
+  // Notebook mode is one continuous canvas — scroll to the sheet instead of
+  // switching pages. Free mode switches the visible page.
+  if (editor.notebookMode !== "off") editor.requestScrollToSheet(id);
+  else await editor.selectPage(id);
   emit("close");
 }
 
@@ -143,9 +149,8 @@ async function exportCurrentPage() {
 }
 
 async function exportNotebookPdf() {
-  const page = editor.currentPage;
-  if (!page) return;
-  await exportPageAsNotebookPdf(page, editor.strokes, editor.pageOriginX, editor.pageOriginY);
+  if (editor.pages.length === 0) return;
+  await exportNotebookPdfToPrint(editor.pages, editor.strokes);
 }
 </script>
 
@@ -328,9 +333,16 @@ async function exportNotebookPdf() {
         </div>
         <p class="mode-hint">
           <template v-if="editor.notebookMode === 'off'">Infinite canvas — draw anywhere.</template>
-          <template v-else-if="editor.notebookMode === 'notebook'">A4 guide shown; drawing anywhere allowed.</template>
-          <template v-else>Drawing outside the A4 boundary is blocked.</template>
+          <template v-else-if="editor.notebookMode === 'notebook'">A4 sheets you scroll through; draw anywhere on a sheet.</template>
+          <template v-else>A4 sheets; drawing outside a sheet is blocked.</template>
         </p>
+        <div v-if="editor.notebookMode !== 'off'" class="layout-row">
+          <span class="layout-label">Scroll</span>
+          <div class="mode-btns layout-btns">
+            <button class="mode-btn" :class="{ active: editor.notebookLayout === 'vertical' }" @click="editor.setNotebookLayout('vertical')">Vertical</button>
+            <button class="mode-btn" :class="{ active: editor.notebookLayout === 'horizontal' }" @click="editor.setNotebookLayout('horizontal')">Horizontal</button>
+          </div>
+        </div>
       </div>
 
     </aside>
@@ -710,6 +722,22 @@ async function exportNotebookPdf() {
   font-size: var(--text-xs);
   color: var(--color-text-muted);
   line-height: 1.4;
+}
+
+.layout-row {
+  margin-top: var(--space-3);
+}
+.layout-label {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-2);
+}
+.layout-btns {
+  grid-template-columns: 1fr 1fr;
 }
 
 /* ── Background ── */

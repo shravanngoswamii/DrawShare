@@ -49,6 +49,18 @@ export interface Renderer {
   drawText(item: TextItem): void;
   beginFrame(): void;
   endFrame(): void;
+  // Shift the world origin by (dx, dy) so subsequent draws land at that offset.
+  // Used to place each A4 sheet of a notebook stack at its world position while
+  // its strokes/texts stay in page-local coordinates.
+  setOrigin(dx: number, dy: number): void;
+  // Paint a sheet's paper + background pattern at the current origin, in local
+  // coords (0,0)..(width,height).
+  drawSheetBackground(
+    width: number,
+    height: number,
+    background: Page["background"],
+    colors: { paper: string; line: string; dot: string },
+  ): void;
 }
 
 export interface Camera {
