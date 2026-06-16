@@ -10,6 +10,7 @@ import type {
   Page,
   PenType,
   Project,
+  ReplayOp,
   Shape,
   Stroke,
   StrokePoint,
@@ -140,6 +141,10 @@ export const useEditorStore = defineStore("editor", {
     // Tiling direction of the A4 stack (project-wide); "vertical" when unset.
     notebookLayout(state): NotebookLayout {
       return state.project?.notebookLayout ?? "vertical";
+    },
+    // Opt-in session recording for exact-history replay (project-wide).
+    recordReplay(state): boolean {
+      return state.project?.recordReplay ?? false;
     },
   },
   actions: {
@@ -278,6 +283,8 @@ export const useEditorStore = defineStore("editor", {
     async deletePage(pageId: string) {
       if (!this.project) return;
       if (this.pages.length <= 1) return;
+      // For replay, a deleted sheet's content simply vanishes at this point.
+      this._record({ op: "page-clear", pageId });
       await storage.deletePage(pageId);
       this.pages = this.pages.filter((p) => p.id !== pageId).map((p, i) => ({ ...p, index: i }));
       for (const p of this.pages) await storage.putPage(p);
@@ -327,6 +334,23 @@ export const useEditorStore = defineStore("editor", {
       await storage.putPage({ ...page });
       useLiveStore().broadcast({ t: "page-size", pageId, width, height });
     },
+    // Append a forward content op to the recording log. No-op unless the project
+    // has recordReplay on. Fire-and-forget so it never blocks drawing; events are
+    // appended in call order (seq autoincrements).
+    _record(op: ReplayOp) {
+      const project = this.project;
+      if (!project?.recordReplay) return;
+      storage.appendEvent({ projectId: project.id, t: Date.now(), op }).catch(() => {});
+    },
+    // Net effect of an undo/redo on a whole page (area-erase): wipe the page,
+    // then re-add the exact stroke/shape set it should now hold. The seq
+    // autoincrement preserves this order even though the timestamps tie.
+    _recordPageReset(pageId: string, strokes: Stroke[], shapes: Shape[]) {
+      if (!this.project?.recordReplay) return;
+      this._record({ op: "page-clear", pageId });
+      for (const s of strokes) this._record({ op: "stroke-add", stroke: s });
+      for (const s of shapes) this._record({ op: "shape-add", shape: s });
+    },
     async eraseStroke(strokeId: string) {
       const stroke = this.strokes.find((s) => s.id === strokeId);
       if (!stroke) return;
@@ -334,6 +358,7 @@ export const useEditorStore = defineStore("editor", {
       this.history = [...this.history, { kind: "stroke-erase", stroke }];
       this.redoStack = [];
       await storage.deleteStroke(strokeId);
+      this._record({ op: "stroke-remove", pageId: stroke.pageId, id: strokeId });
       useLiveStore().broadcast({ t: "stroke-delete", pageId: stroke.pageId, strokeId });
     },
     async commitStroke(stroke: Stroke) {
@@ -346,6 +371,7 @@ export const useEditorStore = defineStore("editor", {
         this.history = [...this.history, { kind: "stroke-add", stroke }];
         this.redoStack = [];
         await storage.putStroke(stroke);
+        this._record({ op: "stroke-add", stroke });
         useLiveStore().broadcast({ t: "stroke-commit", stroke });
         if (this.project) await useProjectsStore().touch(this.project.id);
       } finally {
@@ -363,6 +389,7 @@ export const useEditorStore = defineStore("editor", {
         await storage.putPage({ ...page });
         this.history = [...this.history, { kind: "text-upsert", prev, next: text }];
         this.redoStack = [];
+        this._record({ op: "text-set", text });
         useLiveStore().broadcast({ t: "text-commit", text });
         if (this.project) await useProjectsStore().touch(this.project.id);
       } finally {
@@ -376,6 +403,7 @@ export const useEditorStore = defineStore("editor", {
         this.history = [...this.history, { kind: "shape-add", shape }];
         this.redoStack = [];
         await storage.putShape(shape);
+        this._record({ op: "shape-add", shape });
         useLiveStore().broadcast({ t: "shape-commit", shape });
         if (this.project) await useProjectsStore().touch(this.project.id);
       } finally {
@@ -389,6 +417,7 @@ export const useEditorStore = defineStore("editor", {
       this.history = [...this.history, { kind: "shape-erase", shape }];
       this.redoStack = [];
       await storage.deleteShape(shapeId);
+      this._record({ op: "shape-remove", pageId: shape.pageId, id: shapeId });
       useLiveStore().broadcast({ t: "shape-delete", pageId: shape.pageId, shapeId });
     },
     async deleteText(pageId: string, textId: string) {
@@ -401,6 +430,7 @@ export const useEditorStore = defineStore("editor", {
       await storage.putPage({ ...page });
       this.history = [...this.history, { kind: "text-delete", text }];
       this.redoStack = [];
+      this._record({ op: "text-remove", pageId, id: textId });
       useLiveStore().broadcast({ t: "text-delete", pageId, textId });
     },
     async undo() {
@@ -411,6 +441,7 @@ export const useEditorStore = defineStore("editor", {
       if (entry.kind === "stroke-add") {
         this.strokes = this.strokes.filter((s) => s.id !== entry.stroke.id);
         await storage.deleteStroke(entry.stroke.id);
+        this._record({ op: "stroke-remove", pageId: entry.stroke.pageId, id: entry.stroke.id });
         useLiveStore().broadcast({
           t: "stroke-delete",
           pageId: entry.stroke.pageId,
@@ -419,6 +450,7 @@ export const useEditorStore = defineStore("editor", {
       } else if (entry.kind === "stroke-erase") {
         this.strokes = [...this.strokes, entry.stroke];
         await storage.putStroke(entry.stroke);
+        this._record({ op: "stroke-add", stroke: entry.stroke });
         useLiveStore().broadcast({ t: "stroke-commit", stroke: entry.stroke });
       } else if (entry.kind === "text-upsert") {
         const page = this.pages.find((p) => p.id === entry.next.pageId);
@@ -426,10 +458,12 @@ export const useEditorStore = defineStore("editor", {
           if (entry.prev) {
             page.texts = [...(page.texts ?? []).filter((t) => t.id !== entry.next.id), entry.prev];
             await storage.putPage({ ...page });
+            this._record({ op: "text-set", text: entry.prev });
             useLiveStore().broadcast({ t: "text-commit", text: entry.prev });
           } else {
             page.texts = (page.texts ?? []).filter((t) => t.id !== entry.next.id);
             await storage.putPage({ ...page });
+            this._record({ op: "text-remove", pageId: page.id, id: entry.next.id });
             useLiveStore().broadcast({ t: "text-delete", pageId: page.id, textId: entry.next.id });
           }
         }
@@ -438,6 +472,7 @@ export const useEditorStore = defineStore("editor", {
         if (page) {
           page.texts = [...(page.texts ?? []).filter((t) => t.id !== entry.text.id), entry.text];
           await storage.putPage({ ...page });
+          this._record({ op: "text-set", text: entry.text });
           useLiveStore().broadcast({ t: "text-commit", text: entry.text });
         }
       } else if (entry.kind === "area-erase") {
@@ -450,6 +485,7 @@ export const useEditorStore = defineStore("editor", {
         for (const s of entry.before) await storage.putStroke(s);
         await storage.deleteShapesForPage(entry.pageId);
         for (const s of entry.shapesBefore) await storage.putShape(s);
+        this._recordPageReset(entry.pageId, entry.before, entry.shapesBefore);
         useLiveStore().broadcast({
           t: "page-set",
           pageId: entry.pageId,
@@ -460,6 +496,7 @@ export const useEditorStore = defineStore("editor", {
       } else if (entry.kind === "shape-add") {
         this.shapes = this.shapes.filter((s) => s.id !== entry.shape.id);
         await storage.deleteShape(entry.shape.id);
+        this._record({ op: "shape-remove", pageId: entry.shape.pageId, id: entry.shape.id });
         useLiveStore().broadcast({
           t: "shape-delete",
           pageId: entry.shape.pageId,
@@ -468,13 +505,16 @@ export const useEditorStore = defineStore("editor", {
       } else if (entry.kind === "shape-erase") {
         this.shapes = [...this.shapes, entry.shape];
         await storage.putShape(entry.shape);
+        this._record({ op: "shape-add", shape: entry.shape });
         useLiveStore().broadcast({ t: "shape-commit", shape: entry.shape });
       } else if (entry.kind === "image-add") {
         this.images = this.images.filter((i) => i.id !== entry.image.id);
         await storage.deleteImage(entry.image.id);
+        this._record({ op: "image-remove", pageId: entry.image.pageId, id: entry.image.id });
       } else if (entry.kind === "image-erase") {
         this.images = [...this.images, entry.image];
         await storage.putImage(entry.image);
+        this._record({ op: "image-set", image: entry.image });
       }
     },
     async redo() {
@@ -485,10 +525,12 @@ export const useEditorStore = defineStore("editor", {
       if (entry.kind === "stroke-add") {
         this.strokes = [...this.strokes, entry.stroke];
         await storage.putStroke(entry.stroke);
+        this._record({ op: "stroke-add", stroke: entry.stroke });
         useLiveStore().broadcast({ t: "stroke-commit", stroke: entry.stroke });
       } else if (entry.kind === "stroke-erase") {
         this.strokes = this.strokes.filter((s) => s.id !== entry.stroke.id);
         await storage.deleteStroke(entry.stroke.id);
+        this._record({ op: "stroke-remove", pageId: entry.stroke.pageId, id: entry.stroke.id });
         useLiveStore().broadcast({
           t: "stroke-delete",
           pageId: entry.stroke.pageId,
@@ -499,6 +541,7 @@ export const useEditorStore = defineStore("editor", {
         if (page) {
           page.texts = [...(page.texts ?? []).filter((t) => t.id !== entry.next.id), entry.next];
           await storage.putPage({ ...page });
+          this._record({ op: "text-set", text: entry.next });
           useLiveStore().broadcast({ t: "text-commit", text: entry.next });
         }
       } else if (entry.kind === "text-delete") {
@@ -506,6 +549,7 @@ export const useEditorStore = defineStore("editor", {
         if (page) {
           page.texts = (page.texts ?? []).filter((t) => t.id !== entry.text.id);
           await storage.putPage({ ...page });
+          this._record({ op: "text-remove", pageId: page.id, id: entry.text.id });
           useLiveStore().broadcast({ t: "text-delete", pageId: page.id, textId: entry.text.id });
         }
       } else if (entry.kind === "area-erase") {
@@ -518,6 +562,7 @@ export const useEditorStore = defineStore("editor", {
         for (const s of entry.after) await storage.putStroke(s);
         await storage.deleteShapesForPage(entry.pageId);
         for (const s of entry.shapesAfter) await storage.putShape(s);
+        this._recordPageReset(entry.pageId, entry.after, entry.shapesAfter);
         useLiveStore().broadcast({
           t: "page-set",
           pageId: entry.pageId,
@@ -528,10 +573,12 @@ export const useEditorStore = defineStore("editor", {
       } else if (entry.kind === "shape-add") {
         this.shapes = [...this.shapes, entry.shape];
         await storage.putShape(entry.shape);
+        this._record({ op: "shape-add", shape: entry.shape });
         useLiveStore().broadcast({ t: "shape-commit", shape: entry.shape });
       } else if (entry.kind === "shape-erase") {
         this.shapes = this.shapes.filter((s) => s.id !== entry.shape.id);
         await storage.deleteShape(entry.shape.id);
+        this._record({ op: "shape-remove", pageId: entry.shape.pageId, id: entry.shape.id });
         useLiveStore().broadcast({
           t: "shape-delete",
           pageId: entry.shape.pageId,
@@ -540,9 +587,11 @@ export const useEditorStore = defineStore("editor", {
       } else if (entry.kind === "image-add") {
         this.images = [...this.images, entry.image];
         await storage.putImage(entry.image);
+        this._record({ op: "image-set", image: entry.image });
       } else if (entry.kind === "image-erase") {
         this.images = this.images.filter((i) => i.id !== entry.image.id);
         await storage.deleteImage(entry.image.id);
+        this._record({ op: "image-remove", pageId: entry.image.pageId, id: entry.image.id });
       }
     },
     async commitImage(image: ImageItem) {
@@ -552,6 +601,7 @@ export const useEditorStore = defineStore("editor", {
         this.history = [...this.history, { kind: "image-add", image }];
         this.redoStack = [];
         await storage.putImage(image);
+        this._record({ op: "image-set", image });
         if (this.project) await useProjectsStore().touch(this.project.id);
       } finally {
         this.saving--;
@@ -564,6 +614,7 @@ export const useEditorStore = defineStore("editor", {
       this.history = [...this.history, { kind: "image-erase", image }];
       this.redoStack = [];
       await storage.deleteImage(imageId);
+      this._record({ op: "image-remove", pageId: image.pageId, id: imageId });
     },
     async moveImage(imageId: string, x: number, y: number) {
       const image = this.images.find((i) => i.id === imageId);
@@ -575,6 +626,7 @@ export const useEditorStore = defineStore("editor", {
       // with all other mutations). The move itself is not pushed to undo history.
       this.redoStack = [];
       await storage.putImage({ ...image });
+      this._record({ op: "image-set", image: { ...image } });
       if (this.project) await useProjectsStore().touch(this.project.id);
       return prev;
     },
@@ -589,6 +641,7 @@ export const useEditorStore = defineStore("editor", {
       image.height = height;
       this.redoStack = [];
       await storage.putImage({ ...image });
+      this._record({ op: "image-set", image: { ...image } });
       if (this.project) await useProjectsStore().touch(this.project.id);
     },
     // Stacking order vs the drawing. Front = above strokes/shapes/text and above
@@ -600,6 +653,7 @@ export const useEditorStore = defineStore("editor", {
       image.z = maxZ + 1;
       this.redoStack = [];
       await storage.putImage({ ...image });
+      this._record({ op: "image-set", image: { ...image } });
       if (this.project) await useProjectsStore().touch(this.project.id);
     },
     async sendImageToBack(imageId: string) {
@@ -609,6 +663,7 @@ export const useEditorStore = defineStore("editor", {
       image.z = minZ - 1;
       this.redoStack = [];
       await storage.putImage({ ...image });
+      this._record({ op: "image-set", image: { ...image } });
       if (this.project) await useProjectsStore().touch(this.project.id);
     },
     async clearPage() {
@@ -622,6 +677,7 @@ export const useEditorStore = defineStore("editor", {
       this.images = [];
       this.history = [];
       this.redoStack = [];
+      this._record({ op: "page-clear", pageId });
       useLiveStore().broadcast({ t: "clear-page", pageId });
     },
     setTool(t: Tool) {
@@ -797,6 +853,25 @@ export const useEditorStore = defineStore("editor", {
         for (const s of this.strokes) if (s.pageId === pageId) await storage.putStroke(s);
         await storage.deleteShapesForPage(pageId);
         for (const s of shapesAfter) await storage.putShape(s);
+        // Record the area-erase as remove/add diffs so replay shows the cut.
+        if (this.project?.recordReplay) {
+          const afterStrokeIds = new Set(after.map((s) => s.id));
+          for (const s of before) {
+            if (!afterStrokeIds.has(s.id)) this._record({ op: "stroke-remove", pageId, id: s.id });
+          }
+          const beforeStrokeIds = new Set(before.map((s) => s.id));
+          for (const s of after) {
+            if (!beforeStrokeIds.has(s.id)) this._record({ op: "stroke-add", stroke: s });
+          }
+          const afterShapeIds = new Set(shapesAfter.map((s) => s.id));
+          for (const s of shapesBefore) {
+            if (!afterShapeIds.has(s.id)) this._record({ op: "shape-remove", pageId, id: s.id });
+          }
+          const beforeShapeIds = new Set(shapesBefore.map((s) => s.id));
+          for (const s of shapesAfter) {
+            if (!beforeShapeIds.has(s.id)) this._record({ op: "shape-add", shape: s });
+          }
+        }
         useLiveStore().broadcast({
           t: "page-set",
           pageId,
@@ -849,6 +924,34 @@ export const useEditorStore = defineStore("editor", {
       this.project.updatedAt = Date.now();
       await storage.putProject({ ...this.project });
       useLiveStore().broadcast({ t: "notebook-layout", layout });
+    },
+    // Toggle opt-in session recording. Enabling starts a fresh log whose first
+    // events are the current content of every page, so replay has a baseline to
+    // apply later ops onto. Disabling just stops appending (the log is kept and
+    // reset on the next enable).
+    async setRecordReplay(on: boolean) {
+      if (!this.project || (this.project.recordReplay ?? false) === on) return;
+      this.project.recordReplay = on;
+      this.project.updatedAt = Date.now();
+      await storage.putProject({ ...this.project });
+      if (!on) return;
+      const projectId = this.project.id;
+      await storage.clearEvents(projectId);
+      const now = Date.now();
+      for (const page of this.pages) {
+        const [strokes, shapes, images] = await Promise.all([
+          storage.listStrokes(page.id),
+          storage.listShapes(page.id),
+          storage.listImages(page.id),
+        ]);
+        const ops: ReplayOp[] = [
+          ...strokes.map((stroke) => ({ op: "stroke-add", stroke }) as ReplayOp),
+          ...shapes.map((shape) => ({ op: "shape-add", shape }) as ReplayOp),
+          ...images.map((image) => ({ op: "image-set", image }) as ReplayOp),
+          ...(page.texts ?? []).map((text) => ({ op: "text-set", text }) as ReplayOp),
+        ];
+        for (const op of ops) await storage.appendEvent({ projectId, t: now, op, baseline: true });
+      }
     },
   },
 });

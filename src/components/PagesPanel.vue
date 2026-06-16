@@ -444,6 +444,26 @@ async function setNoPageSize() {
         </div>
       </div>
 
+      <!-- ── Session recording ── -->
+      <div class="section">
+        <div class="record-row">
+          <span class="section-title">Record session</span>
+          <button
+            class="rec-toggle"
+            role="switch"
+            :aria-checked="editor.recordReplay"
+            :class="{ on: editor.recordReplay }"
+            @click="editor.setRecordReplay(!editor.recordReplay)"
+          >
+            <span class="rec-knob"></span>
+          </button>
+        </div>
+        <p class="mode-hint">
+          Records every edit so replay shows exactly what happened — erasing, moving,
+          undo. Off, replay reconstructs the drawing from its final state.
+        </p>
+      </div>
+
     </aside>
   </div>
 </template>
@@ -837,6 +857,41 @@ async function setNoPageSize() {
 }
 .layout-btns {
   grid-template-columns: 1fr 1fr;
+}
+
+/* ── Session recording toggle ── */
+.record-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.rec-toggle {
+  flex: none;
+  width: 38px;
+  height: 22px;
+  padding: 2px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-2);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.rec-toggle.on {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.rec-knob {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s ease;
+}
+.rec-toggle.on .rec-knob {
+  transform: translateX(16px);
 }
 
 /* ── Background ── */
