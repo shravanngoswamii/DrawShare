@@ -963,10 +963,13 @@ function commitEditing() {
 
 function handleDown(s: InputSample) {
   if (replay.active) return;
-  // Laser is a pointing aid, not a tool: the press leaves a transient glow trail
-  // (handled by the mouse handlers below), never a committed stroke.
-  if (editor.presenterMode === "laser") return;
   if (panActive || pinchActive) return;
+  // Laser is a pointing aid, not a tool: the press starts a transient glow trail
+  // instead of a committed stroke.
+  if (editor.presenterMode === "laser") {
+    laserStart(s.x, s.y);
+    return;
+  }
   // Commit a focused field (e.g. the project name) when drawing starts; the
   // canvas swallows the focus change otherwise so its blur never fires.
   const active = document.activeElement as HTMLElement | null;
@@ -1115,6 +1118,10 @@ function handleDown(s: InputSample) {
 
 function handleMove(samples: InputSample[]) {
   if (panActive || pinchActive) return;
+  if (editor.presenterMode === "laser") {
+    laserExtend(samples);
+    return;
+  }
   if (imageResize) {
     const s = samples[samples.length - 1];
     const w = toWorld(s.x, s.y);
@@ -1289,6 +1296,10 @@ function appendStrictAwareFinalPoint(
 }
 
 async function handleUp(sample?: InputSample) {
+  if (editor.presenterMode === "laser") {
+    laserEnd();
+    return;
+  }
   const wasStrictBlocked = strictBlocked;
   strictBlocked = false;
   if (imageResize) {
@@ -1364,6 +1375,10 @@ async function handleUp(sample?: InputSample) {
 }
 
 async function handleCancel(sample?: InputSample) {
+  if (editor.presenterMode === "laser") {
+    laserEnd();
+    return;
+  }
   const wasStrictBlocked = strictBlocked;
   strictBlocked = false;
   if (imageResize) {
@@ -1462,51 +1477,50 @@ function broadcastPresenter(p: { x: number; y: number }) {
   });
 }
 
-function clearLaser() {
+// Laser is press-and-drag, so it rides the same pointer pipeline as drawing
+// (handleDown/Move/Up) — the input adapter calls preventDefault on pointerdown,
+// which suppresses synthetic mouse events, so a mouse-event approach never fires
+// mid-stroke. These helpers take stage-relative screen coords (InputSample.x/y).
+function laserStart(x: number, y: number) {
+  laserPressing = true;
+  presenterPos.value = { x, y };
+  laserTrail.value = [{ x, y }];
+  presenterThrottle = 0;
+  broadcastPresenter({ x, y });
+}
+
+function laserExtend(samples: InputSample[]) {
+  if (!laserPressing || samples.length === 0) return;
+  const next = [...laserTrail.value, ...samples.map((s) => ({ x: s.x, y: s.y }))];
+  while (next.length > LASER_MAX_POINTS) next.shift();
+  laserTrail.value = next;
+  const last = samples[samples.length - 1];
+  presenterPos.value = { x: last.x, y: last.y };
+  broadcastPresenter({ x: last.x, y: last.y });
+}
+
+function laserEnd() {
+  if (!laserPressing) return;
   laserPressing = false;
   laserTrail.value = [];
-}
-
-// Laser is press-and-drag: holding draws a glowing trail that follows the pointer
-// and is wiped on release; spotlight just follows the cursor while hovering.
-function onPresenterDown(e: MouseEvent) {
-  if (editor.presenterMode !== "laser") return;
-  const p = presenterPoint(e);
-  if (!p) return;
-  laserPressing = true;
-  presenterPos.value = p;
-  laserTrail.value = [p];
-  presenterThrottle = 0;
-  broadcastPresenter(p);
-}
-
-function onPresenterMove(e: MouseEvent) {
-  if (editor.presenterMode === "off") return;
-  const p = presenterPoint(e);
-  if (!p) return;
-  presenterPos.value = p;
-  if (editor.presenterMode === "laser") {
-    if (!laserPressing) return; // laser only shows / syncs while held
-    const next = [...laserTrail.value, p];
-    if (next.length > LASER_MAX_POINTS) next.shift();
-    laserTrail.value = next;
-  }
-  broadcastPresenter(p);
-}
-
-function onPresenterUp() {
-  if (editor.presenterMode !== "laser" || !laserPressing) return;
-  clearLaser();
   presenterPos.value = null;
   if (live.mode === "host") live.broadcast({ t: "presenter-off" });
 }
 
+// Spotlight follows the cursor on hover (no press needed), so it stays on mouse
+// events. Hover fires them fine; only the pressed-pointer path is suppressed.
+function onPresenterMove(e: MouseEvent) {
+  if (editor.presenterMode !== "spotlight") return;
+  const p = presenterPoint(e);
+  if (!p) return;
+  presenterPos.value = p;
+  broadcastPresenter(p);
+}
+
 function onPresenterLeave() {
+  if (editor.presenterMode !== "spotlight") return;
   presenterPos.value = null;
-  clearLaser();
-  if (live.mode === "host" && editor.presenterMode !== "off") {
-    live.broadcast({ t: "presenter-off" });
-  }
+  if (live.mode === "host") live.broadcast({ t: "presenter-off" });
 }
 
 // ── Navigation ─────────────────────────────────────────────────────────────
@@ -1825,7 +1839,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="stage" ref="wrap" :class="{ 'pan-cursor': panCursor, 'is-notebook': editor.notebookMode !== 'off' }" @mousedown="onPresenterDown" @mousemove="onPresenterMove" @mouseup="onPresenterUp" @mouseleave="onPresenterLeave">
+  <div class="stage" ref="wrap" :class="{ 'pan-cursor': panCursor, 'is-notebook': editor.notebookMode !== 'off' }" @mousemove="onPresenterMove" @mouseleave="onPresenterLeave">
     <div v-if="editor.notebookMode === 'off'" class="page-bg" :class="`bg-${props.page.background}`" :style="bgStyle" aria-hidden="true"></div>
     <canvas ref="baseEl" class="layer base"></canvas>
     <canvas ref="liveEl" class="layer live"></canvas>
