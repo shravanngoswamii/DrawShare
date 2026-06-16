@@ -882,6 +882,10 @@ watch(
   () => props.page.id,
   () => {
     commitEditing();
+    // Each page carries its own A4 guide origin, so fit the new page's sheet
+    // when flipping pages in notebook mode; otherwise just refresh the overlay.
+    if (editor.notebookMode !== "off") centerOnPage();
+    else updatePageOverlay();
     dirtyBase = true;
     schedule();
   },
@@ -921,7 +925,9 @@ onMounted(() => {
   liveRenderer.attach(liveEl.value);
   applyInkAdapter();
   fitCanvas();
-  updatePageOverlay();
+  // A project saved in notebook mode opens centered on its sheet.
+  if (editor.notebookMode !== "off") centerOnPage();
+  else updatePageOverlay();
   wrap.value.addEventListener("wheel", onWheel, { passive: false });
   wrap.value.addEventListener("pointerdown", onNavPointerDown, { capture: true, passive: false });
   wrap.value.addEventListener("pointermove", onNavPointerMove, { capture: true, passive: false });

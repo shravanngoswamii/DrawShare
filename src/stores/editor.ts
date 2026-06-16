@@ -1,7 +1,15 @@
 import { defineStore } from "pinia";
 import { storage } from "@/adapters/storage/indexedDB";
 import { newId } from "@/core/ids";
-import type { HistoryEntry, Page, Project, Stroke, TextItem, Tool } from "@/core/types";
+import type {
+  HistoryEntry,
+  NotebookMode,
+  Page,
+  Project,
+  Stroke,
+  TextItem,
+  Tool,
+} from "@/core/types";
 import { dlog } from "@/debug";
 import { useLiveStore } from "./live";
 import { DEFAULT_PAGE_SIZE, useProjectsStore } from "./projects";
@@ -23,9 +31,6 @@ interface EditorState {
   _areaEraseBefore: Stroke[] | null;
   camera: { x: number; y: number; zoom: number };
   isDrawing: boolean;
-  notebookMode: "off" | "notebook" | "strict";
-  pageOriginX: number;
-  pageOriginY: number;
 }
 
 export const useEditorStore = defineStore("editor", {
@@ -46,9 +51,6 @@ export const useEditorStore = defineStore("editor", {
     _areaEraseBefore: null,
     camera: { x: 0, y: 0, zoom: 1 },
     isDrawing: false,
-    notebookMode: "off",
-    pageOriginX: 0,
-    pageOriginY: 0,
   }),
   getters: {
     currentPage(state): Page | undefined {
@@ -56,6 +58,17 @@ export const useEditorStore = defineStore("editor", {
     },
     size(state): number {
       return state.toolSizes[state.tool];
+    },
+    // Canvas style is a project-wide setting (persisted on the project).
+    notebookMode(state): NotebookMode {
+      return state.project?.notebookMode ?? "off";
+    },
+    // A4 guide origin is per-page (persisted on the page); 0,0 when unset.
+    pageOriginX(): number {
+      return this.currentPage?.originX ?? 0;
+    },
+    pageOriginY(): number {
+      return this.currentPage?.originY ?? 0;
     },
   },
   actions: {
@@ -65,6 +78,12 @@ export const useEditorStore = defineStore("editor", {
       const project = await storage.getProject(projectId);
       if (!project) throw new Error("Project not found");
       this.project = project;
+      // Point the projects-list store at this same object. Otherwise it keeps a
+      // separate copy loaded at startup, and its background touch()/rename writes
+      // would clobber editor-side fields like notebookMode on the next save.
+      const projects = useProjectsStore();
+      const idx = projects.projects.findIndex((p) => p.id === projectId);
+      if (idx >= 0) projects.projects[idx] = project;
       this.pages = await storage.listPages(projectId);
       if (this.pages.length === 0) {
         const page = await this.createPageInternal(0);
@@ -110,6 +129,8 @@ export const useEditorStore = defineStore("editor", {
         width: DEFAULT_PAGE_SIZE.width,
         height: DEFAULT_PAGE_SIZE.height,
         background: "blank",
+        originX: 0,
+        originY: 0,
         createdAt: now,
         updatedAt: now,
       };
@@ -420,27 +441,39 @@ export const useEditorStore = defineStore("editor", {
     setDrawing(active: boolean) {
       this.isDrawing = active;
     },
-    setNotebookMode(mode: "off" | "notebook" | "strict") {
-      this.notebookMode = mode;
+    async setNotebookMode(mode: NotebookMode) {
+      if (!this.project || this.project.notebookMode === mode) return;
+      this.project.notebookMode = mode;
+      this.project.updatedAt = Date.now();
+      await storage.putProject({ ...this.project });
     },
+    // Live-update the current page's A4 guide position (in memory). Persisted on
+    // drag-end via translatePageContent, which writes the page with its new origin.
     setPageOrigin(x: number, y: number) {
-      this.pageOriginX = x;
-      this.pageOriginY = y;
+      const page = this.currentPage;
+      if (!page) return;
+      page.originX = x;
+      page.originY = y;
     },
     async translatePageContent(pageId: string, dx: number, dy: number) {
-      if (dx === 0 && dy === 0) return;
-      this.strokes = this.strokes.map((s) => {
-        if (s.pageId !== pageId) return s;
-        return { ...s, points: s.points.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy })) };
-      });
       const page = this.pages.find((p) => p.id === pageId);
-      if (page?.texts?.length) {
-        page.texts = page.texts.map((t) => ({ ...t, x: t.x + dx, y: t.y + dy }));
+      if (dx !== 0 || dy !== 0) {
+        this.strokes = this.strokes.map((s) => {
+          if (s.pageId !== pageId) return s;
+          return { ...s, points: s.points.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy })) };
+        });
+        if (page?.texts?.length) {
+          page.texts = page.texts.map((t) => ({ ...t, x: t.x + dx, y: t.y + dy }));
+        }
+        for (const s of this.strokes.filter((s) => s.pageId === pageId)) {
+          await storage.putStroke(s);
+        }
       }
-      for (const s of this.strokes.filter((s) => s.pageId === pageId)) {
-        await storage.putStroke(s);
+      // Persist the page even when nothing moved so the new guide origin sticks.
+      if (page) {
+        page.updatedAt = Date.now();
+        await storage.putPage({ ...page });
       }
-      if (page) await storage.putPage(page);
     },
   },
 });

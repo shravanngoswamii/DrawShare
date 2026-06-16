@@ -40,9 +40,15 @@ export interface Page {
   height: number;
   background: "blank" | "ruled" | "grid" | "dotted";
   texts?: TextItem[];
+  // Top-left corner of this page's A4 guide in world coords (notebook mode).
+  // Optional for backward compatibility; absent means the origin (0, 0).
+  originX?: number;
+  originY?: number;
   createdAt: number;
   updatedAt: number;
 }
+
+export type NotebookMode = "off" | "notebook" | "strict";
 
 export interface Project {
   id: ID;
@@ -50,6 +56,9 @@ export interface Project {
   createdAt: number;
   updatedAt: number;
   pageOrder: ID[];
+  // Canvas style for the whole project. Optional for backward compatibility;
+  // absent means "off" (infinite canvas).
+  notebookMode?: NotebookMode;
 }
 
 export type HistoryEntry =
