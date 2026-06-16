@@ -1,17 +1,21 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import HelpPanel from "@/components/HelpPanel.vue";
 import { useProjectBackup } from "@/composables/useProjectBackup";
 import { useTheme } from "@/composables/useTheme";
+import { useThumbnails } from "@/composables/useThumbnails";
 import { useEditorStore } from "@/stores/editor";
 import { useProjectsStore } from "@/stores/projects";
+
+const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 const projects = useProjectsStore();
 const editor = useEditorStore();
 const router = useRouter();
 const { isDark, toggleTheme } = useTheme();
 const { exportAll, exportProject, importAll } = useProjectBackup();
+const { projectThumbnails, renderProjectThumbnail } = useThumbnails();
 const importInput = ref<HTMLInputElement | null>(null);
 const importing = ref(false);
 const query = ref("");
@@ -19,6 +23,9 @@ const helpOpen = ref(false);
 const renamingId = ref<string | null>(null);
 const renameValue = ref("");
 const joinCode = ref("");
+const trashOpen = ref(false);
+const deletingIds = ref<string[]>([]);
+const restoringIds = ref<string[]>([]);
 
 async function handleImport(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0];
@@ -44,12 +51,30 @@ function joinSession() {
 
 onMounted(async () => {
   if (!projects.loaded) await projects.load();
+  // Always re-render so thumbnails reflect edits made since last visit.
+  for (const p of projects.projects) {
+    renderProjectThumbnail(p);
+  }
 });
+
+// Render thumbnails for projects that arrive after the initial load.
+watch(
+  () => projects.projects.map((p) => p.id).join(","),
+  (_, prev) => {
+    if (!prev) return;
+    const prevSet = new Set(prev.split(","));
+    for (const p of projects.projects) {
+      if (!prevSet.has(p.id) && !projectThumbnails.value[p.id]) {
+        renderProjectThumbnail(p);
+      }
+    }
+  },
+);
 
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase();
-  if (!q) return projects.projects;
-  return projects.projects.filter((p) => p.name.toLowerCase().includes(q));
+  if (!q) return projects.activeProjects;
+  return projects.activeProjects.filter((p) => p.name.toLowerCase().includes(q));
 });
 
 function createNew() {
@@ -74,9 +99,30 @@ async function commitRename() {
   renamingId.value = null;
 }
 
-async function remove(id: string, name: string) {
-  if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+async function remove(id: string) {
+  if (!deletingIds.value.includes(id)) {
+    deletingIds.value = [...deletingIds.value, id];
+  }
+  await new Promise<void>((resolve) => setTimeout(resolve, 860));
   await projects.remove(id);
+  deletingIds.value = deletingIds.value.filter((x) => x !== id);
+}
+
+async function restore(id: string) {
+  restoringIds.value = [...restoringIds.value, id];
+  await projects.restore(id);
+  await new Promise<void>((resolve) => setTimeout(resolve, 750));
+  restoringIds.value = restoringIds.value.filter((x) => x !== id);
+}
+
+async function permanentDelete(id: string, name: string) {
+  if (!confirm(`Permanently delete "${name}"? This cannot be undone.`)) return;
+  await projects.permanentDelete(id);
+}
+
+function daysRemaining(deletedAt: number): number {
+  const msRemaining = TRASH_RETENTION_MS - (Date.now() - deletedAt);
+  return Math.max(0, Math.ceil(msRemaining / (24 * 60 * 60 * 1000)));
 }
 
 function formatDate(ts: number): string {
@@ -181,13 +227,13 @@ function formatDate(ts: number): string {
       <div class="page-header">
         <h1 class="page-title">Projects</h1>
         <div class="muted page-count" v-if="projects.loaded">
-          {{ projects.projects.length }} total
+          {{ projects.activeProjects.length }} total
         </div>
       </div>
 
       <div v-if="!projects.loaded" class="state muted">Loading.</div>
 
-      <div v-else-if="filtered.length === 0 && !query" class="empty">
+      <div v-else-if="filtered.length === 0 && !query && projects.activeProjects.length === 0" class="empty">
         <div class="empty-icon" aria-hidden="true">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
@@ -207,9 +253,16 @@ function formatDate(ts: number): string {
       </div>
 
       <ul v-else class="grid">
-        <li v-for="p in filtered" :key="p.id" class="card">
+        <li v-for="p in filtered" :key="p.id" class="card" :class="{ 'card-deleting': deletingIds.includes(p.id), 'card-restoring': restoringIds.includes(p.id) }">
           <button class="card-thumb" @click="open(p.id)" aria-label="Open project">
-            <div class="thumb-grid"></div>
+            <img
+              v-if="projectThumbnails[p.id]"
+              :src="projectThumbnails[p.id]"
+              class="card-thumb-img"
+              :alt="`Preview of ${p.name}`"
+              aria-hidden="true"
+            />
+            <div v-else class="thumb-grid"></div>
           </button>
           <div class="card-body">
             <div class="card-title-row">
@@ -233,13 +286,47 @@ function formatDate(ts: number): string {
               <button class="btn btn-ghost btn-sm" @click="exportProject(p.id)" title="Export this project as JSON backup">
                 Export
               </button>
-              <button class="btn btn-ghost btn-sm card-danger" @click="remove(p.id, p.name)">
+              <button class="btn btn-ghost btn-sm card-danger" @click="remove(p.id)">
                 Delete
               </button>
             </div>
           </div>
         </li>
       </ul>
+
+      <!-- Trash section -->
+      <section v-if="projects.loaded && projects.trashedProjects.length > 0" class="trash-section">
+        <button class="trash-header" @click="trashOpen = !trashOpen" :aria-expanded="trashOpen">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+            <path d="M10 11v6M14 11v6" />
+            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+          </svg>
+          <span class="trash-title">Trash</span>
+          <span class="trash-count muted">{{ projects.trashedProjects.length }}</span>
+          <svg class="trash-chevron" :class="{ open: trashOpen }" width="14" height="14" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            aria-hidden="true">
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </button>
+        <ul v-if="trashOpen" class="trash-list">
+          <li v-for="p in projects.trashedProjects" :key="p.id" class="trash-item">
+            <div class="trash-item-info">
+              <span class="trash-item-name">{{ p.name }}</span>
+              <span class="trash-item-meta muted">
+                {{ daysRemaining(p.deletedAt!) }} day{{ daysRemaining(p.deletedAt!) === 1 ? '' : 's' }} remaining
+              </span>
+            </div>
+            <div class="trash-item-actions">
+              <button class="btn btn-ghost btn-sm" @click="restore(p.id)">Restore</button>
+              <button class="btn btn-ghost btn-sm card-danger" @click="permanentDelete(p.id, p.name)">Delete permanently</button>
+            </div>
+          </li>
+        </ul>
+      </section>
     </main>
     <button
       class="help-fab"
@@ -492,6 +579,15 @@ function formatDate(ts: number): string {
   background-size: 24px 24px;
 }
 
+.card-thumb-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 .card-body {
   padding: var(--space-3) var(--space-4) var(--space-4);
 }
@@ -547,6 +643,97 @@ function formatDate(ts: number): string {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border-width: 0;
+}
+
+.trash-section {
+  margin-top: var(--space-10);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.trash-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+}
+
+.trash-header:hover {
+  background: var(--color-surface-2);
+}
+
+.trash-title {
+  flex: 1;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.trash-count {
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.trash-chevron {
+  transition: transform 200ms ease;
+  flex-shrink: 0;
+}
+
+.trash-chevron.open {
+  transform: rotate(180deg);
+}
+
+.trash-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.trash-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.trash-item:last-child {
+  border-bottom: none;
+}
+
+.trash-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.trash-item-name {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trash-item-meta {
+  font-size: var(--text-xs);
+}
+
+.trash-item-actions {
+  display: flex;
+  gap: var(--space-1);
+  flex-shrink: 0;
 }
 
 /* Tablet */
@@ -642,5 +829,50 @@ function formatDate(ts: number): string {
   .grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* Delete: pop → crumple → accelerating fall into trash */
+@keyframes card-crumple {
+  /* 1. Pop up */
+  0%   { transform: translateY(0) scale(1) rotate(0deg);                                  opacity: 1;    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
+  11%  { transform: translateY(-30px) scale(1.10, 1.08) rotate(-2deg);                    opacity: 1;    }
+
+  /* 2. Crumple / newspaper squeeze */
+  22%  { transform: translateY(-20px) scaleX(1.14) scaleY(0.76) skewX(-8deg) rotate(4deg);  opacity: 1;    animation-timing-function: linear; }
+  33%  { transform: translateY(-10px) scaleX(0.86) scaleY(0.63) skewX(7deg)  rotate(-7deg); opacity: 1;    }
+  44%  { transform: translateY(-2px)  scaleX(0.78) scaleY(0.52) skewX(-5deg) rotate(9deg);  opacity: 0.9;  animation-timing-function: ease-in; }
+
+  /* 3. Accelerating fall into trash */
+  56%  { transform: translateY(60px)  scale(0.52, 0.38) rotate(-12deg);                  opacity: 0.72; }
+  68%  { transform: translateY(160px) scale(0.28, 0.20) rotate(16deg);                   opacity: 0.44; }
+  82%  { transform: translateY(320px) scale(0.12, 0.07) rotate(-22deg);                  opacity: 0.16; }
+  100% { transform: translateY(520px) scale(0.04, 0.02) rotate(28deg);                   opacity: 0;    }
+}
+
+.card-deleting {
+  animation: card-crumple 860ms ease-out forwards;
+  pointer-events: none;
+  transform-origin: center 60%;
+  position: relative;
+  z-index: 10;
+}
+
+/* Restore: spring up from where the trash bin sits */
+@keyframes card-restore {
+  0%   { transform: translateY(120px) scale(0.06, 0.04) rotate(-20deg); opacity: 0;    }
+  18%  { transform: translateY(60px)  scale(0.22, 0.18) rotate(-10deg); opacity: 0.35; }
+  40%  { transform: translateY(-22px) scale(1.10, 1.10) rotate(4deg);   opacity: 0.85; animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1); }
+  56%  { transform: translateY(9px)   scale(0.97, 0.97) rotate(-2deg);  opacity: 0.95; }
+  70%  { transform: translateY(-6px)  scale(1.03, 1.03) rotate(1deg);   opacity: 1;    }
+  82%  { transform: translateY(3px)   scale(0.99, 0.99) rotate(-0.5deg); opacity: 1;   }
+  91%  { transform: translateY(-2px)  scale(1.01, 1.01) rotate(0.2deg); opacity: 1;    }
+  100% { transform: translateY(0)     scale(1)          rotate(0deg);   opacity: 1;    }
+}
+
+.card-restoring {
+  animation: card-restore 750ms ease-out forwards;
+  transform-origin: center bottom;
+  position: relative;
+  z-index: 10;
 }
 </style>

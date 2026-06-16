@@ -5,6 +5,7 @@ import type {
   HistoryEntry,
   NotebookMode,
   Page,
+  PenType,
   Project,
   Stroke,
   TextItem,
@@ -20,6 +21,7 @@ interface EditorState {
   currentPageId: string | undefined;
   strokes: Stroke[];
   tool: Tool;
+  penType: PenType;
   color: string;
   toolSizes: Record<Tool, number>;
   opacity: number;
@@ -40,6 +42,7 @@ export const useEditorStore = defineStore("editor", {
     currentPageId: undefined,
     strokes: [],
     tool: "pen",
+    penType: "ballpoint",
     color: "#0f172a",
     toolSizes: { pen: 4, highlighter: 20, eraser: 24, text: 4 },
     opacity: 1,
@@ -345,6 +348,9 @@ export const useEditorStore = defineStore("editor", {
     },
     setTool(t: Tool) {
       this.tool = t;
+    },
+    setPenType(pt: PenType) {
+      this.penType = pt;
     },
     setColor(c: string) {
       this.color = c;

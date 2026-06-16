@@ -11,7 +11,14 @@ import { makeSessionCode } from "@/core/sync";
 import type { Page, Project, Stroke } from "@/core/types";
 
 type Mode = "off" | "host" | "viewer";
-type Status = "idle" | "connecting" | "connected" | "waiting" | "error" | "disconnected";
+type Status =
+  | "idle"
+  | "connecting"
+  | "connected"
+  | "waiting"
+  | "error"
+  | "disconnected"
+  | "reconnecting";
 
 interface LiveState {
   mode: Mode;
@@ -19,6 +26,8 @@ interface LiveState {
   code: string;
   viewerCount: number;
   error: string;
+  disconnectReason: string;
+  reconnectAttempt: number;
   relayAvailable: boolean;
   relayChecked: boolean;
   hostViewport: { width: number; height: number };
@@ -36,6 +45,8 @@ interface LiveState {
 
 let session: WebRTCSession | undefined;
 let activePollCode: string | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+const MAX_RECONNECT_ATTEMPTS = 3;
 
 export const useLiveStore = defineStore("live", {
   state: (): LiveState => ({
@@ -44,6 +55,8 @@ export const useLiveStore = defineStore("live", {
     code: "",
     viewerCount: 0,
     error: "",
+    disconnectReason: "",
+    reconnectAttempt: 0,
     relayAvailable: false,
     relayChecked: false,
     hostViewport: { width: 1920, height: 1080 },
@@ -142,6 +155,10 @@ export const useLiveStore = defineStore("live", {
 
     stop() {
       activePollCode = null;
+      if (reconnectTimer !== undefined) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = undefined;
+      }
       session?.close();
       session = undefined;
       this.mode = "off";
@@ -149,6 +166,8 @@ export const useLiveStore = defineStore("live", {
       this.code = "";
       this.viewerCount = 0;
       this.error = "";
+      this.disconnectReason = "";
+      this.reconnectAttempt = 0;
       this.relayAvailable = false;
       this.relayChecked = false;
       this.viewerProject = undefined;
@@ -197,7 +216,15 @@ export const useLiveStore = defineStore("live", {
     },
 
     async join(code: string, offerToken: string) {
-      if (this.mode !== "off") this.stop();
+      // If this is a fresh join (not an auto-reconnect), reset everything.
+      const isReconnect = this.mode === "viewer" && this.status === "reconnecting";
+      if (!isReconnect) {
+        if (this.mode !== "off") this.stop();
+        this.reconnectAttempt = 0;
+        this.disconnectReason = "";
+      }
+      // Close any existing session before creating a new one.
+      session?.close();
       const activeSession = new WebRTCSession();
       session = activeSession;
       this.mode = "viewer";
@@ -225,14 +252,28 @@ export const useLiveStore = defineStore("live", {
           onConnected: () => {
             if (session !== activeSession) return;
             this.status = "connected";
+            this.reconnectAttempt = 0;
+            this.disconnectReason = "";
           },
           onMessage: (msg) => {
             if (session !== activeSession) return;
             this.applyMessage(msg);
           },
-          onDisconnect: () => {
+          onDisconnect: (reason?: string) => {
             if (session !== activeSession) return;
-            this.status = "disconnected";
+            this.disconnectReason = reason ?? "Connection lost";
+            if (this.reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
+              this.status = "reconnecting";
+              if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
+              reconnectTimer = setTimeout(() => {
+                reconnectTimer = undefined;
+                if (this.mode !== "viewer" || this.status !== "reconnecting") return;
+                this.reconnectAttempt += 1;
+                void this.join(this.code, "");
+              }, 2_000);
+            } else {
+              this.status = "disconnected";
+            }
           },
           onError: (err) => {
             if (session !== activeSession) return;

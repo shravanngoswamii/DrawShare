@@ -2,6 +2,8 @@ export type ID = string;
 
 export type Tool = "pen" | "highlighter" | "eraser" | "text";
 
+export type PenType = "ballpoint" | "brush" | "marker";
+
 export interface StrokePoint {
   x: number;
   y: number;
@@ -13,6 +15,7 @@ export interface Stroke {
   id: ID;
   pageId: ID;
   tool: Tool;
+  penType?: PenType;
   color: string;
   size: number;
   opacity: number;
@@ -59,6 +62,7 @@ export interface Project {
   // Canvas style for the whole project. Optional for backward compatibility;
   // absent means "off" (infinite canvas).
   notebookMode?: NotebookMode;
+  deletedAt?: number;
 }
 
 export type HistoryEntry =

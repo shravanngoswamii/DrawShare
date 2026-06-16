@@ -26,6 +26,8 @@ const statusLabel = computed(() => {
       return "Waiting for host.";
     case "connected":
       return "Live";
+    case "reconnecting":
+      return `Reconnecting… (${live.reconnectAttempt + 1}/${3})`;
     case "disconnected":
       return "Disconnected";
     case "error":
@@ -37,7 +39,7 @@ const statusLabel = computed(() => {
 
 const dotClass = computed(() => {
   if (live.status === "connected") return "dot dot-live";
-  if (live.status === "connecting") return "dot dot-pending";
+  if (live.status === "connecting" || live.status === "reconnecting") return "dot dot-pending";
   return "dot dot-off";
 });
 
@@ -136,10 +138,24 @@ async function copyResponse() {
             <button class="btn" @click="leave">Back</button>
           </div>
         </div>
+        <div v-else-if="live.status === 'disconnected'" class="error-state">
+          <div class="state-title">Disconnected</div>
+          <div class="muted state-msg">{{ live.disconnectReason || "The connection was lost." }}</div>
+          <div class="state-actions">
+            <button class="btn btn-primary" @click="reconnect">Reconnect</button>
+            <button class="btn" @click="leave">Back</button>
+          </div>
+        </div>
         <div v-else class="connecting">
           <div class="connecting-spinner" aria-hidden="true"></div>
           <div class="muted">
-            {{ live.status === "connecting" ? "Connecting to " + props.code + "…" : "Fetching session…" }}
+            <template v-if="live.status === 'reconnecting'">
+              Reconnecting… (attempt {{ live.reconnectAttempt + 1 }} of 3)
+              <div v-if="live.disconnectReason" class="reconnect-reason">{{ live.disconnectReason }}</div>
+            </template>
+            <template v-else>
+              {{ live.status === "connecting" ? "Connecting to " + props.code + "…" : "Fetching session…" }}
+            </template>
           </div>
           <div class="field response-field" v-if="live.viewerResponseToken">
             <label class="label">Viewer response</label>
@@ -317,6 +333,13 @@ async function copyResponse() {
   font-size: var(--text-xs);
   text-align: center;
   max-width: 320px;
+}
+
+.reconnect-reason {
+  font-size: var(--text-xs);
+  color: var(--color-text-subtle);
+  margin-top: 4px;
+  text-align: center;
 }
 
 .connecting-spinner {

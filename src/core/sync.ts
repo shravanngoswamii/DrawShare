@@ -53,7 +53,7 @@ export interface SessionHostHandlers {
 export interface SessionViewerHandlers {
   onConnected(): void;
   onMessage(msg: SyncMessage): void;
-  onDisconnect(): void;
+  onDisconnect(reason?: string): void;
   onError(err: Error): void;
 }
 

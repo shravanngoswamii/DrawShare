@@ -1,6 +1,6 @@
 import { getStroke } from "perfect-freehand";
 import type { Camera, Renderer } from "@/core/ports";
-import type { Stroke, StrokePoint, TextItem } from "@/core/types";
+import type { PenType, Stroke, StrokePoint, TextItem } from "@/core/types";
 
 type DrawCtx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -13,6 +13,40 @@ const PEN_OPTIONS = {
   simulatePressure: false,
   start: { taper: 0, cap: true },
   end: { taper: 20, cap: true },
+};
+
+// Per-type overrides on top of PEN_OPTIONS.
+const PEN_TYPE_OPTIONS: Record<PenType, Partial<typeof PEN_OPTIONS>> = {
+  // Ballpoint: existing well-tuned defaults, unchanged.
+  ballpoint: {},
+  // Brush: simulate pressure from speed so the stroke visibly thins on fast
+  // movement even without a pressure-sensitive stylus. High thinning and a
+  // long end taper give a dramatic calligraphic feel.
+  brush: {
+    thinning: 0.92,
+    smoothing: 0.65,
+    streamline: 0.45,
+    simulatePressure: true,
+    start: { taper: 10, cap: true },
+    end: { taper: 80, cap: true },
+  },
+  // Marker: near-zero thinning and no taper produce a thick, completely flat
+  // stroke regardless of speed or pressure.
+  marker: {
+    thinning: 0.02,
+    smoothing: 0.4,
+    streamline: 0.25,
+    start: { taper: 0, cap: true },
+    end: { taper: 0, cap: true },
+  },
+};
+
+// Effective stroke size multipliers — makes each type immediately distinct
+// even at the same size-slider value.
+const PEN_TYPE_SIZE_SCALE: Record<PenType, number> = {
+  ballpoint: 1.0,
+  brush: 1.4, // slightly wider for a full calligraphic range
+  marker: 3.0, // bold and clearly chisel-like
 };
 
 // perfect-freehand's smoothing window is ~12 points. Points before that
@@ -95,6 +129,7 @@ export class Canvas2DRenderer implements Renderer {
       stroke.opacity,
       stroke.size,
       true,
+      stroke.penType,
     );
   }
 
@@ -154,6 +189,7 @@ export class Canvas2DRenderer implements Renderer {
       stroke.opacity,
       stroke.size,
       false,
+      stroke.penType,
     );
   }
 
@@ -185,6 +221,7 @@ export class Canvas2DRenderer implements Renderer {
       stroke.opacity,
       stroke.size,
       false,
+      stroke.penType,
     );
     this.liveCacheCount = upToCount;
   }
@@ -196,11 +233,19 @@ export class Canvas2DRenderer implements Renderer {
     opacity: number,
     size: number,
     last: boolean,
+    penType?: PenType,
   ): void {
     if (points.length === 0) return;
 
+    const typeOverride = penType ? PEN_TYPE_OPTIONS[penType] : {};
+    const sizeScale = penType ? PEN_TYPE_SIZE_SCALE[penType] : 1;
     const inputs = points.map((p) => [p.x, p.y, p.p] as [number, number, number]);
-    const path = getStroke(inputs, { ...PEN_OPTIONS, size, last });
+    const path = getStroke(inputs, {
+      ...PEN_OPTIONS,
+      ...typeOverride,
+      size: size * sizeScale,
+      last,
+    });
     if (path.length === 0) return;
 
     ctx.fillStyle = color;

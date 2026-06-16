@@ -537,6 +537,7 @@ function handleDown(s: InputSample) {
     id: newId(),
     pageId: props.page.id,
     tool: editor.tool,
+    ...(editor.tool === "pen" ? { penType: editor.penType } : {}),
     color: editor.color,
     size: editor.size,
     opacity: editor.tool === "highlighter" ? 0.35 : editor.opacity,
