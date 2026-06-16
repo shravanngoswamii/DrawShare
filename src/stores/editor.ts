@@ -569,6 +569,39 @@ export const useEditorStore = defineStore("editor", {
       if (this.project) await useProjectsStore().touch(this.project.id);
       return prev;
     },
+    // Resize (and reposition, since corner-drag anchors the opposite corner).
+    // Like moveImage: persisted, clears redo, not pushed to undo history.
+    async resizeImage(imageId: string, x: number, y: number, width: number, height: number) {
+      const image = this.images.find((i) => i.id === imageId);
+      if (!image) return;
+      image.x = x;
+      image.y = y;
+      image.width = width;
+      image.height = height;
+      this.redoStack = [];
+      await storage.putImage({ ...image });
+      if (this.project) await useProjectsStore().touch(this.project.id);
+    },
+    // Stacking order vs the drawing. Front = above strokes/shapes/text and above
+    // other front images; back = below the drawing and below other back images.
+    async bringImageToFront(imageId: string) {
+      const image = this.images.find((i) => i.id === imageId);
+      if (!image) return;
+      const maxZ = this.images.reduce((m, i) => Math.max(m, i.z ?? 0), 0);
+      image.z = maxZ + 1;
+      this.redoStack = [];
+      await storage.putImage({ ...image });
+      if (this.project) await useProjectsStore().touch(this.project.id);
+    },
+    async sendImageToBack(imageId: string) {
+      const image = this.images.find((i) => i.id === imageId);
+      if (!image) return;
+      const minZ = this.images.reduce((m, i) => Math.min(m, i.z ?? 0), 0);
+      image.z = minZ - 1;
+      this.redoStack = [];
+      await storage.putImage({ ...image });
+      if (this.project) await useProjectsStore().touch(this.project.id);
+    },
     async clearPage() {
       if (!this.currentPageId) return;
       await storage.deleteStrokesForPage(this.currentPageId);

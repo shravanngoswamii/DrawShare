@@ -94,6 +94,10 @@ export interface ImageItem {
   width: number;
   height: number;
   src: string; // data URL
+  // Stacking order vs the drawing. <= 0 (or absent) renders behind strokes/
+  // shapes/text; > 0 renders in front. Within a band, sorted by z then createdAt.
+  // "Send to back" pushes it more negative; "Bring to front" more positive.
+  z?: number;
   createdAt: number;
 }
 

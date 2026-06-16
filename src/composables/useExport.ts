@@ -1,4 +1,5 @@
 import { getStroke } from "perfect-freehand";
+import { splitImageLayers } from "@/core/images";
 import type { ImageItem, Page, Shape, Stroke, TextItem } from "@/core/types";
 
 const PADDING = 32;
@@ -249,11 +250,13 @@ export async function exportPageAsPng(
 
   ctx.translate(offsetX, offsetY);
   drawBackground(ctx, page);
-  // Images are drawn below strokes/text, matching canvas layer order
-  for (const img of pageImages) await drawImageToCtx(ctx, img);
+  // Images split into behind/front bands, matching canvas layer order.
+  const { behind, front } = splitImageLayers(pageImages);
+  for (const img of behind) await drawImageToCtx(ctx, img);
   for (const stroke of pageStrokes) drawStrokeToCtx(ctx, stroke);
   for (const shape of pageShapes) drawShapeToCtx(ctx, shape);
   for (const item of texts) drawTextToCtx(ctx, item);
+  for (const img of front) await drawImageToCtx(ctx, img);
 
   const blob = await canvas.convertToBlob({ type: "image/png" });
   const url = URL.createObjectURL(blob);
@@ -295,11 +298,13 @@ async function renderSheet(
   ctx.rect(0, 0, A4_W, A4_H);
   ctx.clip();
   drawBackground(ctx, { ...page, width: A4_W, height: A4_H });
-  // Images sit below strokes/shapes/text, matching the canvas layer order.
-  for (const img of images) if (img.pageId === page.id) await drawImageToCtx(ctx, img);
+  // Images split into behind/front bands, matching the canvas layer order.
+  const { behind, front } = splitImageLayers(images.filter((i) => i.pageId === page.id));
+  for (const img of behind) await drawImageToCtx(ctx, img);
   for (const s of strokes) if (s.pageId === page.id) drawStrokeToCtx(ctx, s);
   for (const sh of shapes) if (sh.pageId === page.id) drawShapeToCtx(ctx, sh);
   for (const t of page.texts ?? []) drawTextToCtx(ctx, t);
+  for (const img of front) await drawImageToCtx(ctx, img);
   ctx.restore();
   return blobToDataUrl(await canvas.convertToBlob({ type: "image/png" }));
 }

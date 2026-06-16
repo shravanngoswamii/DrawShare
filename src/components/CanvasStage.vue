@@ -5,6 +5,7 @@ import { Canvas2DRenderer } from "@/adapters/render/canvas2d";
 import { drawStack, resolveSheetColors, type SheetColors } from "@/composables/useStackRenderer";
 import { useTheme } from "@/composables/useTheme";
 import { newId } from "@/core/ids";
+import { splitImageLayers } from "@/core/images";
 import { adaptInk } from "@/core/ink";
 import {
   nearestSheetIndex,
@@ -34,6 +35,8 @@ const SHAPE_TOOLS = new Set<Tool>(["rect", "ellipse", "line", "arrow"]);
 function isShapeTool(t: Tool): t is ShapeType {
   return SHAPE_TOOLS.has(t);
 }
+
+type ResizeCorner = "nw" | "ne" | "sw" | "se";
 
 const props = defineProps<{ page: Page }>();
 const editor = useEditorStore();
@@ -94,28 +97,79 @@ const editing = ref<{
 } | null>(null);
 const editStyle = ref<Record<string, string>>({});
 
-// Image selection ring (screen coords, updated by updateImageSelStyle)
+// Image selection ring + floating action bar (screen coords, kept in sync by
+// updateImageSelStyle). The ring carries resize handles; the bar carries the
+// stacking + delete actions.
 const imageSelStyle = ref<Record<string, string> | null>(null);
+const imageBarStyle = ref<Record<string, string> | null>(null);
+
+// Hit radius (screen px) for grabbing a resize handle near an image corner.
+const RESIZE_HANDLE_PX = 14;
 
 function updateImageSelStyle() {
   const id = selectedImageId.value;
-  if (!id) {
-    imageSelStyle.value = null;
-    return;
-  }
-  const img = editor.images.find((i) => i.id === id);
+  const img = id ? editor.images.find((i) => i.id === id) : undefined;
   if (!img) {
     imageSelStyle.value = null;
+    imageBarStyle.value = null;
     return;
   }
   // Shift page-local coords to world by the sheet origin (0,0 in Free mode).
   const off = pageOffset(img.pageId);
+  const left = (img.x + off.x - cam.x) * cam.zoom;
+  const top = (img.y + off.y - cam.y) * cam.zoom;
   imageSelStyle.value = {
-    left: `${(img.x + off.x - cam.x) * cam.zoom}px`,
-    top: `${(img.y + off.y - cam.y) * cam.zoom}px`,
+    left: `${left}px`,
+    top: `${top}px`,
     width: `${img.width * cam.zoom}px`,
     height: `${img.height * cam.zoom}px`,
   };
+  // Action bar floats just above the top-left of the selection.
+  imageBarStyle.value = { left: `${left}px`, top: `${top - 40}px` };
+}
+
+// If the world point sits on a resize handle of the given image, return which
+// corner ("nw"/"ne"/"sw"/"se"), else null. Handles extend a few screen px around
+// each corner regardless of zoom.
+function imageResizeCornerAt(img: ImageItem, wx: number, wy: number): ResizeCorner | null {
+  const off = pageOffset(img.pageId);
+  const x0 = img.x + off.x;
+  const y0 = img.y + off.y;
+  const x1 = x0 + img.width;
+  const y1 = y0 + img.height;
+  const r = RESIZE_HANDLE_PX / cam.zoom;
+  const near = (px: number, py: number) => Math.abs(wx - px) <= r && Math.abs(wy - py) <= r;
+  if (near(x0, y0)) return "nw";
+  if (near(x1, y0)) return "ne";
+  if (near(x0, y1)) return "sw";
+  if (near(x1, y1)) return "se";
+  return null;
+}
+
+async function bringSelectedImageToFront() {
+  const id = selectedImageId.value;
+  if (!id) return;
+  await editor.bringImageToFront(id);
+  dirtyBase = true;
+  schedule();
+}
+
+async function sendSelectedImageToBack() {
+  const id = selectedImageId.value;
+  if (!id) return;
+  await editor.sendImageToBack(id);
+  dirtyBase = true;
+  schedule();
+}
+
+function deleteSelectedImage() {
+  const id = selectedImageId.value;
+  if (!id) return;
+  selectedImageId.value = null;
+  baseRenderer.releaseImage(id);
+  editor.deleteImage(id);
+  dirtyBase = true;
+  schedule();
 }
 
 // Eraser cursor overlay (screen coords relative to the stage)
@@ -140,6 +194,16 @@ let imageDrag: {
   origX: number;
   origY: number;
   moved: boolean;
+} | null = null;
+// In-progress corner resize of the selected image. orig* is the page-local rect at
+// grab time; the opposite corner stays anchored and aspect ratio is preserved.
+let imageResize: {
+  item: ImageItem;
+  corner: ResizeCorner;
+  origX: number;
+  origY: number;
+  origW: number;
+  origH: number;
 } | null = null;
 const selectedImageId = ref<string | null>(null);
 let predictedPoints: StrokePoint[] = [];
@@ -532,16 +596,17 @@ function render() {
       );
     } else {
       baseRenderer.beginFrame();
-      // Images sit below strokes/shapes/text.
-      for (const img of editor.images) {
-        if (img.pageId === props.page.id) baseRenderer.drawImageItem(img);
-      }
+      // Images split into a behind band (below the drawing) and a front band (above).
+      const pageImgs = editor.images.filter((img) => img.pageId === props.page.id);
+      const { behind, front } = splitImageLayers(pageImgs);
+      for (const img of behind) baseRenderer.drawImageItem(img);
       for (const s of editor.strokes) baseRenderer.drawStroke(s);
       for (const sh of editor.shapes) baseRenderer.drawShape(sh);
       for (const t of editor.currentPage?.texts ?? []) {
         if (editing.value?.id === t.id) continue;
         baseRenderer.drawText(t);
       }
+      for (const img of front) baseRenderer.drawImageItem(img);
       baseRenderer.endFrame();
     }
     dlog(`render base strokes=${editor.strokes.length} cur=${currentStroke ? "y" : "n"}`);
@@ -874,6 +939,22 @@ function handleDown(s: InputSample) {
   }
   if (editor.tool === "text") {
     if (editing.value) commitEditing();
+    // Grabbing a corner handle of the already-selected image starts a resize.
+    if (selectedImageId.value) {
+      const sel = editor.images.find((i) => i.id === selectedImageId.value);
+      const corner = sel ? imageResizeCornerAt(sel, w.x, w.y) : null;
+      if (sel && corner) {
+        imageResize = {
+          item: sel,
+          corner,
+          origX: sel.x,
+          origY: sel.y,
+          origW: sel.width,
+          origH: sel.height,
+        };
+        return;
+      }
+    }
     const page = editor.pages.find((p) => p.id === targetPageId) ?? props.page;
     const existing = (page.texts ?? []).find((t) => hitText(t, w.x, w.y));
     if (existing) {
@@ -963,6 +1044,34 @@ function handleDown(s: InputSample) {
 
 function handleMove(samples: InputSample[]) {
   if (panActive || pinchActive) return;
+  if (imageResize) {
+    const s = samples[samples.length - 1];
+    const w = toWorld(s.x, s.y);
+    const off = pageOffset(imageResize.item.pageId);
+    // Pointer in page-local space; resize keeps aspect, anchoring the opposite corner.
+    const plx = w.x - off.x;
+    const ply = w.y - off.y;
+    const { corner, origX, origY, origW, origH } = imageResize;
+    const aspect = origW / origH;
+    const anchorX = corner === "ne" || corner === "se" ? origX : origX + origW;
+    const anchorY = corner === "sw" || corner === "se" ? origY : origY + origH;
+    const MIN = 16;
+    let newW = Math.max(MIN, Math.abs(plx - anchorX));
+    let newH = Math.max(MIN, Math.abs(ply - anchorY));
+    // Lock aspect to the axis dragged furthest, so the image never distorts.
+    if (newW / newH > aspect) newH = newW / aspect;
+    else newW = newH * aspect;
+    const right = corner === "ne" || corner === "se";
+    const bottom = corner === "sw" || corner === "se";
+    imageResize.item.x = right ? anchorX : anchorX - newW;
+    imageResize.item.y = bottom ? anchorY : anchorY - newH;
+    imageResize.item.width = newW;
+    imageResize.item.height = newH;
+    updateImageSelStyle();
+    dirtyBase = true;
+    schedule();
+    return;
+  }
   if (imageDrag) {
     const s = samples[samples.length - 1];
     const w = toWorld(s.x, s.y);
@@ -1111,6 +1220,14 @@ function appendStrictAwareFinalPoint(
 async function handleUp(sample?: InputSample) {
   const wasStrictBlocked = strictBlocked;
   strictBlocked = false;
+  if (imageResize) {
+    const r = imageResize;
+    imageResize = null;
+    await editor.resizeImage(r.item.id, r.item.x, r.item.y, r.item.width, r.item.height);
+    dirtyBase = true;
+    schedule();
+    return;
+  }
   if (imageDrag) {
     const d = imageDrag;
     imageDrag = null;
@@ -1178,6 +1295,18 @@ async function handleUp(sample?: InputSample) {
 async function handleCancel(sample?: InputSample) {
   const wasStrictBlocked = strictBlocked;
   strictBlocked = false;
+  if (imageResize) {
+    // Revert to the rect captured at grab time.
+    imageResize.item.x = imageResize.origX;
+    imageResize.item.y = imageResize.origY;
+    imageResize.item.width = imageResize.origW;
+    imageResize.item.height = imageResize.origH;
+    imageResize = null;
+    updateImageSelStyle();
+    dirtyBase = true;
+    schedule();
+    return;
+  }
   if (imageDrag) {
     if (imageDrag.moved) {
       // Revert to original position
@@ -1567,7 +1696,19 @@ onBeforeUnmount(() => {
       class="image-sel"
       :style="imageSelStyle"
       aria-hidden="true"
-    ></div>
+    >
+      <span class="image-handle nw"></span>
+      <span class="image-handle ne"></span>
+      <span class="image-handle sw"></span>
+      <span class="image-handle se"></span>
+    </div>
+    <div v-if="imageBarStyle" class="image-bar" :style="imageBarStyle" @pointerdown.stop>
+      <button type="button" title="Send to back" @click="sendSelectedImageToBack">Back</button>
+      <button type="button" title="Bring to front" @click="bringSelectedImageToFront">Front</button>
+      <button type="button" class="danger" title="Delete image" @click="deleteSelectedImage">
+        Delete
+      </button>
+    </div>
     <div
       v-if="eraseCursor"
       class="eraser-cursor"
@@ -1665,6 +1806,47 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.25);
   pointer-events: none;
 }
+
+/* Corner resize handles — visual only; the grab is hit-tested on the canvas. */
+.image-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  border: 1.5px solid var(--color-accent, #3b82f6);
+  border-radius: 2px;
+}
+.image-handle.nw { left: -6px; top: -6px; cursor: nwse-resize; }
+.image-handle.ne { right: -6px; top: -6px; cursor: nesw-resize; }
+.image-handle.sw { left: -6px; bottom: -6px; cursor: nesw-resize; }
+.image-handle.se { right: -6px; bottom: -6px; cursor: nwse-resize; }
+
+/* Floating action bar above a selected image. */
+.image-bar {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  transform: translateY(-2px);
+  background: var(--color-surface, #1e293b);
+  border: 1px solid var(--color-border, rgba(148, 163, 184, 0.3));
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.28);
+}
+.image-bar button {
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text, #e2e8f0);
+  cursor: pointer;
+}
+.image-bar button:hover { background: color-mix(in srgb, var(--color-accent) 22%, transparent); }
+.image-bar button.danger:hover { background: color-mix(in srgb, #ef4444 24%, transparent); }
 
 /* Notebook sheets: a soft drop shadow lifts each A4 page off the desk backdrop. */
 .page-frame {

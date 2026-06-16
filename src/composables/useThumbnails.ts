@@ -1,6 +1,7 @@
 import { getStroke } from "perfect-freehand";
 import { ref } from "vue";
 import { storage } from "@/adapters/storage/indexedDB";
+import { splitImageLayers } from "@/core/images";
 import type { ImageItem, Page, Project, Shape, Stroke, TextItem } from "@/core/types";
 
 // Page panel thumbnails: A4 ratio, contain mode
@@ -186,8 +187,9 @@ async function renderToCanvas(
   ctx.translate(offsetX, offsetY);
   ctx.scale(scale, scale);
 
-  // Images sit below strokes/shapes/text, matching the canvas + export layer order.
-  for (const img of pageImages) await drawImageToCtx(ctx, img);
+  // Images split into behind/front bands, matching the canvas + export layer order.
+  const { behind: behindImgs, front: frontImgs } = splitImageLayers(pageImages);
+  for (const img of behindImgs) await drawImageToCtx(ctx, img);
 
   for (const stroke of pageStrokes) {
     if (stroke.points.length === 0) continue;
@@ -224,6 +226,8 @@ async function renderToCanvas(
     }
     ctx.restore();
   }
+
+  for (const img of frontImgs) await drawImageToCtx(ctx, img);
 
   ctx.restore();
 
