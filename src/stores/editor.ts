@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { storage } from "@/adapters/storage/indexedDB";
 import { newId } from "@/core/ids";
+import { shapeSegments } from "@/core/shapes";
 import type {
   HistoryEntry,
   NotebookLayout,
@@ -18,54 +19,50 @@ import { dlog } from "@/debug";
 import { useLiveStore } from "./live";
 import { DEFAULT_PAGE_SIZE, useProjectsStore } from "./projects";
 
-// Trace a shape's outline as an ink polyline so the area eraser can cut just the
-// swept portion (a vector shape can't be partially erased while staying a shape).
-// rect → 4 edges; line → segment; arrow → segment + the two head strokes;
-// ellipse → sampled polygon. Same colour/size/opacity, rendered as a pen stroke.
-function shapeToStroke(shape: Shape): Stroke {
-  const { x1, y1, x2, y2 } = shape;
-  const pts: Array<{ x: number; y: number }> = [];
-  if (shape.type === "line") {
-    pts.push({ x: x1, y: y1 }, { x: x2, y: y2 });
-  } else if (shape.type === "arrow") {
-    const angle = Math.atan2(y2 - y1, x2 - x1);
-    const headLen = Math.max(10, shape.size * 5);
-    const hl = {
-      x: x2 - headLen * Math.cos(angle - Math.PI / 6),
-      y: y2 - headLen * Math.sin(angle - Math.PI / 6),
+// Sub-interval [t1, t2] of segment A→B that lies inside the eraser — a circle of
+// the given radius, or (square) a box of half-size radius — centred at (wx, wy);
+// null if the segment misses it. Used to clip both strokes and shape outlines.
+function eraserHitInterval(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  wx: number,
+  wy: number,
+  radius: number,
+  square: boolean,
+): [number, number] | null {
+  const dx = bx - ax;
+  const dy = by - ay;
+  if (square) {
+    const slab = (p0: number, d: number, lo: number, hi: number): [number, number] | null => {
+      if (Math.abs(d) < 1e-9) return p0 >= lo && p0 <= hi ? [0, 1] : null;
+      let t0 = (lo - p0) / d;
+      let t1 = (hi - p0) / d;
+      if (t0 > t1) [t0, t1] = [t1, t0];
+      return [t0, t1];
     };
-    const hr = {
-      x: x2 - headLen * Math.cos(angle + Math.PI / 6),
-      y: y2 - headLen * Math.sin(angle + Math.PI / 6),
-    };
-    pts.push({ x: x1, y: y1 }, { x: x2, y: y2 }, hl, { x: x2, y: y2 }, hr);
-  } else if (shape.type === "rect") {
-    const a = Math.min(x1, x2);
-    const b = Math.max(x1, x2);
-    const c = Math.min(y1, y2);
-    const d = Math.max(y1, y2);
-    pts.push({ x: a, y: c }, { x: b, y: c }, { x: b, y: d }, { x: a, y: d }, { x: a, y: c });
-  } else {
-    const cx = (x1 + x2) / 2;
-    const cy = (y1 + y2) / 2;
-    const rx = Math.abs(x2 - x1) / 2;
-    const ry = Math.abs(y2 - y1) / 2;
-    const N = 48;
-    for (let i = 0; i <= N; i++) {
-      const ang = (i / N) * Math.PI * 2;
-      pts.push({ x: cx + rx * Math.cos(ang), y: cy + ry * Math.sin(ang) });
-    }
+    const xi = slab(ax, dx, wx - radius, wx + radius);
+    if (!xi) return null;
+    const yi = slab(ay, dy, wy - radius, wy + radius);
+    if (!yi) return null;
+    const t1 = Math.max(0, xi[0], yi[0]);
+    const t2 = Math.min(1, xi[1], yi[1]);
+    return t1 <= t2 ? [t1, t2] : null;
   }
-  return {
-    id: newId(),
-    pageId: shape.pageId,
-    tool: "pen",
-    color: shape.color,
-    size: shape.size,
-    opacity: shape.opacity,
-    points: pts.map((p, i) => ({ x: p.x, y: p.y, p: 0.5, t: i })),
-    createdAt: shape.createdAt,
-  };
+  const r2 = radius * radius;
+  const fx = ax - wx;
+  const fy = ay - wy;
+  const aa = dx * dx + dy * dy;
+  if (aa < 1e-9) return fx * fx + fy * fy <= r2 ? [0, 1] : null;
+  const bb = 2 * (fx * dx + fy * dy);
+  const cc = fx * fx + fy * fy - r2;
+  const disc = bb * bb - 4 * aa * cc;
+  if (disc < 0) return null;
+  const sq = Math.sqrt(disc);
+  const t1 = Math.max(0, (-bb - sq) / (2 * aa));
+  const t2 = Math.min(1, (-bb + sq) / (2 * aa));
+  return t1 <= t2 ? [t1, t2] : null;
 }
 
 interface EditorState {
@@ -553,38 +550,8 @@ export const useEditorStore = defineStore("editor", {
           ? Math.abs(x - wx) <= radius && Math.abs(y - wy) <= radius
           : (x - wx) ** 2 + (y - wy) ** 2 <= r2;
       // The sub-interval [t1,t2] of segment A→B that lies inside the eraser, else null.
-      const insideInterval = (a: StrokePoint, b: StrokePoint): [number, number] | null => {
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        if (square) {
-          const slab = (p0: number, d: number, lo: number, hi: number): [number, number] | null => {
-            if (Math.abs(d) < 1e-9) return p0 >= lo && p0 <= hi ? [0, 1] : null;
-            let t0 = (lo - p0) / d;
-            let t1 = (hi - p0) / d;
-            if (t0 > t1) [t0, t1] = [t1, t0];
-            return [t0, t1];
-          };
-          const xi = slab(a.x, dx, wx - radius, wx + radius);
-          if (!xi) return null;
-          const yi = slab(a.y, dy, wy - radius, wy + radius);
-          if (!yi) return null;
-          const t1 = Math.max(0, xi[0], yi[0]);
-          const t2 = Math.min(1, xi[1], yi[1]);
-          return t1 <= t2 ? [t1, t2] : null;
-        }
-        const fx = a.x - wx;
-        const fy = a.y - wy;
-        const aa = dx * dx + dy * dy;
-        if (aa < 1e-9) return fx * fx + fy * fy <= r2 ? [0, 1] : null;
-        const bb = 2 * (fx * dx + fy * dy);
-        const cc = fx * fx + fy * fy - r2;
-        const disc = bb * bb - 4 * aa * cc;
-        if (disc < 0) return null;
-        const sq = Math.sqrt(disc);
-        const t1 = Math.max(0, (-bb - sq) / (2 * aa));
-        const t2 = Math.min(1, (-bb + sq) / (2 * aa));
-        return t1 <= t2 ? [t1, t2] : null;
-      };
+      const insideInterval = (a: StrokePoint, b: StrokePoint): [number, number] | null =>
+        eraserHitInterval(a.x, a.y, b.x, b.y, wx, wy, radius, square);
       const lerp = (a: StrokePoint, b: StrokePoint, t: number): StrokePoint => ({
         x: a.x + (b.x - a.x) * t,
         y: a.y + (b.y - a.y) * t,
@@ -665,12 +632,44 @@ export const useEditorStore = defineStore("editor", {
       this._areaEraseBefore = this.strokes.filter((s) => s.pageId === pageId);
       this._areaEraseShapesBefore = this.shapes.filter((s) => s.pageId === pageId);
     },
-    // Area eraser hit a shape: replace it with an equivalent ink stroke (in memory)
-    // so the eraser can cut out just the swept part. Persistence + history are
-    // handled by flushPage at the end of the gesture.
-    rasterizeShapeForErase(shape: Shape) {
-      this.shapes = this.shapes.filter((s) => s.id !== shape.id);
-      this.strokes = [...this.strokes, shapeToStroke(shape)];
+    // Area eraser over shapes: clip each touched shape's outline against the
+    // eraser and keep the surviving pieces as crisp `line` shapes, so erasing a
+    // part removes only that part while the rest stays sharp (not pen-rasterized).
+    // In-memory + synchronous; persisted by flushPage. Mirrors eraseArea.
+    eraseAreaShapes(pageId: string, wx: number, wy: number, radius: number): boolean {
+      const square = this.eraserShape === "square";
+      const survivors: Shape[] = [];
+      let changed = false;
+      for (const shape of this.shapes) {
+        if (shape.pageId !== pageId) {
+          survivors.push(shape);
+          continue;
+        }
+        const pieces: Array<[number, number, number, number]> = [];
+        let hit = false;
+        for (const [ax, ay, bx, by] of shapeSegments(shape)) {
+          const iv = eraserHitInterval(ax, ay, bx, by, wx, wy, radius, square);
+          if (!iv || iv[1] - iv[0] <= 1e-6) {
+            pieces.push([ax, ay, bx, by]);
+            continue;
+          }
+          hit = true;
+          const [t1, t2] = iv;
+          if (t1 > 1e-6) pieces.push([ax, ay, ax + (bx - ax) * t1, ay + (by - ay) * t1]);
+          if (t2 < 1 - 1e-6) pieces.push([ax + (bx - ax) * t2, ay + (by - ay) * t2, bx, by]);
+        }
+        if (!hit) {
+          survivors.push(shape);
+          continue;
+        }
+        changed = true;
+        for (const [ax, ay, bx, by] of pieces) {
+          if (Math.hypot(bx - ax, by - ay) < 0.5) continue;
+          survivors.push({ ...shape, id: newId(), type: "line", x1: ax, y1: ay, x2: bx, y2: by });
+        }
+      }
+      if (changed) this.shapes = survivors;
+      return changed;
     },
     // Persist the current strokes + shapes of a page after an area-erase gesture.
     async flushPage(pageId: string) {

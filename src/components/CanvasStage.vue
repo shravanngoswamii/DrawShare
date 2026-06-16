@@ -15,6 +15,7 @@ import {
   worldToSheet,
 } from "@/core/layout";
 import type { InputSample } from "@/core/ports";
+import { shapeSegments } from "@/core/shapes";
 import type { Page, Shape, ShapeType, Stroke, StrokePoint, TextItem, Tool } from "@/core/types";
 import { dlog } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
@@ -457,44 +458,8 @@ function eraseStamp(wx: number, wy: number) {
   lastEraseWorld = { x: wx, y: wy };
 }
 
-// Outline segments of a shape (page-local), so the eraser can hit-test the
-// drawn outline rather than the bounding box. Ellipses are sampled into a
-// polygon; rects become their four edges; lines/arrows are a single segment.
-function shapeSegments(s: Shape): Array<[number, number, number, number]> {
-  const { x1, y1, x2, y2 } = s;
-  if (s.type === "line" || s.type === "arrow") return [[x1, y1, x2, y2]];
-  if (s.type === "rect") {
-    const a = Math.min(x1, x2);
-    const b = Math.max(x1, x2);
-    const c = Math.min(y1, y2);
-    const d = Math.max(y1, y2);
-    return [
-      [a, c, b, c],
-      [b, c, b, d],
-      [b, d, a, d],
-      [a, d, a, c],
-    ];
-  }
-  // ellipse
-  const cx = (x1 + x2) / 2;
-  const cy = (y1 + y2) / 2;
-  const rx = Math.abs(x2 - x1) / 2;
-  const ry = Math.abs(y2 - y1) / 2;
-  const segs: Array<[number, number, number, number]> = [];
-  const N = 32;
-  let px = cx + rx;
-  let py = cy;
-  for (let i = 1; i <= N; i++) {
-    const ang = (i / N) * Math.PI * 2;
-    const nx = cx + rx * Math.cos(ang);
-    const ny = cy + ry * Math.sin(ang);
-    segs.push([px, py, nx, ny]);
-    px = nx;
-    py = ny;
-  }
-  return segs;
-}
-
+// Hit-test the eraser circle against a shape's drawn outline (not its bounding
+// box), reusing the shared outline-segment decomposition.
 function shapeHitByEraser(s: Shape, lx: number, ly: number, r: number): boolean {
   for (const [ax, ay, bx, by] of shapeSegments(s)) {
     if (distToSegment(lx, ly, ax, ay, bx, by) < r) return true;
@@ -511,15 +476,6 @@ function eraseShapesAt(pageId: string, lx: number, ly: number, r: number): boole
   return true;
 }
 
-// Area mode: rasterize each touched shape to ink so the sweep can erase just the
-// part it passes over (the subsequent eraseArea clips the resulting stroke).
-function rasterizeTouchedShapes(pageId: string, lx: number, ly: number, r: number): boolean {
-  const hit = editor.shapes.filter((s) => s.pageId === pageId && shapeHitByEraser(s, lx, ly, r));
-  if (hit.length === 0) return false;
-  for (const s of hit) editor.rasterizeShapeForErase(s);
-  return true;
-}
-
 function eraseAt(wx: number, wy: number) {
   const r = editor.size / cam.zoom;
   // Area erase stays on the sheet it started on (keeps its snapshot coherent).
@@ -527,10 +483,10 @@ function eraseAt(wx: number, wy: number) {
     if (!eraseLockId) return;
     const lx = wx - eraseOffX;
     const ly = wy - eraseOffY;
-    // Convert any shape the eraser touches into ink first, so the sweep cuts out
-    // only the swept part rather than deleting the whole shape.
-    let changed = rasterizeTouchedShapes(eraseLockId, lx, ly, r);
-    if (editor.eraseArea(eraseLockId, lx, ly, r)) changed = true;
+    // Clip both ink and shape outlines under the eraser, so a sweep removes only
+    // the swept part of a shape (survivors stay crisp lines, not pen-rasterized).
+    let changed = editor.eraseArea(eraseLockId, lx, ly, r);
+    if (editor.eraseAreaShapes(eraseLockId, lx, ly, r)) changed = true;
     if (changed) {
       areaErased = true;
       dirtyBase = true;
