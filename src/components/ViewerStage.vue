@@ -250,6 +250,28 @@ const presenterScreen = computed(() => {
   };
 });
 
+// Stitch the host's laser points (world coords) into a glowing trail, mirroring
+// the editor. Cleared when the host releases (presenter-off → viewerPresenter null)
+// or switches to spotlight.
+const viewerLaserTrail = ref<{ x: number; y: number }[]>([]);
+watch(
+  () => live.viewerPresenter,
+  (p) => {
+    if (p && p.mode === "laser") {
+      const next = [...viewerLaserTrail.value, { x: p.x, y: p.y }];
+      if (next.length > 1200) next.shift();
+      viewerLaserTrail.value = next;
+    } else {
+      viewerLaserTrail.value = [];
+    }
+  },
+);
+const viewerLaserPath = computed(() => {
+  if (viewerLaserTrail.value.length < 2) return "";
+  const { x: cx, y: cy, zoom } = screenCam.value;
+  return viewerLaserTrail.value.map((p) => `${(p.x - cx) * zoom},${(p.y - cy) * zoom}`).join(" ");
+});
+
 let resizeObserver: ResizeObserver | undefined;
 
 onMounted(() => {
@@ -280,6 +302,13 @@ onBeforeUnmount(() => {
     <div v-if="!live.viewerIsNotebook" class="page-bg" :class="`bg-${props.page.background}`" :style="pageBgStyle" aria-hidden="true"></div>
     <canvas ref="baseEl" class="layer"></canvas>
     <canvas ref="liveEl" class="layer"></canvas>
+    <svg
+      v-if="presenterScreen && presenterScreen.mode === 'laser' && viewerLaserTrail.length > 1"
+      class="laser-trail"
+      aria-hidden="true"
+    >
+      <polyline :points="viewerLaserPath" />
+    </svg>
     <div
       v-if="presenterScreen && presenterScreen.mode === 'laser'"
       class="laser-dot"
@@ -344,6 +373,24 @@ onBeforeUnmount(() => {
   pointer-events: none;
   background: transparent;
   forced-color-adjust: none;
+}
+
+.laser-trail {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+  pointer-events: none;
+  overflow: visible;
+}
+.laser-trail polyline {
+  fill: none;
+  stroke: rgba(239, 68, 68, 0.92);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.75));
 }
 
 .laser-dot {

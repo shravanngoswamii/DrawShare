@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { PointerInputAdapter } from "@/adapters/input/pointerInput";
 import { Canvas2DRenderer } from "@/adapters/render/canvas2d";
 import { drawStack, resolveSheetColors, type SheetColors } from "@/composables/useStackRenderer";
@@ -197,6 +197,12 @@ const eraseCursor = ref<{ x: number; y: number } | null>(null);
 // Presenter mode overlay (screen coords)
 const presenterPos = ref<{ x: number; y: number } | null>(null);
 let presenterThrottle = 0;
+// Laser trail: screen-space points captured while the laser is pressed, drawn as
+// a glowing path that's wiped on release — it never becomes a real stroke.
+const laserTrail = ref<{ x: number; y: number }[]>([]);
+const laserPath = computed(() => laserTrail.value.map((p) => `${p.x},${p.y}`).join(" "));
+let laserPressing = false;
+const LASER_MAX_POINTS = 1200;
 
 let currentStroke: Stroke | undefined;
 let currentShape: Shape | undefined;
@@ -957,6 +963,9 @@ function commitEditing() {
 
 function handleDown(s: InputSample) {
   if (replay.active) return;
+  // Laser is a pointing aid, not a tool: the press leaves a transient glow trail
+  // (handled by the mouse handlers below), never a committed stroke.
+  if (editor.presenterMode === "laser") return;
   if (panActive || pinchActive) return;
   // Commit a focused field (e.g. the project name) when drawing starts; the
   // canvas swallows the focus change otherwise so its blur never fires.
@@ -1431,28 +1440,70 @@ async function handleCancel(sample?: InputSample) {
 
 // ── Presenter aids ─────────────────────────────────────────────────────────
 
+function presenterPoint(e: MouseEvent): { x: number; y: number } | null {
+  if (!wrap.value) return null;
+  const rect = wrap.value.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+// Throttled broadcast of the pointer position (world coords) so viewers mirror
+// the laser/spotlight. Viewers stitch successive laser points into their own trail.
+function broadcastPresenter(p: { x: number; y: number }) {
+  if (live.mode !== "host") return;
+  const now = Date.now();
+  if (now - presenterThrottle < 50) return;
+  presenterThrottle = now;
+  const w = toWorld(p.x, p.y);
+  live.broadcast({
+    t: "presenter",
+    mode: editor.presenterMode as "laser" | "spotlight",
+    x: w.x,
+    y: w.y,
+  });
+}
+
+function clearLaser() {
+  laserPressing = false;
+  laserTrail.value = [];
+}
+
+// Laser is press-and-drag: holding draws a glowing trail that follows the pointer
+// and is wiped on release; spotlight just follows the cursor while hovering.
+function onPresenterDown(e: MouseEvent) {
+  if (editor.presenterMode !== "laser") return;
+  const p = presenterPoint(e);
+  if (!p) return;
+  laserPressing = true;
+  presenterPos.value = p;
+  laserTrail.value = [p];
+  presenterThrottle = 0;
+  broadcastPresenter(p);
+}
+
 function onPresenterMove(e: MouseEvent) {
   if (editor.presenterMode === "off") return;
-  if (!wrap.value) return;
-  const rect = wrap.value.getBoundingClientRect();
-  const sx = e.clientX - rect.left;
-  const sy = e.clientY - rect.top;
-  presenterPos.value = { x: sx, y: sy };
-  const now = Date.now();
-  if (live.mode === "host" && now - presenterThrottle >= 50) {
-    presenterThrottle = now;
-    const w = toWorld(sx, sy);
-    live.broadcast({
-      t: "presenter",
-      mode: editor.presenterMode as "laser" | "spotlight",
-      x: w.x,
-      y: w.y,
-    });
+  const p = presenterPoint(e);
+  if (!p) return;
+  presenterPos.value = p;
+  if (editor.presenterMode === "laser") {
+    if (!laserPressing) return; // laser only shows / syncs while held
+    const next = [...laserTrail.value, p];
+    if (next.length > LASER_MAX_POINTS) next.shift();
+    laserTrail.value = next;
   }
+  broadcastPresenter(p);
+}
+
+function onPresenterUp() {
+  if (editor.presenterMode !== "laser" || !laserPressing) return;
+  clearLaser();
+  presenterPos.value = null;
+  if (live.mode === "host") live.broadcast({ t: "presenter-off" });
 }
 
 function onPresenterLeave() {
   presenterPos.value = null;
+  clearLaser();
   if (live.mode === "host" && editor.presenterMode !== "off") {
     live.broadcast({ t: "presenter-off" });
   }
@@ -1774,7 +1825,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="stage" ref="wrap" :class="{ 'pan-cursor': panCursor, 'is-notebook': editor.notebookMode !== 'off' }" @mousemove="onPresenterMove" @mouseleave="onPresenterLeave">
+  <div class="stage" ref="wrap" :class="{ 'pan-cursor': panCursor, 'is-notebook': editor.notebookMode !== 'off' }" @mousedown="onPresenterDown" @mousemove="onPresenterMove" @mouseup="onPresenterUp" @mouseleave="onPresenterLeave">
     <div v-if="editor.notebookMode === 'off'" class="page-bg" :class="`bg-${props.page.background}`" :style="bgStyle" aria-hidden="true"></div>
     <canvas ref="baseEl" class="layer base"></canvas>
     <canvas ref="liveEl" class="layer live"></canvas>
@@ -1833,8 +1884,15 @@ onBeforeUnmount(() => {
       :style="pageFrameStyle"
       aria-hidden="true"
     ></div>
+    <svg
+      v-if="editor.presenterMode === 'laser' && laserTrail.length > 1"
+      class="laser-trail"
+      aria-hidden="true"
+    >
+      <polyline :points="laserPath" />
+    </svg>
     <div
-      v-if="editor.presenterMode === 'laser' && presenterPos"
+      v-if="editor.presenterMode === 'laser' && laserTrail.length && presenterPos"
       class="laser-dot"
       :style="{ left: `${presenterPos.x}px`, top: `${presenterPos.y}px` }"
       aria-hidden="true"
@@ -2083,6 +2141,24 @@ onBeforeUnmount(() => {
 
 .cam-btn:hover {
   background: rgba(15, 23, 42, 0.07);
+}
+
+.laser-trail {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+  pointer-events: none;
+  overflow: visible;
+}
+.laser-trail polyline {
+  fill: none;
+  stroke: rgba(239, 68, 68, 0.92);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.75));
 }
 
 .laser-dot {
