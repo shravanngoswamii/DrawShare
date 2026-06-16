@@ -188,6 +188,19 @@ async function setOrientation(orient: "portrait" | "landscape") {
   const needsSwap = orient === "landscape" ? page.width < page.height : page.width > page.height;
   if (needsSwap) await editor.setPageSize(page.id, page.height, page.width);
 }
+
+// "None": no fixed page boundary (true infinite canvas — no frame, export fits
+// the drawing). Stored as 0×0 dimensions.
+const isNoPageSize = computed(() => {
+  const p = editor.currentPage;
+  return p ? !p.width || !p.height : false;
+});
+
+async function setNoPageSize() {
+  const page = editor.currentPage;
+  if (!page) return;
+  await editor.setPageSize(page.id, 0, 0);
+}
 </script>
 
 <template>
@@ -373,7 +386,15 @@ async function setOrientation(orient: "portrait" | "landscape") {
             {{ sz.label }}
           </button>
         </div>
-        <div class="orient-row">
+        <button
+          class="bg-btn none-btn"
+          :class="{ active: isNoPageSize }"
+          @click="setNoPageSize"
+          title="No page boundary — infinite canvas"
+        >
+          None (infinite canvas)
+        </button>
+        <div v-if="!isNoPageSize" class="orient-row">
           <button
             class="orient-btn"
             :class="{ active: !isLandscape }"
@@ -840,6 +861,11 @@ async function setOrientation(orient: "portrait" | "landscape") {
   background: var(--color-accent);
   border-color: var(--color-accent);
   color: var(--color-accent-text);
+}
+
+.none-btn {
+  width: 100%;
+  margin-top: var(--space-2);
 }
 
 /* ── Orientation ── */

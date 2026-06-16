@@ -164,8 +164,11 @@ async function renderToCanvas(
   let offsetY: number;
 
   if (!bounds) {
-    // No content — show top-left corner of the page at natural scale.
-    scale = Math.min(w / page.width, h / page.height);
+    // No content — show the top-left of the page at natural scale. A "no page
+    // size" page (0×0) has no dimensions to fit, so fall back to the A4 ratio.
+    const pw = page.width || 1240;
+    const ph = page.height || 1754;
+    scale = Math.min(w / pw, h / ph);
     offsetX = 0;
     offsetY = 0;
   } else {
