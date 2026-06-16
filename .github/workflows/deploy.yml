@@ -31,6 +31,17 @@ jobs:
           BASE_PATH: /${{ github.event.repository.name }}/
         run: npm run build
 
+      - name: Install docs dependencies
+        run: npm --prefix docs ci
+
+      - name: Build docs
+        env:
+          VITEPRESS_BASE: /${{ github.event.repository.name }}/docs/
+        run: npm --prefix docs run build
+
+      - name: Merge docs into dist
+        run: cp -r docs/.vitepress/dist dist/docs
+
       - name: Add SPA fallback
         run: cp dist/index.html dist/404.html
 
