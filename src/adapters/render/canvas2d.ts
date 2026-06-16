@@ -1,6 +1,6 @@
 import { getStroke } from "perfect-freehand";
 import type { Camera, Renderer } from "@/core/ports";
-import type { ImageItem, Stroke, StrokePoint, TextItem } from "@/core/types";
+import type { ImageItem, PenType, Shape, Stroke, StrokePoint, TextItem } from "@/core/types";
 
 type DrawCtx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -13,6 +13,40 @@ const PEN_OPTIONS = {
   simulatePressure: false,
   start: { taper: 0, cap: true },
   end: { taper: 20, cap: true },
+};
+
+// Per-type overrides on top of PEN_OPTIONS.
+const PEN_TYPE_OPTIONS: Record<PenType, Partial<typeof PEN_OPTIONS>> = {
+  // Ballpoint: existing well-tuned defaults, unchanged.
+  ballpoint: {},
+  // Brush: simulate pressure from speed so the stroke visibly thins on fast
+  // movement even without a pressure-sensitive stylus. High thinning and a
+  // long end taper give a dramatic calligraphic feel.
+  brush: {
+    thinning: 0.92,
+    smoothing: 0.65,
+    streamline: 0.45,
+    simulatePressure: true,
+    start: { taper: 10, cap: true },
+    end: { taper: 80, cap: true },
+  },
+  // Marker: near-zero thinning and no taper produce a thick, completely flat
+  // stroke regardless of speed or pressure.
+  marker: {
+    thinning: 0.02,
+    smoothing: 0.4,
+    streamline: 0.25,
+    start: { taper: 0, cap: true },
+    end: { taper: 0, cap: true },
+  },
+};
+
+// Effective stroke size multipliers — makes each type immediately distinct
+// even at the same size-slider value.
+const PEN_TYPE_SIZE_SCALE: Record<PenType, number> = {
+  ballpoint: 1.0,
+  brush: 1.4, // slightly wider for a full calligraphic range
+  marker: 3.0, // bold and clearly chisel-like
 };
 
 // perfect-freehand's smoothing window is ~12 points. Points before that
@@ -35,6 +69,11 @@ export class Canvas2DRenderer implements Renderer {
   private camera: Camera = { x: 0, y: 0, zoom: 1 };
   private viewW = 0;
   private viewH = 0;
+  // Active world origin offset from setOrigin (notebook sheets shift each sheet's
+  // page-local content here). Reset to 0 by beginFrame; used so viewport culling
+  // tests a stroke's effective world position, not its raw page-local coords.
+  private originX = 0;
+  private originY = 0;
 
   // Maps a stored ink color to the color actually painted (theme adaptation).
   private inkAdapt: (color: string) => string = (c) => c;
@@ -91,6 +130,8 @@ export class Canvas2DRenderer implements Renderer {
 
   beginFrame(): void {
     if (!this.ctx) return;
+    this.originX = 0;
+    this.originY = 0;
     const { x, y, zoom } = this.camera;
     const s = this.dpr * zoom;
     this.ctx.setTransform(s, 0, 0, s, -x * s, -y * s);
@@ -123,7 +164,13 @@ export class Canvas2DRenderer implements Renderer {
     const { x, y, zoom } = this.camera;
     const vMaxX = x + this.viewW / zoom;
     const vMaxY = y + this.viewH / zoom;
-    return bbox.maxX >= x && bbox.minX <= vMaxX && bbox.maxY >= y && bbox.minY <= vMaxY;
+    // Shift the (page-local) bbox into world space by the active sheet origin so
+    // the test is correct in notebook mode; originX/Y are 0 in Free mode.
+    const minX = bbox.minX + this.originX;
+    const maxX = bbox.maxX + this.originX;
+    const minY = bbox.minY + this.originY;
+    const maxY = bbox.maxY + this.originY;
+    return maxX >= x && minX <= vMaxX && maxY >= y && minY <= vMaxY;
   }
 
   invalidateStrokeBbox(id: string): void {
@@ -136,6 +183,75 @@ export class Canvas2DRenderer implements Renderer {
 
   // ── Drawing ─────────────────────────────────────────────────────────────────
 
+  setOrigin(dx: number, dy: number): void {
+    if (!this.ctx) return;
+    this.originX = dx;
+    this.originY = dy;
+    const { x, y, zoom } = this.camera;
+    const s = this.dpr * zoom;
+    this.ctx.setTransform(s, 0, 0, s, (-x + dx) * s, (-y + dy) * s);
+  }
+
+  pushClip(width: number, height: number): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, width, height);
+    ctx.clip();
+  }
+
+  popClip(): void {
+    this.ctx?.restore();
+  }
+
+  drawSheetBackground(
+    width: number,
+    height: number,
+    background: "blank" | "ruled" | "grid" | "dotted",
+    colors: { paper: string; line: string; dot: string },
+  ): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    ctx.save();
+    ctx.fillStyle = colors.paper;
+    ctx.fillRect(0, 0, width, height);
+    const spacing = 32;
+    if (background === "ruled") {
+      ctx.strokeStyle = colors.line;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let y = spacing; y < height; y += spacing) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+      }
+      ctx.stroke();
+    } else if (background === "grid") {
+      ctx.strokeStyle = colors.line;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = spacing; x < width; x += spacing) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+      }
+      for (let y = spacing; y < height; y += spacing) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+      }
+      ctx.stroke();
+    } else if (background === "dotted") {
+      ctx.fillStyle = colors.dot;
+      for (let x = spacing; x < width; x += spacing) {
+        for (let y = spacing; y < height; y += spacing) {
+          ctx.beginPath();
+          ctx.arc(x, y, 1.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+    ctx.restore();
+  }
+
   drawStroke(stroke: Stroke): void {
     if (!this.ctx || stroke.points.length === 0) return;
     if (!this.isStrokeVisible(stroke)) return;
@@ -146,7 +262,51 @@ export class Canvas2DRenderer implements Renderer {
       stroke.opacity,
       stroke.size,
       true,
+      stroke.penType,
     );
+  }
+
+  drawShape(shape: Shape): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    ctx.save();
+    ctx.strokeStyle = this.inkAdapt(shape.color);
+    ctx.lineWidth = shape.size;
+    ctx.globalAlpha = shape.opacity;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    const { x1, y1, x2, y2 } = shape;
+    ctx.beginPath();
+    if (shape.type === "rect") {
+      ctx.rect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+    } else if (shape.type === "ellipse") {
+      const cx = (x1 + x2) / 2,
+        cy = (y1 + y2) / 2;
+      const rx = Math.abs(x2 - x1) / 2,
+        ry = Math.abs(y2 - y1) / 2;
+      if (rx > 0 && ry > 0) ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    } else if (shape.type === "line") {
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+    } else if (shape.type === "arrow") {
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      const headLen = Math.max(10, shape.size * 5);
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(
+        x2 - headLen * Math.cos(angle - Math.PI / 6),
+        y2 - headLen * Math.sin(angle - Math.PI / 6),
+      );
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(
+        x2 - headLen * Math.cos(angle + Math.PI / 6),
+        y2 - headLen * Math.sin(angle + Math.PI / 6),
+      );
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.restore();
   }
 
   drawText(item: TextItem): void {
@@ -238,6 +398,7 @@ export class Canvas2DRenderer implements Renderer {
       stroke.opacity,
       stroke.size,
       false,
+      stroke.penType,
     );
   }
 
@@ -269,6 +430,7 @@ export class Canvas2DRenderer implements Renderer {
       stroke.opacity,
       stroke.size,
       false,
+      stroke.penType,
     );
     this.liveCacheCount = upToCount;
   }
@@ -280,11 +442,19 @@ export class Canvas2DRenderer implements Renderer {
     opacity: number,
     size: number,
     last: boolean,
+    penType?: PenType,
   ): void {
     if (points.length === 0) return;
 
+    const typeOverride = penType ? PEN_TYPE_OPTIONS[penType] : {};
+    const sizeScale = penType ? PEN_TYPE_SIZE_SCALE[penType] : 1;
     const inputs = points.map((p) => [p.x, p.y, p.p] as [number, number, number]);
-    const path = getStroke(inputs, { ...PEN_OPTIONS, size, last });
+    const path = getStroke(inputs, {
+      ...PEN_OPTIONS,
+      ...typeOverride,
+      size: size * sizeScale,
+      last,
+    });
     if (path.length === 0) return;
 
     ctx.fillStyle = color;

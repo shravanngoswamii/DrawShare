@@ -130,13 +130,21 @@ export class WebRTCSession implements SessionAdapter {
       iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
     });
     peer.onconnectionstatechange = () => {
-      if (peer.connectionState === "failed" || peer.connectionState === "disconnected") {
-        this.notifyDisconnect();
+      const s = peer.connectionState;
+      console.log("[WebRTC] connectionState →", s);
+      if (s === "failed") {
+        this.notifyDisconnect("Connection failed");
+      } else if (s === "disconnected") {
+        this.notifyDisconnect("Connection lost");
       }
     };
     peer.oniceconnectionstatechange = () => {
-      if (peer.iceConnectionState === "failed" || peer.iceConnectionState === "disconnected") {
-        this.notifyDisconnect();
+      const s = peer.iceConnectionState;
+      console.log("[WebRTC] iceConnectionState →", s);
+      if (s === "failed") {
+        this.notifyDisconnect("ICE negotiation failed");
+      } else if (s === "disconnected") {
+        this.notifyDisconnect("Network path lost");
       }
     };
     this.peer = peer;
@@ -169,10 +177,16 @@ export class WebRTCSession implements SessionAdapter {
       }
     };
     channel.onclose = () => {
-      this.notifyDisconnect();
+      console.log("[WebRTC] data channel closed");
+      this.notifyDisconnect("Data channel closed");
     };
-    channel.onerror = () => {
-      this.notifyError(new Error("Connection error."));
+    channel.onerror = (event) => {
+      const msg =
+        event instanceof RTCErrorEvent
+          ? (event.error?.message ?? "Connection error.")
+          : "Connection error.";
+      console.warn("[WebRTC] data channel error:", msg);
+      this.notifyError(new Error(msg));
     };
   }
 
@@ -188,13 +202,13 @@ export class WebRTCSession implements SessionAdapter {
     }
   }
 
-  private notifyDisconnect(): void {
+  private notifyDisconnect(reason?: string): void {
     if (this.disconnected) return;
     this.disconnected = true;
     if (this.role === "host") {
       this.hostHandlers?.onViewerLeave("viewer");
     } else if (this.role === "viewer") {
-      this.viewerHandlers?.onDisconnect();
+      this.viewerHandlers?.onDisconnect(reason);
     }
     this.dispose();
   }

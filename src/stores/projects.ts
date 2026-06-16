@@ -4,15 +4,30 @@ import { newId } from "@/core/ids";
 import type { Page, Project } from "@/core/types";
 
 const A4_PORTRAIT = { width: 1240, height: 1754 };
+const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 export const useProjectsStore = defineStore("projects", {
   state: () => ({
     projects: [] as Project[],
     loaded: false,
   }),
+  getters: {
+    activeProjects(state): Project[] {
+      return state.projects.filter((p) => !p.deletedAt);
+    },
+    trashedProjects(state): Project[] {
+      return state.projects.filter((p) => !!p.deletedAt);
+    },
+  },
   actions: {
     async load() {
-      this.projects = await storage.listProjects();
+      const all = await storage.listProjects();
+      const now = Date.now();
+      const expired = all.filter((p) => p.deletedAt && now - p.deletedAt > TRASH_RETENTION_MS);
+      for (const p of expired) {
+        await storage.deleteProject(p.id);
+      }
+      this.projects = all.filter((p) => !(p.deletedAt && now - p.deletedAt > TRASH_RETENTION_MS));
       this.loaded = true;
     },
     create(name: string): { project: Project; page: Page } {
@@ -24,6 +39,7 @@ export const useProjectsStore = defineStore("projects", {
         createdAt: now,
         updatedAt: now,
         pageOrder: [pageId],
+        notebookMode: "off",
       };
       const page: Page = {
         id: pageId,
@@ -33,6 +49,8 @@ export const useProjectsStore = defineStore("projects", {
         width: A4_PORTRAIT.width,
         height: A4_PORTRAIT.height,
         background: "blank",
+        originX: 0,
+        originY: 0,
         createdAt: now,
         updatedAt: now,
       };
@@ -54,6 +72,19 @@ export const useProjectsStore = defineStore("projects", {
       await storage.putProject({ ...p });
     },
     async remove(id: string) {
+      const p = this.projects.find((x) => x.id === id);
+      if (!p) return;
+      p.deletedAt = Date.now();
+      await storage.putProject({ ...p });
+    },
+    async restore(id: string) {
+      const p = this.projects.find((x) => x.id === id);
+      if (!p) return;
+      delete p.deletedAt;
+      p.updatedAt = Date.now();
+      await storage.putProject({ ...p });
+    },
+    async permanentDelete(id: string) {
       await storage.deleteProject(id);
       this.projects = this.projects.filter((p) => p.id !== id);
     },
