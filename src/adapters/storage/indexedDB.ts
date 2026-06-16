@@ -113,10 +113,15 @@ export class IndexedDBStorage implements StorageAdapter {
   }
 
   async deletePage(id: ID): Promise<void> {
-    await this.deleteStrokesForPage(id);
-    await this.deleteShapesForPage(id);
-    await this.deleteImagesForPage(id);
-    await this.require().delete("pages", id);
+    // Atomic: a mid-cascade failure must not leave a page with orphaned children.
+    const db = this.require();
+    const tx = db.transaction(["pages", "strokes", "shapes", "images"], "readwrite");
+    for (const store of ["strokes", "shapes", "images"] as const) {
+      const keys = await tx.objectStore(store).index("byPage").getAllKeys(id);
+      for (const k of keys) await tx.objectStore(store).delete(k);
+    }
+    await tx.objectStore("pages").delete(id);
+    await tx.done;
   }
 
   listStrokes(pageId: ID): Promise<Stroke[]> {

@@ -877,6 +877,8 @@ function handleDown(s: InputSample) {
     const page = editor.pages.find((p) => p.id === targetPageId) ?? props.page;
     const existing = (page.texts ?? []).find((t) => hitText(t, w.x, w.y));
     if (existing) {
+      // Grabbing a text supersedes any image selection.
+      selectedImageId.value = null;
       // Drag to move, or tap (no move) to edit — decided in move/up.
       textDrag = {
         item: existing,
@@ -1339,7 +1341,11 @@ function onKeyDown(e: KeyboardEvent) {
     spaceHeld = true;
     panCursor.value = true;
   }
-  if ((e.key === "Delete" || e.key === "Backspace") && selectedImageId.value) {
+  if (
+    (e.key === "Delete" || e.key === "Backspace") &&
+    selectedImageId.value &&
+    editor.tool === "text"
+  ) {
     e.preventDefault();
     const id = selectedImageId.value;
     selectedImageId.value = null;
@@ -1371,8 +1377,11 @@ watch(
 watch(
   () => editor.images,
   async (imgs) => {
-    // Preload every loaded image's bitmap. In notebook mode editor.images holds
+    // Reconcile the renderer's bitmap cache against the loaded set: free bitmaps
+    // for images no longer present (deleted, page/project switch, undo) so they
+    // don't leak, then preload any new ones. In notebook mode editor.images holds
     // all sheets' images; in Free mode it's just the current page's.
+    baseRenderer.retainImages(new Set(imgs.map((i) => i.id)));
     await Promise.all(imgs.map((i) => baseRenderer.loadImage(i)));
     updateImageSelStyle();
     dirtyBase = true;
@@ -1382,6 +1391,15 @@ watch(
 );
 
 watch(selectedImageId, () => updateImageSelStyle());
+
+// Images are only selectable in the text tool; drop the selection (and its ring +
+// Delete target) the moment the user switches to any other tool.
+watch(
+  () => editor.tool,
+  (t) => {
+    if (t !== "text") selectedImageId.value = null;
+  },
+);
 
 watch(
   () => editor.shapes.length,
@@ -1509,6 +1527,8 @@ onBeforeUnmount(() => {
   window.removeEventListener("keyup", onKeyUp);
   window.removeEventListener("paste", onPaste);
   resizeObserver?.disconnect();
+  // Free decoded ImageBitmaps so they don't outlive the editor.
+  baseRenderer.clearImageCache();
 });
 </script>
 

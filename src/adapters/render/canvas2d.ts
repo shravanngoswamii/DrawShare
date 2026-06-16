@@ -60,6 +60,10 @@ interface BBox {
   minY: number;
   maxX: number;
   maxY: number;
+  // Point count the bbox was computed for. The area-eraser/undo can replace a
+  // stroke's geometry while reusing its id, so a cached bbox is only valid while
+  // the point count matches — otherwise it's recomputed (prevents stale culling).
+  len: number;
 }
 
 export class Canvas2DRenderer implements Renderer {
@@ -146,7 +150,9 @@ export class Canvas2DRenderer implements Renderer {
   private isStrokeVisible(stroke: Stroke): boolean {
     if (this.viewW === 0 || this.viewH === 0) return true;
     let bbox = this.bboxCache.get(stroke.id);
-    if (!bbox) {
+    // Recompute if absent or if the geometry changed under a reused id (the
+    // area-eraser truncates a stroke and undo restores it, both keeping the id).
+    if (!bbox || bbox.len !== stroke.points.length) {
       const half = stroke.size / 2 + 2;
       let minX = Infinity;
       let minY = Infinity;
@@ -158,7 +164,7 @@ export class Canvas2DRenderer implements Renderer {
         if (p.x + half > maxX) maxX = p.x + half;
         if (p.y + half > maxY) maxY = p.y + half;
       }
-      bbox = { minX, minY, maxX, maxY };
+      bbox = { minX, minY, maxX, maxY, len: stroke.points.length };
       this.bboxCache.set(stroke.id, bbox);
     }
     const { x, y, zoom } = this.camera;
@@ -356,6 +362,19 @@ export class Canvas2DRenderer implements Renderer {
       bm.close();
       this.imageCache.delete(id);
     }
+  }
+
+  // Free every cached bitmap and forget the bbox cache. Called on unmount and
+  // when reconciling away from a project so ImageBitmaps don't leak.
+  retainImages(keepIds: Set<string>): void {
+    for (const id of [...this.imageCache.keys()]) {
+      if (!keepIds.has(id)) this.releaseImage(id);
+    }
+  }
+
+  clearImageCache(): void {
+    for (const bm of this.imageCache.values()) bm.close();
+    this.imageCache.clear();
   }
 
   drawLive(stroke: Stroke): void {

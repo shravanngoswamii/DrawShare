@@ -1,7 +1,7 @@
 import { getStroke } from "perfect-freehand";
 import { ref } from "vue";
 import { storage } from "@/adapters/storage/indexedDB";
-import type { Page, Project, Shape, Stroke, TextItem } from "@/core/types";
+import type { ImageItem, Page, Project, Shape, Stroke, TextItem } from "@/core/types";
 
 // Page panel thumbnails: A4 ratio, contain mode
 const THUMB_W = 52;
@@ -29,7 +29,12 @@ const projectThumbnails = ref<Record<string, string>>({});
 
 type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
 
-function contentBounds(pageStrokes: Stroke[], texts: TextItem[], shapes: Shape[]): Bounds | null {
+function contentBounds(
+  pageStrokes: Stroke[],
+  texts: TextItem[],
+  shapes: Shape[],
+  images: ImageItem[],
+): Bounds | null {
   let minX = Infinity,
     minY = Infinity,
     maxX = -Infinity,
@@ -41,6 +46,12 @@ function contentBounds(pageStrokes: Stroke[], texts: TextItem[], shapes: Shape[]
       if (pt.x > maxX) maxX = pt.x;
       if (pt.y > maxY) maxY = pt.y;
     }
+  }
+  for (const img of images) {
+    if (img.x < minX) minX = img.x;
+    if (img.y < minY) minY = img.y;
+    if (img.x + img.width > maxX) maxX = img.x + img.width;
+    if (img.y + img.height > maxY) maxY = img.y + img.height;
   }
   for (const sh of shapes) {
     const sx = Math.min(sh.x1, sh.x2);
@@ -108,15 +119,34 @@ function drawShape(ctx: OffscreenCanvasRenderingContext2D, shape: Shape): void {
   ctx.restore();
 }
 
+async function drawImageToCtx(
+  ctx: OffscreenCanvasRenderingContext2D,
+  item: ImageItem,
+): Promise<void> {
+  try {
+    const img = new Image();
+    await new Promise<void>((res, rej) => {
+      img.onload = () => res();
+      img.onerror = rej;
+      img.src = item.src;
+    });
+    ctx.drawImage(img, item.x, item.y, item.width, item.height);
+  } catch {
+    // Skip undecodable images silently.
+  }
+}
+
 async function renderToCanvas(
   page: Page,
   strokes: Stroke[],
   shapes: Shape[],
+  images: ImageItem[],
   w: number,
   h: number,
 ): Promise<string | null> {
   const pageStrokes = strokes.filter((s) => s.pageId === page.id);
   const pageShapes = shapes.filter((s) => s.pageId === page.id);
+  const pageImages = images.filter((i) => i.pageId === page.id);
   const texts = page.texts ?? [];
 
   const canvas = new OffscreenCanvas(w, h);
@@ -126,7 +156,7 @@ async function renderToCanvas(
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, w, h);
 
-  const bounds = contentBounds(pageStrokes, texts, pageShapes);
+  const bounds = contentBounds(pageStrokes, texts, pageShapes, pageImages);
 
   let scale: number;
   let offsetX: number;
@@ -155,6 +185,9 @@ async function renderToCanvas(
   ctx.save();
   ctx.translate(offsetX, offsetY);
   ctx.scale(scale, scale);
+
+  // Images sit below strokes/shapes/text, matching the canvas + export layer order.
+  for (const img of pageImages) await drawImageToCtx(ctx, img);
 
   for (const stroke of pageStrokes) {
     if (stroke.points.length === 0) continue;
@@ -198,28 +231,35 @@ async function renderToCanvas(
   return blobToDataUrl(blob);
 }
 
-async function renderThumbnail(page: Page, strokes: Stroke[], shapes: Shape[] = []): Promise<void> {
-  const url = await renderToCanvas(page, strokes, shapes, THUMB_W, THUMB_H);
+async function renderThumbnail(
+  page: Page,
+  strokes: Stroke[],
+  shapes: Shape[] = [],
+  images: ImageItem[] = [],
+): Promise<void> {
+  const url = await renderToCanvas(page, strokes, shapes, images, THUMB_W, THUMB_H);
   if (url) thumbnails.value[page.id] = url;
 }
 
 async function loadAndRenderThumbnail(page: Page): Promise<void> {
-  const [strokes, shapes] = await Promise.all([
+  const [strokes, shapes, images] = await Promise.all([
     storage.listStrokes(page.id),
     storage.listShapes(page.id),
+    storage.listImages(page.id),
   ]);
-  await renderThumbnail(page, strokes, shapes);
+  await renderThumbnail(page, strokes, shapes, images);
 }
 
 async function renderProjectThumbnail(project: Project): Promise<void> {
   const pages = await storage.listPages(project.id);
   if (!pages.length) return;
   const firstPage = pages[0];
-  const [strokes, shapes] = await Promise.all([
+  const [strokes, shapes, images] = await Promise.all([
     storage.listStrokes(firstPage.id),
     storage.listShapes(firstPage.id),
+    storage.listImages(firstPage.id),
   ]);
-  const url = await renderToCanvas(firstPage, strokes, shapes, PROJ_W, PROJ_H);
+  const url = await renderToCanvas(firstPage, strokes, shapes, images, PROJ_W, PROJ_H);
   if (url) projectThumbnails.value[project.id] = url;
 }
 

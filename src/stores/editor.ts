@@ -562,8 +562,10 @@ export const useEditorStore = defineStore("editor", {
       const prev = { ...image };
       image.x = x;
       image.y = y;
+      // A move is a fresh edit: invalidate any outstanding redo branch (consistent
+      // with all other mutations). The move itself is not pushed to undo history.
+      this.redoStack = [];
       await storage.putImage({ ...image });
-      // Not tracked in undo history (drag-move is finalised on pointerup)
       if (this.project) await useProjectsStore().touch(this.project.id);
       return prev;
     },
