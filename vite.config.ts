@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, URL } from "node:url";
@@ -56,5 +57,10 @@ export default defineConfig(({ mode }) => {
       cssCodeSplit: false,
     },
     plugins: [vue(), swPrecache(base)],
+    test: {
+      globals: false,
+      environment: "node",
+      include: ["src/**/*.test.ts"],
+    },
   };
 });

@@ -3,6 +3,7 @@ import type {
   NotebookMode,
   Page,
   Project,
+  Shape,
   Stroke,
   StrokePoint,
   TextItem,
@@ -16,13 +17,16 @@ export type SyncMessage =
       pages: Page[];
       currentPageId: string;
       strokes: Stroke[];
+      shapes: Shape[];
       hostViewport: { width: number; height: number };
       hostCamera: { x: number; y: number; zoom: number };
-      // Notebook mode (continuous A4 stack): all sheets' page-local strokes plus
-      // the mode/layout, so a joiner can build the whole stack. Absent in Free mode.
+      // Notebook mode (continuous A4 stack): all sheets' page-local strokes/shapes
+      // plus the mode/layout, so a joiner can build the whole stack. The arrays are
+      // streamed in chunked follow-up messages. Absent in Free mode.
       notebookMode?: NotebookMode;
       notebookLayout?: NotebookLayout;
       allStrokes?: Stroke[];
+      allShapes?: Shape[];
     }
   | {
       t: "viewport";
@@ -37,6 +41,7 @@ export type SyncMessage =
       pageId: string;
       pages: Page[];
       strokes: Stroke[];
+      shapes: Shape[];
     }
   | { t: "page-add"; page: Page; pages: Page[] }
   | { t: "page-delete"; pageId: string; pages: Page[]; fallbackPageId: string }
@@ -50,10 +55,12 @@ export type SyncMessage =
       notebookLayout: NotebookLayout;
       pages: Page[];
       allStrokes: Stroke[];
+      allShapes: Shape[];
     }
-  // A batch of the notebook's strokes, appended to the viewer's stack. The full
-  // snapshot is sent as several of these to stay under the data-channel size cap.
+  // A batch of the notebook's strokes/shapes, appended to the viewer's stack. The
+  // full snapshot is sent as several of these to stay under the data-channel size cap.
   | { t: "notebook-strokes"; strokes: Stroke[] }
+  | { t: "notebook-shapes"; shapes: Shape[] }
   | { t: "notebook-layout"; layout: NotebookLayout }
   | { t: "stroke-begin"; stroke: Stroke }
   | {
@@ -68,7 +75,9 @@ export type SyncMessage =
   | { t: "stroke-delete"; pageId: string; strokeId: string }
   | { t: "text-commit"; text: TextItem }
   | { t: "text-delete"; pageId: string; textId: string }
-  | { t: "clear-page"; pageId: string };
+  | { t: "clear-page"; pageId: string }
+  | { t: "shape-commit"; shape: Shape }
+  | { t: "shape-delete"; pageId: string; shapeId: string };
 
 export interface SessionHostHandlers {
   onViewerJoin(viewerId: string): void;

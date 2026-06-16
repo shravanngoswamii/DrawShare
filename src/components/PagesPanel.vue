@@ -41,15 +41,15 @@ let thumbDebounce: ReturnType<typeof setTimeout> | undefined;
 // Render current page thumbnail whenever strokes or texts change.
 // Skips debounce on first render so the thumbnail appears immediately on load.
 watch(
-  () => [editor.strokes, editor.currentPage?.texts],
+  () => [editor.strokes, editor.shapes, editor.currentPage?.texts],
   () => {
     const page = editor.currentPage;
     if (!page) return;
     clearTimeout(thumbDebounce);
     if (!thumbnails.value[page.id]) {
-      renderThumbnail(page, editor.strokes);
+      renderThumbnail(page, editor.strokes, editor.shapes);
     } else {
-      thumbDebounce = setTimeout(() => renderThumbnail(page, editor.strokes), 400);
+      thumbDebounce = setTimeout(() => renderThumbnail(page, editor.strokes, editor.shapes), 400);
     }
   },
   { deep: false },
@@ -145,12 +145,12 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
 async function exportCurrentPage() {
   const page = editor.currentPage;
   if (!page) return;
-  await exportPageAsPng(page, editor.strokes);
+  await exportPageAsPng(page, editor.strokes, editor.shapes);
 }
 
 async function exportNotebookPdf() {
   if (editor.pages.length === 0) return;
-  await exportNotebookPdfToPrint(editor.pages, editor.strokes);
+  await exportNotebookPdfToPrint(editor.pages, editor.strokes, editor.shapes);
 }
 </script>
 

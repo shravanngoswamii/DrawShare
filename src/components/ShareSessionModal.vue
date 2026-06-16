@@ -48,10 +48,12 @@ async function start() {
     pages: [...editor.pages],
     currentPageId: editor.currentPageId!,
     strokes: [...editor.strokes],
+    shapes: [...editor.shapes],
     notebookMode: editor.notebookMode,
     notebookLayout: editor.notebookLayout,
-    // In notebook mode editor.strokes already holds every sheet's page-local strokes.
+    // In notebook mode editor.strokes/shapes already hold every sheet's page-local data.
     allStrokes: editor.notebookMode !== "off" ? [...editor.strokes] : [],
+    allShapes: editor.notebookMode !== "off" ? [...editor.shapes] : [],
   }));
   answerToken.value = "";
   showFallback.value = false;

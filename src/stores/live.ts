@@ -8,7 +8,7 @@ import {
 import { WebRTCSession } from "@/adapters/sync/webrtc";
 import type { SyncMessage } from "@/core/sync";
 import { makeSessionCode } from "@/core/sync";
-import type { NotebookLayout, NotebookMode, Page, Project, Stroke } from "@/core/types";
+import type { NotebookLayout, NotebookMode, Page, Project, Shape, Stroke } from "@/core/types";
 
 type Mode = "off" | "host" | "viewer";
 type Status =
@@ -38,13 +38,15 @@ interface LiveState {
   viewerPages: Page[];
   viewerCurrentPageId: string | undefined;
   viewerStrokes: Stroke[];
+  viewerShapes: Shape[];
   viewerLive: Stroke | undefined;
   viewerHostViewport: { width: number; height: number };
   viewerHostCamera: { x: number; y: number; zoom: number };
-  // Notebook stack mirror: every sheet's page-local strokes + the mode/layout.
+  // Notebook stack mirror: every sheet's page-local strokes/shapes + the mode/layout.
   viewerNotebookMode: NotebookMode;
   viewerNotebookLayout: NotebookLayout;
   viewerAllStrokes: Stroke[];
+  viewerAllShapes: Shape[];
 }
 
 let session: WebRTCSession | undefined;
@@ -58,6 +60,12 @@ const STROKE_CHUNK = 40;
 function sendStrokesChunked(strokes: Stroke[]): void {
   for (let i = 0; i < strokes.length; i += STROKE_CHUNK) {
     session?.send({ t: "notebook-strokes", strokes: strokes.slice(i, i + STROKE_CHUNK) });
+  }
+}
+const SHAPE_CHUNK = 80;
+function sendShapesChunked(shapes: Shape[]): void {
+  for (let i = 0; i < shapes.length; i += SHAPE_CHUNK) {
+    session?.send({ t: "notebook-shapes", shapes: shapes.slice(i, i + SHAPE_CHUNK) });
   }
 }
 
@@ -80,12 +88,14 @@ export const useLiveStore = defineStore("live", {
     viewerPages: [],
     viewerCurrentPageId: undefined,
     viewerStrokes: [],
+    viewerShapes: [],
     viewerLive: undefined,
     viewerHostViewport: { width: 1920, height: 1080 },
     viewerHostCamera: { x: 0, y: 0, zoom: 1 },
     viewerNotebookMode: "off",
     viewerNotebookLayout: "vertical",
     viewerAllStrokes: [],
+    viewerAllShapes: [],
   }),
   getters: {
     viewerCurrentPage(state): Page | undefined {
@@ -105,9 +115,11 @@ export const useLiveStore = defineStore("live", {
         pages: Page[];
         currentPageId: string;
         strokes: Stroke[];
+        shapes: Shape[];
         notebookMode: NotebookMode;
         notebookLayout: NotebookLayout;
         allStrokes: Stroke[];
+        allShapes: Shape[];
       },
     ) {
       if (this.mode !== "off") return;
@@ -133,16 +145,21 @@ export const useLiveStore = defineStore("live", {
               pages: snap.pages,
               currentPageId: snap.currentPageId,
               strokes: snap.strokes,
+              shapes: snap.shapes,
               hostViewport: { ...this.hostViewport },
               hostCamera: { ...this.hostCamera },
               notebookMode: snap.notebookMode,
               notebookLayout: snap.notebookLayout,
-              // Notebook strokes follow in chunked notebook-strokes messages to
-              // avoid one oversized data-channel send.
+              // Notebook strokes/shapes follow in chunked messages to avoid one
+              // oversized data-channel send.
               allStrokes: [],
+              allShapes: [],
             };
             session?.send(msg);
-            if (notebook) sendStrokesChunked(snap.allStrokes);
+            if (notebook) {
+              sendStrokesChunked(snap.allStrokes);
+              sendShapesChunked(snap.allShapes);
+            }
             void id;
           },
           onViewerLeave: () => {
@@ -203,12 +220,14 @@ export const useLiveStore = defineStore("live", {
       this.viewerPages = [];
       this.viewerCurrentPageId = undefined;
       this.viewerStrokes = [];
+      this.viewerShapes = [];
       this.viewerLive = undefined;
       this.viewerHostViewport = { width: 1920, height: 1080 };
       this.viewerHostCamera = { x: 0, y: 0, zoom: 1 };
       this.viewerNotebookMode = "off";
       this.viewerNotebookLayout = "vertical";
       this.viewerAllStrokes = [];
+      this.viewerAllShapes = [];
       this.offerToken = "";
       this.viewerResponseToken = "";
     },
@@ -355,10 +374,21 @@ export const useLiveStore = defineStore("live", {
       notebookLayout: NotebookLayout,
       pages: Page[],
       allStrokes: Stroke[],
+      allShapes: Shape[],
     ) {
       if (this.mode !== "host") return;
-      session?.send({ t: "notebook-sync", notebookMode, notebookLayout, pages, allStrokes: [] });
-      if (notebookMode !== "off") sendStrokesChunked(allStrokes);
+      session?.send({
+        t: "notebook-sync",
+        notebookMode,
+        notebookLayout,
+        pages,
+        allStrokes: [],
+        allShapes: [],
+      });
+      if (notebookMode !== "off") {
+        sendStrokesChunked(allStrokes);
+        sendShapesChunked(allShapes);
+      }
     },
 
     applyMessage(msg: SyncMessage) {
@@ -368,12 +398,14 @@ export const useLiveStore = defineStore("live", {
           this.viewerPages = msg.pages;
           this.viewerCurrentPageId = msg.currentPageId;
           this.viewerStrokes = msg.strokes;
+          this.viewerShapes = msg.shapes ?? [];
           this.viewerLive = undefined;
           this.viewerHostViewport = { ...msg.hostViewport };
           this.viewerHostCamera = { ...msg.hostCamera };
           this.viewerNotebookMode = msg.notebookMode ?? "off";
           this.viewerNotebookLayout = msg.notebookLayout ?? "vertical";
           this.viewerAllStrokes = msg.allStrokes ?? [];
+          this.viewerAllShapes = msg.allShapes ?? [];
           break;
         }
         case "notebook-sync": {
@@ -381,11 +413,16 @@ export const useLiveStore = defineStore("live", {
           this.viewerNotebookLayout = msg.notebookLayout;
           this.viewerPages = msg.pages;
           this.viewerAllStrokes = msg.allStrokes;
+          this.viewerAllShapes = msg.allShapes;
           this.viewerLive = undefined;
           break;
         }
         case "notebook-strokes": {
           this.viewerAllStrokes = this.viewerAllStrokes.concat(msg.strokes);
+          break;
+        }
+        case "notebook-shapes": {
+          this.viewerAllShapes = this.viewerAllShapes.concat(msg.shapes);
           break;
         }
         case "notebook-layout": {
@@ -401,14 +438,18 @@ export const useLiveStore = defineStore("live", {
           this.viewerPages = msg.pages;
           this.viewerLive = undefined;
           if (this.viewerIsNotebook) {
-            // Notebook: replace just this sheet's strokes in the full stack
+            // Notebook: replace just this sheet's strokes/shapes in the full stack
             // (used by the host's area-erase / undo flush).
             this.viewerAllStrokes = this.viewerAllStrokes
               .filter((s) => s.pageId !== msg.pageId)
               .concat(msg.strokes);
+            this.viewerAllShapes = this.viewerAllShapes
+              .filter((s) => s.pageId !== msg.pageId)
+              .concat(msg.shapes);
           } else {
             this.viewerCurrentPageId = msg.pageId;
             this.viewerStrokes = msg.strokes;
+            this.viewerShapes = msg.shapes;
           }
           break;
         }
@@ -420,9 +461,11 @@ export const useLiveStore = defineStore("live", {
           this.viewerPages = msg.pages;
           if (this.viewerIsNotebook) {
             this.viewerAllStrokes = this.viewerAllStrokes.filter((s) => s.pageId !== msg.pageId);
+            this.viewerAllShapes = this.viewerAllShapes.filter((s) => s.pageId !== msg.pageId);
           } else if (this.viewerCurrentPageId === msg.pageId) {
             this.viewerCurrentPageId = msg.fallbackPageId;
             this.viewerStrokes = [];
+            this.viewerShapes = [];
           }
           break;
         }
@@ -476,6 +519,25 @@ export const useLiveStore = defineStore("live", {
           }
           break;
         }
+        case "shape-commit": {
+          if (this.viewerIsNotebook) {
+            if (this.viewerAllShapes.some((s) => s.id === msg.shape.id)) break;
+            this.viewerAllShapes = [...this.viewerAllShapes, msg.shape];
+          } else {
+            if (msg.shape.pageId !== this.viewerCurrentPageId) break;
+            if (this.viewerShapes.some((s) => s.id === msg.shape.id)) break;
+            this.viewerShapes = [...this.viewerShapes, msg.shape];
+          }
+          break;
+        }
+        case "shape-delete": {
+          if (this.viewerIsNotebook) {
+            this.viewerAllShapes = this.viewerAllShapes.filter((s) => s.id !== msg.shapeId);
+          } else {
+            this.viewerShapes = this.viewerShapes.filter((s) => s.id !== msg.shapeId);
+          }
+          break;
+        }
         case "text-commit": {
           const page = this.viewerPages.find((p) => p.id === msg.text.pageId);
           if (page) {
@@ -491,8 +553,10 @@ export const useLiveStore = defineStore("live", {
         case "clear-page": {
           if (this.viewerIsNotebook) {
             this.viewerAllStrokes = this.viewerAllStrokes.filter((s) => s.pageId !== msg.pageId);
+            this.viewerAllShapes = this.viewerAllShapes.filter((s) => s.pageId !== msg.pageId);
           } else if (msg.pageId === this.viewerCurrentPageId) {
             this.viewerStrokes = [];
+            this.viewerShapes = [];
           }
           break;
         }

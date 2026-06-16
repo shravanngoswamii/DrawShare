@@ -1,4 +1,4 @@
-import type { ID, Page, Project, Stroke, TextItem } from "./types";
+import type { ID, Page, Project, Shape, Stroke, TextItem } from "./types";
 
 export interface StorageAdapter {
   init(): Promise<void>;
@@ -16,6 +16,11 @@ export interface StorageAdapter {
   putStroke(s: Stroke): Promise<void>;
   deleteStroke(id: ID): Promise<void>;
   deleteStrokesForPage(pageId: ID): Promise<void>;
+
+  listShapes(pageId: ID): Promise<Shape[]>;
+  putShape(s: Shape): Promise<void>;
+  deleteShape(id: ID): Promise<void>;
+  deleteShapesForPage(pageId: ID): Promise<void>;
 }
 
 export interface InputAdapter {
@@ -47,6 +52,7 @@ export interface Renderer {
   drawStroke(s: Stroke): void;
   drawLive(s: Stroke): void;
   drawText(item: TextItem): void;
+  drawShape(s: Shape): void;
   beginFrame(): void;
   endFrame(): void;
   // Shift the world origin by (dx, dy) so subsequent draws land at that offset.

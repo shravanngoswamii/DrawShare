@@ -15,10 +15,16 @@ import {
   worldToSheet,
 } from "@/core/layout";
 import type { InputSample } from "@/core/ports";
-import type { Page, Stroke, StrokePoint, TextItem } from "@/core/types";
+import { shapeSegments } from "@/core/shapes";
+import type { Page, Shape, ShapeType, Stroke, StrokePoint, TextItem, Tool } from "@/core/types";
 import { dlog } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
+
+const SHAPE_TOOLS = new Set<Tool>(["rect", "ellipse", "line", "arrow"]);
+function isShapeTool(t: Tool): t is ShapeType {
+  return SHAPE_TOOLS.has(t);
+}
 
 const props = defineProps<{ page: Page }>();
 const editor = useEditorStore();
@@ -83,6 +89,7 @@ const editStyle = ref<Record<string, string>>({});
 const eraseCursor = ref<{ x: number; y: number } | null>(null);
 
 let currentStroke: Stroke | undefined;
+let currentShape: Shape | undefined;
 let isErasing = false;
 let lastEraseWorld: { x: number; y: number } | null = null;
 let textDrag: {
@@ -335,14 +342,23 @@ function render() {
   if (dirtyBase) {
     baseRenderer.clear();
     if (isNotebook()) {
-      drawStack(baseRenderer, editor.pages, editor.strokes, editor.notebookLayout, sheetColors, {
-        range: visibleRange(),
-        editingTextId: editing.value?.id,
-        clip: editor.notebookMode === "strict",
-      });
+      drawStack(
+        baseRenderer,
+        editor.pages,
+        editor.strokes,
+        editor.shapes,
+        editor.notebookLayout,
+        sheetColors,
+        {
+          range: visibleRange(),
+          editingTextId: editing.value?.id,
+          clip: editor.notebookMode === "strict",
+        },
+      );
     } else {
       baseRenderer.beginFrame();
       for (const s of editor.strokes) baseRenderer.drawStroke(s);
+      for (const sh of editor.shapes) baseRenderer.drawShape(sh);
       for (const t of editor.currentPage?.texts ?? []) {
         if (editing.value?.id === t.id) continue;
         baseRenderer.drawText(t);
@@ -353,7 +369,17 @@ function render() {
     dirtyBase = false;
   }
   liveRenderer.clear();
-  if (currentStroke && currentStroke.points.length > 0) {
+  if (currentShape) {
+    // The in-progress shape is page-local; shift the live camera by the active
+    // sheet origin (no-op in Free mode where drawOffset is 0).
+    liveRenderer.setCamera({ x: cam.x - drawOffsetX, y: cam.y - drawOffsetY, zoom: cam.zoom });
+    liveRenderer.beginFrame();
+    const clipShape = editor.notebookMode === "strict";
+    if (clipShape) liveRenderer.pushClip(PAGE_W, PAGE_H);
+    liveRenderer.drawShape(currentShape);
+    if (clipShape) liveRenderer.popClip();
+    liveRenderer.endFrame();
+  } else if (currentStroke && currentStroke.points.length > 0) {
     // The in-progress stroke is page-local; shift the live camera by the active
     // sheet origin so drawLive paints it at the sheet's world position (no-op in
     // Free mode where drawOffset is 0).
@@ -432,6 +458,24 @@ function eraseStamp(wx: number, wy: number) {
   lastEraseWorld = { x: wx, y: wy };
 }
 
+// Hit-test the eraser circle against a shape's drawn outline (not its bounding
+// box), reusing the shared outline-segment decomposition.
+function shapeHitByEraser(s: Shape, lx: number, ly: number, r: number): boolean {
+  for (const [ax, ay, bx, by] of shapeSegments(s)) {
+    if (distToSegment(lx, ly, ax, ay, bx, by) < r) return true;
+  }
+  return false;
+}
+
+// Whole-delete any shape whose outline the eraser touches on the given sheet.
+// Used by the "whole" eraser mode — a tap removes the entire shape.
+function eraseShapesAt(pageId: string, lx: number, ly: number, r: number): boolean {
+  const hit = editor.shapes.filter((s) => s.pageId === pageId && shapeHitByEraser(s, lx, ly, r));
+  if (hit.length === 0) return false;
+  for (const s of hit) editor.deleteShape(s.id);
+  return true;
+}
+
 function eraseAt(wx: number, wy: number) {
   const r = editor.size / cam.zoom;
   // Area erase stays on the sheet it started on (keeps its snapshot coherent).
@@ -439,7 +483,11 @@ function eraseAt(wx: number, wy: number) {
     if (!eraseLockId) return;
     const lx = wx - eraseOffX;
     const ly = wy - eraseOffY;
-    if (editor.eraseArea(eraseLockId, lx, ly, r)) {
+    // Clip both ink and shape outlines under the eraser, so a sweep removes only
+    // the swept part of a shape (survivors stay crisp lines, not pen-rasterized).
+    let changed = editor.eraseArea(eraseLockId, lx, ly, r);
+    if (editor.eraseAreaShapes(eraseLockId, lx, ly, r)) changed = true;
+    if (changed) {
       areaErased = true;
       dirtyBase = true;
       schedule();
@@ -476,8 +524,9 @@ function eraseAt(wx: number, wy: number) {
     }
     return false;
   });
-  if (toDelete.length === 0) return;
   for (const stroke of toDelete) editor.eraseStroke(stroke.id);
+  const erasedShape = eraseShapesAt(pageId, lx, ly, r);
+  if (toDelete.length === 0 && !erasedShape) return;
   dirtyBase = true;
   schedule();
 }
@@ -663,6 +712,26 @@ function handleDown(s: InputSample) {
     }
     return;
   }
+  if (isShapeTool(editor.tool)) {
+    // Page-local (relative to the active sheet); drawOffset is 0 in Free mode.
+    const p = toPagePoint(s);
+    currentShape = {
+      id: newId(),
+      pageId: targetPageId,
+      type: editor.tool as ShapeType,
+      x1: p.x,
+      y1: p.y,
+      x2: p.x,
+      y2: p.y,
+      color: editor.color,
+      size: editor.size,
+      opacity: editor.opacity,
+      createdAt: Date.now(),
+    };
+    editor.setDrawing(true);
+    schedule();
+    return;
+  }
   editor.setDrawing(true);
   if (editor.tool === "eraser") {
     isErasing = true;
@@ -742,6 +811,14 @@ function handleMove(samples: InputSample[]) {
       const w = toWorld(s.x, s.y);
       eraseStamp(w.x, w.y);
     }
+    return;
+  }
+  if (currentShape) {
+    const last = samples[samples.length - 1];
+    const p = toPagePoint(last);
+    currentShape.x2 = p.x;
+    currentShape.y2 = p.y;
+    schedule();
     return;
   }
   if (!currentStroke) return;
@@ -846,6 +923,25 @@ async function handleUp(sample?: InputSample) {
     eraseLockId = undefined;
     return;
   }
+  if (currentShape) {
+    editor.setDrawing(false);
+    if (sample) {
+      const p = toPagePoint(sample);
+      currentShape.x2 = p.x;
+      currentShape.y2 = p.y;
+    }
+    const minDist = 2 / cam.zoom;
+    if (
+      Math.abs(currentShape.x2 - currentShape.x1) > minDist ||
+      Math.abs(currentShape.y2 - currentShape.y1) > minDist
+    ) {
+      await editor.commitShape({ ...currentShape });
+    }
+    currentShape = undefined;
+    dirtyBase = true;
+    schedule();
+    return;
+  }
   if (!currentStroke) return;
   predictedPoints = [];
   appendStrictAwareFinalPoint(currentStroke, sample, wasStrictBlocked);
@@ -877,6 +973,12 @@ async function handleCancel(sample?: InputSample) {
       editor.flushPage(eraseLockId ?? props.page.id);
     }
     eraseLockId = undefined;
+    return;
+  }
+  if (currentShape) {
+    editor.setDrawing(false);
+    currentShape = undefined;
+    schedule();
     return;
   }
   if (!currentStroke) return;
@@ -1020,6 +1122,13 @@ function onKeyUp(e: KeyboardEvent) {
 
 watch(
   () => editor.strokes.length,
+  () => {
+    dirtyBase = true;
+    schedule();
+  },
+);
+watch(
+  () => editor.shapes.length,
   () => {
     dirtyBase = true;
     schedule();

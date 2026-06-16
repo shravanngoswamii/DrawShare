@@ -1,6 +1,8 @@
 export type ID = string;
 
-export type Tool = "pen" | "highlighter" | "eraser" | "text";
+export type ShapeType = "rect" | "ellipse" | "line" | "arrow";
+
+export type Tool = "pen" | "highlighter" | "eraser" | "text" | ShapeType;
 
 export type PenType = "ballpoint" | "brush" | "marker";
 
@@ -70,12 +72,37 @@ export interface Project {
   deletedAt?: number;
 }
 
+export interface Shape {
+  id: ID;
+  pageId: ID;
+  type: ShapeType;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  color: string;
+  size: number;
+  opacity: number;
+  createdAt: number;
+}
+
 export type HistoryEntry =
   | { kind: "stroke-add"; stroke: Stroke }
   | { kind: "stroke-erase"; stroke: Stroke }
   | { kind: "text-upsert"; prev: TextItem | null; next: TextItem }
   | { kind: "text-delete"; text: TextItem }
-  | { kind: "area-erase"; pageId: string; before: Stroke[]; after: Stroke[] };
+  | {
+      kind: "area-erase";
+      pageId: string;
+      before: Stroke[];
+      after: Stroke[];
+      // Shapes touched by the sweep are rasterized to ink, so the area-erase also
+      // restores/reapplies the page's shapes on undo/redo.
+      shapesBefore: Shape[];
+      shapesAfter: Shape[];
+    }
+  | { kind: "shape-add"; shape: Shape }
+  | { kind: "shape-erase"; shape: Shape };
 
 export interface BoundingBox {
   minX: number;

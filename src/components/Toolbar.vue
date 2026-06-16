@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import type { Tool } from "@/core/types";
+import type { ShapeType, Tool } from "@/core/types";
 import { useEditorStore } from "@/stores/editor";
 
 defineProps<{ collapsed?: boolean }>();
@@ -12,6 +12,13 @@ const penTools: { id: Tool; label: string; icon: string }[] = [
   { id: "pen", label: "Pen", icon: "pen" },
   { id: "highlighter", label: "Highlighter", icon: "highlight" },
   { id: "text", label: "Text", icon: "text" },
+];
+
+const shapeTools: { id: ShapeType; label: string }[] = [
+  { id: "rect", label: "Rectangle" },
+  { id: "ellipse", label: "Ellipse" },
+  { id: "line", label: "Line" },
+  { id: "arrow", label: "Arrow" },
 ];
 
 const presetColors = [
@@ -343,6 +350,17 @@ onMounted(() => {
           </button>
         </div>
       </template>
+
+      <div class="divider"></div>
+
+      <div class="group">
+        <button v-for="t in shapeTools" :key="t.id" class="tool" :class="{ active: editor.tool === t.id }" :aria-pressed="editor.tool === t.id" :title="t.label" @click="editor.setTool(t.id)">
+          <svg v-if="t.id === 'rect'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+          <svg v-else-if="t.id === 'ellipse'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="10" ry="6"/></svg>
+          <svg v-else-if="t.id === 'line'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="20" x2="20" y2="4"/></svg>
+          <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19L19 5"/><path d="M9 5h10v10"/></svg>
+        </button>
+      </div>
 
       <div class="divider"></div>
 

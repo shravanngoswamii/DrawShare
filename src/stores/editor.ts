@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { storage } from "@/adapters/storage/indexedDB";
 import { newId } from "@/core/ids";
+import { shapeSegments } from "@/core/shapes";
 import type {
   HistoryEntry,
   NotebookLayout,
@@ -8,6 +9,7 @@ import type {
   Page,
   PenType,
   Project,
+  Shape,
   Stroke,
   StrokePoint,
   TextItem,
@@ -17,11 +19,58 @@ import { dlog } from "@/debug";
 import { useLiveStore } from "./live";
 import { DEFAULT_PAGE_SIZE, useProjectsStore } from "./projects";
 
+// Sub-interval [t1, t2] of segment A→B that lies inside the eraser — a circle of
+// the given radius, or (square) a box of half-size radius — centred at (wx, wy);
+// null if the segment misses it. Used to clip both strokes and shape outlines.
+function eraserHitInterval(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  wx: number,
+  wy: number,
+  radius: number,
+  square: boolean,
+): [number, number] | null {
+  const dx = bx - ax;
+  const dy = by - ay;
+  if (square) {
+    const slab = (p0: number, d: number, lo: number, hi: number): [number, number] | null => {
+      if (Math.abs(d) < 1e-9) return p0 >= lo && p0 <= hi ? [0, 1] : null;
+      let t0 = (lo - p0) / d;
+      let t1 = (hi - p0) / d;
+      if (t0 > t1) [t0, t1] = [t1, t0];
+      return [t0, t1];
+    };
+    const xi = slab(ax, dx, wx - radius, wx + radius);
+    if (!xi) return null;
+    const yi = slab(ay, dy, wy - radius, wy + radius);
+    if (!yi) return null;
+    const t1 = Math.max(0, xi[0], yi[0]);
+    const t2 = Math.min(1, xi[1], yi[1]);
+    return t1 <= t2 ? [t1, t2] : null;
+  }
+  const r2 = radius * radius;
+  const fx = ax - wx;
+  const fy = ay - wy;
+  const aa = dx * dx + dy * dy;
+  if (aa < 1e-9) return fx * fx + fy * fy <= r2 ? [0, 1] : null;
+  const bb = 2 * (fx * dx + fy * dy);
+  const cc = fx * fx + fy * fy - r2;
+  const disc = bb * bb - 4 * aa * cc;
+  if (disc < 0) return null;
+  const sq = Math.sqrt(disc);
+  const t1 = Math.max(0, (-bb - sq) / (2 * aa));
+  const t2 = Math.min(1, (-bb + sq) / (2 * aa));
+  return t1 <= t2 ? [t1, t2] : null;
+}
+
 interface EditorState {
   project: Project | undefined;
   pages: Page[];
   currentPageId: string | undefined;
   strokes: Stroke[];
+  shapes: Shape[];
   tool: Tool;
   penType: PenType;
   color: string;
@@ -33,6 +82,7 @@ interface EditorState {
   history: HistoryEntry[];
   redoStack: HistoryEntry[];
   _areaEraseBefore: Stroke[] | null;
+  _areaEraseShapesBefore: Shape[] | null;
   camera: { x: number; y: number; zoom: number };
   isDrawing: boolean;
   // Bumped to ask the canvas to scroll/animate to a sheet (notebook overview clicks).
@@ -46,10 +96,20 @@ export const useEditorStore = defineStore("editor", {
     pages: [],
     currentPageId: undefined,
     strokes: [],
+    shapes: [],
     tool: "pen",
     penType: "ballpoint",
     color: "#0f172a",
-    toolSizes: { pen: 4, highlighter: 20, eraser: 24, text: 4 },
+    toolSizes: {
+      pen: 4,
+      highlighter: 20,
+      eraser: 24,
+      text: 4,
+      rect: 2,
+      ellipse: 2,
+      line: 2,
+      arrow: 2,
+    },
     opacity: 1,
     eraserMode: "area",
     eraserShape: "circle",
@@ -57,6 +117,7 @@ export const useEditorStore = defineStore("editor", {
     history: [],
     redoStack: [],
     _areaEraseBefore: null,
+    _areaEraseShapesBefore: null,
     camera: { x: 0, y: 0, zoom: 1 },
     isDrawing: false,
     scrollRequestPageId: undefined,
@@ -98,9 +159,14 @@ export const useEditorStore = defineStore("editor", {
       }
       this.currentPageId = this.pages[0].id;
       // Notebook mode renders the whole stack at once, so load every sheet's
-      // strokes; Free mode keeps only the current page in memory.
-      if (this.notebookMode !== "off") await this.loadAllStrokes();
-      else await this.loadStrokes(this.currentPageId);
+      // strokes/shapes; Free mode keeps only the current page in memory.
+      if (this.notebookMode !== "off") {
+        await this.loadAllStrokes();
+        await this.loadAllShapes();
+      } else {
+        await this.loadStrokes(this.currentPageId);
+        await this.loadShapes(this.currentPageId);
+      }
       this.history = [];
       this.redoStack = [];
     },
@@ -115,11 +181,18 @@ export const useEditorStore = defineStore("editor", {
     async loadStrokes(pageId: string) {
       this.strokes = await storage.listStrokes(pageId);
     },
-    // Notebook mode: load every sheet's strokes into one array (each tagged by
-    // pageId). The renderer offsets each sheet to its world position.
+    async loadShapes(pageId: string) {
+      this.shapes = await storage.listShapes(pageId);
+    },
+    // Notebook mode: load every sheet's strokes/shapes into one array (each tagged
+    // by pageId). The renderer offsets each sheet to its world position.
     async loadAllStrokes() {
       const lists = await Promise.all(this.pages.map((p) => storage.listStrokes(p.id)));
       this.strokes = lists.flat();
+    },
+    async loadAllShapes() {
+      const lists = await Promise.all(this.pages.map((p) => storage.listShapes(p.id)));
+      this.shapes = lists.flat();
     },
     // Free mode only: switch the visible page (reloads its strokes, resets
     // history, tells viewers to follow). Notebook mode uses setActiveSheet.
@@ -127,6 +200,7 @@ export const useEditorStore = defineStore("editor", {
       if (this.currentPageId === pageId) return;
       this.currentPageId = pageId;
       await this.loadStrokes(pageId);
+      await this.loadShapes(pageId);
       this.history = [];
       this.redoStack = [];
       useLiveStore().broadcast({
@@ -134,6 +208,7 @@ export const useEditorStore = defineStore("editor", {
         pageId,
         pages: [...this.pages],
         strokes: [...this.strokes],
+        shapes: [...this.shapes],
       });
     },
     // Notebook mode: mark which sheet is "active" (panel highlight, export-current,
@@ -202,9 +277,10 @@ export const useEditorStore = defineStore("editor", {
         fallbackPageId: fallback,
       });
       if (this.notebookMode !== "off") {
-        // Continuous stack: drop the removed sheet's strokes from memory and
-        // re-point the active sheet without a page switch.
+        // Continuous stack: drop the removed sheet's strokes/shapes from memory
+        // and re-point the active sheet without a page switch.
         this.strokes = this.strokes.filter((s) => s.pageId !== pageId);
+        this.shapes = this.shapes.filter((s) => s.pageId !== pageId);
         if (this.currentPageId === pageId) this.setActiveSheet(fallback);
       } else if (this.currentPageId === pageId) {
         await this.selectPage(fallback);
@@ -268,6 +344,28 @@ export const useEditorStore = defineStore("editor", {
         this.saving--;
       }
     },
+    async commitShape(shape: Shape) {
+      this.saving++;
+      try {
+        this.shapes = [...this.shapes, shape];
+        this.history = [...this.history, { kind: "shape-add", shape }];
+        this.redoStack = [];
+        await storage.putShape(shape);
+        useLiveStore().broadcast({ t: "shape-commit", shape });
+        if (this.project) await useProjectsStore().touch(this.project.id);
+      } finally {
+        this.saving--;
+      }
+    },
+    async deleteShape(shapeId: string) {
+      const shape = this.shapes.find((s) => s.id === shapeId);
+      if (!shape) return;
+      this.shapes = this.shapes.filter((s) => s.id !== shapeId);
+      this.history = [...this.history, { kind: "shape-erase", shape }];
+      this.redoStack = [];
+      await storage.deleteShape(shapeId);
+      useLiveStore().broadcast({ t: "shape-delete", pageId: shape.pageId, shapeId });
+    },
     async deleteText(pageId: string, textId: string) {
       const page = this.pages.find((p) => p.id === pageId);
       if (!page?.texts) return;
@@ -319,14 +417,33 @@ export const useEditorStore = defineStore("editor", {
         }
       } else if (entry.kind === "area-erase") {
         this.strokes = [...this.strokes.filter((s) => s.pageId !== entry.pageId), ...entry.before];
+        this.shapes = [
+          ...this.shapes.filter((s) => s.pageId !== entry.pageId),
+          ...entry.shapesBefore,
+        ];
         await storage.deleteStrokesForPage(entry.pageId);
         for (const s of entry.before) await storage.putStroke(s);
+        await storage.deleteShapesForPage(entry.pageId);
+        for (const s of entry.shapesBefore) await storage.putShape(s);
         useLiveStore().broadcast({
           t: "page-set",
           pageId: entry.pageId,
           pages: [...this.pages],
           strokes: entry.before,
+          shapes: entry.shapesBefore,
         });
+      } else if (entry.kind === "shape-add") {
+        this.shapes = this.shapes.filter((s) => s.id !== entry.shape.id);
+        await storage.deleteShape(entry.shape.id);
+        useLiveStore().broadcast({
+          t: "shape-delete",
+          pageId: entry.shape.pageId,
+          shapeId: entry.shape.id,
+        });
+      } else if (entry.kind === "shape-erase") {
+        this.shapes = [...this.shapes, entry.shape];
+        await storage.putShape(entry.shape);
+        useLiveStore().broadcast({ t: "shape-commit", shape: entry.shape });
       }
     },
     async redo() {
@@ -362,21 +479,42 @@ export const useEditorStore = defineStore("editor", {
         }
       } else if (entry.kind === "area-erase") {
         this.strokes = [...this.strokes.filter((s) => s.pageId !== entry.pageId), ...entry.after];
+        this.shapes = [
+          ...this.shapes.filter((s) => s.pageId !== entry.pageId),
+          ...entry.shapesAfter,
+        ];
         await storage.deleteStrokesForPage(entry.pageId);
         for (const s of entry.after) await storage.putStroke(s);
+        await storage.deleteShapesForPage(entry.pageId);
+        for (const s of entry.shapesAfter) await storage.putShape(s);
         useLiveStore().broadcast({
           t: "page-set",
           pageId: entry.pageId,
           pages: [...this.pages],
           strokes: entry.after,
+          shapes: entry.shapesAfter,
+        });
+      } else if (entry.kind === "shape-add") {
+        this.shapes = [...this.shapes, entry.shape];
+        await storage.putShape(entry.shape);
+        useLiveStore().broadcast({ t: "shape-commit", shape: entry.shape });
+      } else if (entry.kind === "shape-erase") {
+        this.shapes = this.shapes.filter((s) => s.id !== entry.shape.id);
+        await storage.deleteShape(entry.shape.id);
+        useLiveStore().broadcast({
+          t: "shape-delete",
+          pageId: entry.shape.pageId,
+          shapeId: entry.shape.id,
         });
       }
     },
     async clearPage() {
       if (!this.currentPageId) return;
       await storage.deleteStrokesForPage(this.currentPageId);
+      await storage.deleteShapesForPage(this.currentPageId);
       const pageId = this.currentPageId;
       this.strokes = [];
+      this.shapes = [];
       this.history = [];
       this.redoStack = [];
       useLiveStore().broadcast({ t: "clear-page", pageId });
@@ -412,38 +550,8 @@ export const useEditorStore = defineStore("editor", {
           ? Math.abs(x - wx) <= radius && Math.abs(y - wy) <= radius
           : (x - wx) ** 2 + (y - wy) ** 2 <= r2;
       // The sub-interval [t1,t2] of segment A→B that lies inside the eraser, else null.
-      const insideInterval = (a: StrokePoint, b: StrokePoint): [number, number] | null => {
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        if (square) {
-          const slab = (p0: number, d: number, lo: number, hi: number): [number, number] | null => {
-            if (Math.abs(d) < 1e-9) return p0 >= lo && p0 <= hi ? [0, 1] : null;
-            let t0 = (lo - p0) / d;
-            let t1 = (hi - p0) / d;
-            if (t0 > t1) [t0, t1] = [t1, t0];
-            return [t0, t1];
-          };
-          const xi = slab(a.x, dx, wx - radius, wx + radius);
-          if (!xi) return null;
-          const yi = slab(a.y, dy, wy - radius, wy + radius);
-          if (!yi) return null;
-          const t1 = Math.max(0, xi[0], yi[0]);
-          const t2 = Math.min(1, xi[1], yi[1]);
-          return t1 <= t2 ? [t1, t2] : null;
-        }
-        const fx = a.x - wx;
-        const fy = a.y - wy;
-        const aa = dx * dx + dy * dy;
-        if (aa < 1e-9) return fx * fx + fy * fy <= r2 ? [0, 1] : null;
-        const bb = 2 * (fx * dx + fy * dy);
-        const cc = fx * fx + fy * fy - r2;
-        const disc = bb * bb - 4 * aa * cc;
-        if (disc < 0) return null;
-        const sq = Math.sqrt(disc);
-        const t1 = Math.max(0, (-bb - sq) / (2 * aa));
-        const t2 = Math.min(1, (-bb + sq) / (2 * aa));
-        return t1 <= t2 ? [t1, t2] : null;
-      };
+      const insideInterval = (a: StrokePoint, b: StrokePoint): [number, number] | null =>
+        eraserHitInterval(a.x, a.y, b.x, b.y, wx, wy, radius, square);
       const lerp = (a: StrokePoint, b: StrokePoint, t: number): StrokePoint => ({
         x: a.x + (b.x - a.x) * t,
         y: a.y + (b.y - a.y) * t,
@@ -522,25 +630,74 @@ export const useEditorStore = defineStore("editor", {
     // Call before starting an area-erase gesture to snapshot the before-state.
     beginAreaErase(pageId: string) {
       this._areaEraseBefore = this.strokes.filter((s) => s.pageId === pageId);
+      this._areaEraseShapesBefore = this.shapes.filter((s) => s.pageId === pageId);
     },
-    // Persist the current strokes of a page after an area-erase gesture.
+    // Area eraser over shapes: clip each touched shape's outline against the
+    // eraser and keep the surviving pieces as crisp `line` shapes, so erasing a
+    // part removes only that part while the rest stays sharp (not pen-rasterized).
+    // In-memory + synchronous; persisted by flushPage. Mirrors eraseArea.
+    eraseAreaShapes(pageId: string, wx: number, wy: number, radius: number): boolean {
+      const square = this.eraserShape === "square";
+      const survivors: Shape[] = [];
+      let changed = false;
+      for (const shape of this.shapes) {
+        if (shape.pageId !== pageId) {
+          survivors.push(shape);
+          continue;
+        }
+        const pieces: Array<[number, number, number, number]> = [];
+        let hit = false;
+        for (const [ax, ay, bx, by] of shapeSegments(shape)) {
+          const iv = eraserHitInterval(ax, ay, bx, by, wx, wy, radius, square);
+          if (!iv || iv[1] - iv[0] <= 1e-6) {
+            pieces.push([ax, ay, bx, by]);
+            continue;
+          }
+          hit = true;
+          const [t1, t2] = iv;
+          if (t1 > 1e-6) pieces.push([ax, ay, ax + (bx - ax) * t1, ay + (by - ay) * t1]);
+          if (t2 < 1 - 1e-6) pieces.push([ax + (bx - ax) * t2, ay + (by - ay) * t2, bx, by]);
+        }
+        if (!hit) {
+          survivors.push(shape);
+          continue;
+        }
+        changed = true;
+        for (const [ax, ay, bx, by] of pieces) {
+          if (Math.hypot(bx - ax, by - ay) < 0.5) continue;
+          survivors.push({ ...shape, id: newId(), type: "line", x1: ax, y1: ay, x2: bx, y2: by });
+        }
+      }
+      if (changed) this.shapes = survivors;
+      return changed;
+    },
+    // Persist the current strokes + shapes of a page after an area-erase gesture.
     async flushPage(pageId: string) {
       this.saving++;
       try {
         const after = this.strokes.filter((s) => s.pageId === pageId);
         const before = this._areaEraseBefore ?? after;
         this._areaEraseBefore = null;
-        if (before !== after) {
-          this.history = [...this.history, { kind: "area-erase", pageId, before, after }];
+        const shapesAfter = this.shapes.filter((s) => s.pageId === pageId);
+        const shapesBefore = this._areaEraseShapesBefore ?? shapesAfter;
+        this._areaEraseShapesBefore = null;
+        if (before !== after || shapesBefore !== shapesAfter) {
+          this.history = [
+            ...this.history,
+            { kind: "area-erase", pageId, before, after, shapesBefore, shapesAfter },
+          ];
           this.redoStack = [];
         }
         await storage.deleteStrokesForPage(pageId);
         for (const s of this.strokes) if (s.pageId === pageId) await storage.putStroke(s);
+        await storage.deleteShapesForPage(pageId);
+        for (const s of shapesAfter) await storage.putShape(s);
         useLiveStore().broadcast({
           t: "page-set",
           pageId,
           pages: [...this.pages],
           strokes: after,
+          shapes: shapesAfter,
         });
       } finally {
         this.saving--;
@@ -561,11 +718,14 @@ export const useEditorStore = defineStore("editor", {
       this.project.notebookMode = mode;
       this.project.updatedAt = Date.now();
       await storage.putProject({ ...this.project });
-      // Entering the stack needs every sheet's strokes; leaving it restores the
-      // Free-mode single-page invariant.
-      if (wasOff && mode !== "off") await this.loadAllStrokes();
-      else if (!wasOff && mode === "off" && this.currentPageId) {
+      // Entering the stack needs every sheet's strokes/shapes; leaving it
+      // restores the Free-mode single-page invariant.
+      if (wasOff && mode !== "off") {
+        await this.loadAllStrokes();
+        await this.loadAllShapes();
+      } else if (!wasOff && mode === "off" && this.currentPageId) {
         await this.loadStrokes(this.currentPageId);
+        await this.loadShapes(this.currentPageId);
       }
       // Re-snapshot live viewers onto the new mode/stack (strokes sent chunked).
       useLiveStore().broadcastNotebookSync(
@@ -573,6 +733,7 @@ export const useEditorStore = defineStore("editor", {
         this.notebookLayout,
         [...this.pages],
         [...this.strokes],
+        [...this.shapes],
       );
     },
     async setNotebookLayout(layout: NotebookLayout) {

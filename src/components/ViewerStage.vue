@@ -119,6 +119,7 @@ function render() {
         baseRenderer,
         live.viewerPages,
         live.viewerAllStrokes,
+        live.viewerAllShapes,
         live.viewerNotebookLayout,
         sheetColors,
         {
@@ -129,6 +130,9 @@ function render() {
       baseRenderer.beginFrame();
       for (const s of live.viewerStrokes) {
         if (s.pageId === props.page.id) baseRenderer.drawStroke(s);
+      }
+      for (const sh of live.viewerShapes) {
+        if (sh.pageId === props.page.id) baseRenderer.drawShape(sh);
       }
       for (const t of props.page.texts ?? []) baseRenderer.drawText(t);
       baseRenderer.endFrame();
@@ -156,16 +160,21 @@ function render() {
 }
 
 watch(
-  () => live.viewerStrokes.length,
+  () => [live.viewerStrokes.length, live.viewerShapes.length],
   () => {
     dirtyBase = true;
     schedule();
   },
 );
 
-// Notebook stack: repaint on stroke/layout/page changes across the whole stack.
+// Notebook stack: repaint on stroke/shape/layout/page changes across the whole stack.
 watch(
-  () => [live.viewerAllStrokes.length, live.viewerNotebookLayout, live.viewerNotebookMode],
+  () => [
+    live.viewerAllStrokes.length,
+    live.viewerAllShapes.length,
+    live.viewerNotebookLayout,
+    live.viewerNotebookMode,
+  ],
   () => {
     dirtyBase = true;
     schedule();
