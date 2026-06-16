@@ -69,6 +69,8 @@ export interface Project {
   notebookMode?: NotebookMode;
   // Tiling direction of the A4 stack in notebook mode; absent means "vertical".
   notebookLayout?: NotebookLayout;
+  // Opt-in session recording for exact-history replay (default off / absent).
+  recordReplay?: boolean;
   deletedAt?: number;
 }
 
@@ -126,4 +128,30 @@ export interface BoundingBox {
   minY: number;
   maxX: number;
   maxY: number;
+}
+
+// ── Session recording (opt-in) ───────────────────────────────────────────────
+// Forward-only content operations captured with timestamps when a project has
+// recordReplay on. Replaying applies them in order, so erasures, moves and the
+// effects of undo/redo all show up as they actually happened. "set" ops are
+// upserts (add or replace by id); add ops carry the full item.
+export type ReplayOp =
+  | { op: "stroke-add"; stroke: Stroke }
+  | { op: "stroke-remove"; pageId: ID; id: ID }
+  | { op: "shape-add"; shape: Shape }
+  | { op: "shape-remove"; pageId: ID; id: ID }
+  | { op: "image-set"; image: ImageItem }
+  | { op: "image-remove"; pageId: ID; id: ID }
+  | { op: "text-set"; text: TextItem }
+  | { op: "text-remove"; pageId: ID; id: ID }
+  | { op: "page-clear"; pageId: ID };
+
+export interface ReplayEvent {
+  seq?: number; // autoincrement key, assigned by storage
+  projectId: ID;
+  t: number; // wall-clock ms when the op happened
+  op: ReplayOp;
+  // Snapshot of content that already existed when recording was switched on.
+  // Replay shows these instantly at t=0 instead of re-animating them.
+  baseline?: boolean;
 }

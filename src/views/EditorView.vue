@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
 import { installPointerProbe } from "@/adapters/input/pointerDebug";
+import { storage } from "@/adapters/storage/indexedDB";
 // biome-ignore lint/style/useImportType: rendered in the template — needs a value import, not `import type` (would break runtime component resolution).
 import CanvasStage from "@/components/CanvasStage.vue";
 import DebugConsole from "@/components/DebugConsole.vue";
@@ -35,6 +36,23 @@ const hasContent = computed(
     editor.images.length > 0 ||
     editor.pages.some((p) => (p.texts?.length ?? 0) > 0),
 );
+
+// Prefer exact-history playback when a recorded event log exists; otherwise fall
+// back to reconstructing the drawing from its final content.
+async function startReplay() {
+  if (!editor.project) return;
+  const events = await storage.listEvents(editor.project.id);
+  if (events.length > 0) {
+    replay.startEvents(events);
+  } else {
+    replay.start({
+      strokes: editor.strokes,
+      shapes: editor.shapes,
+      images: editor.images,
+      pages: editor.pages,
+    });
+  }
+}
 
 const panelOpen = ref(false);
 const toolbarCollapsed = ref(false);
@@ -160,7 +178,7 @@ onBeforeUnmount(() => removeProbe?.());
         :class="{ quiet: editor.isDrawing }"
         title="Replay drawing"
         aria-label="Replay drawing"
-        @click="replay.start({ strokes: editor.strokes, shapes: editor.shapes, images: editor.images, pages: editor.pages })"
+        @click="startReplay()"
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M8 5v14l11-7z"/>

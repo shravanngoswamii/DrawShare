@@ -1,11 +1,11 @@
 import { type IDBPDatabase, openDB } from "idb";
 import type { StorageAdapter } from "@/core/ports";
-import type { ID, ImageItem, Page, Project, Shape, Stroke } from "@/core/types";
+import type { ID, ImageItem, Page, Project, ReplayEvent, Shape, Stroke } from "@/core/types";
 
 const DB_NAME = "drawshare";
-// v2 added the shapes store; v3 adds the images store. The guarded upgrade below
-// is idempotent, so any prior version migrates forward by creating what's missing.
-const DB_VERSION = 3;
+// v2 added shapes; v3 added images; v4 adds the replay events log. The guarded
+// upgrade below is idempotent, so any prior version migrates by creating what's missing.
+const DB_VERSION = 4;
 
 // Strip Vue reactive Proxies: structured clone (IndexedDB) throws on them.
 function toPlain<T>(value: T): T {
@@ -18,6 +18,8 @@ interface Schema {
   strokes: { key: string; value: Stroke; indexes: { byPage: string } };
   shapes: { key: string; value: Shape; indexes: { byPage: string } };
   images: { key: string; value: ImageItem; indexes: { byPage: string } };
+  // Append-only recording log; autoincrement seq preserves order, byProject filters.
+  events: { key: number; value: ReplayEvent; indexes: { byProject: string } };
 }
 
 export class IndexedDBStorage implements StorageAdapter {
@@ -45,6 +47,10 @@ export class IndexedDBStorage implements StorageAdapter {
           const images = db.createObjectStore("images", { keyPath: "id" });
           images.createIndex("byPage", "pageId");
         }
+        if (!db.objectStoreNames.contains("events")) {
+          const events = db.createObjectStore("events", { keyPath: "seq", autoIncrement: true });
+          events.createIndex("byProject", "projectId");
+        }
       },
     });
   }
@@ -69,7 +75,12 @@ export class IndexedDBStorage implements StorageAdapter {
 
   async deleteProject(id: ID): Promise<void> {
     const db = this.require();
-    const tx = db.transaction(["projects", "pages", "strokes", "shapes", "images"], "readwrite");
+    const tx = db.transaction(
+      ["projects", "pages", "strokes", "shapes", "images", "events"],
+      "readwrite",
+    );
+    const eventKeys = await tx.objectStore("events").index("byProject").getAllKeys(id);
+    for (const k of eventKeys) await tx.objectStore("events").delete(k);
     const pages = await tx.objectStore("pages").index("byProject").getAllKeys(id);
     for (const pageId of pages) {
       const strokeIds = await tx
@@ -180,6 +191,25 @@ export class IndexedDBStorage implements StorageAdapter {
     const db = this.require();
     const tx = db.transaction("images", "readwrite");
     const keys = await tx.store.index("byPage").getAllKeys(pageId);
+    for (const k of keys) await tx.store.delete(k);
+    await tx.done;
+  }
+
+  async appendEvent(e: ReplayEvent): Promise<void> {
+    // toPlain (JSON round-trip) drops an undefined seq, so the autoincrement key
+    // generator assigns it.
+    await this.require().add("events", toPlain(e));
+  }
+
+  async listEvents(projectId: ID): Promise<ReplayEvent[]> {
+    // getAllFromIndex returns in key (seq) order → chronological.
+    return this.require().getAllFromIndex("events", "byProject", projectId);
+  }
+
+  async clearEvents(projectId: ID): Promise<void> {
+    const db = this.require();
+    const tx = db.transaction("events", "readwrite");
+    const keys = await tx.store.index("byProject").getAllKeys(projectId);
     for (const k of keys) await tx.store.delete(k);
     await tx.done;
   }

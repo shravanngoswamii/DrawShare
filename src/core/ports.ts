@@ -1,4 +1,4 @@
-import type { ID, ImageItem, Page, Project, Shape, Stroke, TextItem } from "./types";
+import type { ID, ImageItem, Page, Project, ReplayEvent, Shape, Stroke, TextItem } from "./types";
 
 export interface StorageAdapter {
   init(): Promise<void>;
@@ -26,6 +26,11 @@ export interface StorageAdapter {
   putImage(img: ImageItem): Promise<void>;
   deleteImage(id: ID): Promise<void>;
   deleteImagesForPage(pageId: ID): Promise<void>;
+
+  // Session-recording event log (opt-in replay).
+  appendEvent(e: ReplayEvent): Promise<void>;
+  listEvents(projectId: ID): Promise<ReplayEvent[]>;
+  clearEvents(projectId: ID): Promise<void>;
 }
 
 export interface InputAdapter {
