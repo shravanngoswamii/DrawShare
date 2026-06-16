@@ -38,6 +38,11 @@ jobs:
         run: npm run check
         continue-on-error: true
 
+      - name: Run unit tests
+        id: tests
+        run: npm run test
+        continue-on-error: true
+
       - name: Security audit
         id: audit
         run: npm audit --audit-level=high
@@ -48,9 +53,11 @@ jobs:
         run: |
           echo "TypeScript: ${{ steps.typecheck.outcome }}"
           echo "Biome: ${{ steps.biome.outcome }}"
+          echo "Tests: ${{ steps.tests.outcome }}"
           echo "Security Audit: ${{ steps.audit.outcome }}"
           if [ "${{ steps.typecheck.outcome }}" == "failure" ] || \
-             [ "${{ steps.biome.outcome }}" == "failure" ]; then
+             [ "${{ steps.biome.outcome }}" == "failure" ] || \
+             [ "${{ steps.tests.outcome }}" == "failure" ]; then
             exit 1
           fi
 
@@ -61,7 +68,7 @@ jobs:
           message: |
             ### Code Quality Summary
 
-            | TypeScript | Biome | Security Audit |
-            |:----------:|:-----:|:--------------:|
-            | ${{ steps.typecheck.outcome == 'success' && '✅ Passed' || '❌ Failed' }} | ${{ steps.biome.outcome == 'success' && '✅ Passed' || '❌ Failed' }} | ${{ steps.audit.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
+            | TypeScript | Biome | Tests | Security Audit |
+            |:----------:|:-----:|:-----:|:--------------:|
+            | ${{ steps.typecheck.outcome == 'success' && '✅ Passed' || '❌ Failed' }} | ${{ steps.biome.outcome == 'success' && '✅ Passed' || '❌ Failed' }} | ${{ steps.tests.outcome == 'success' && '✅ Passed' || '❌ Failed' }} | ${{ steps.audit.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |
           comment-tag: code-quality-summary

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import HelpPanel from "@/components/HelpPanel.vue";
+import { useOnboarding } from "@/composables/useOnboarding";
 import { useProjectBackup } from "@/composables/useProjectBackup";
 import { useTheme } from "@/composables/useTheme";
 import { useThumbnails } from "@/composables/useThumbnails";
@@ -15,9 +17,11 @@ const router = useRouter();
 const { isDark, toggleTheme } = useTheme();
 const { exportAll, exportProject, importAll } = useProjectBackup();
 const { projectThumbnails, renderProjectThumbnail } = useThumbnails();
+const { maybeStart } = useOnboarding();
 const importInput = ref<HTMLInputElement | null>(null);
 const importing = ref(false);
 const query = ref("");
+const helpOpen = ref(false);
 const renamingId = ref<string | null>(null);
 const renameValue = ref("");
 const joinCode = ref("");
@@ -53,6 +57,8 @@ onMounted(async () => {
   for (const p of projects.projects) {
     renderProjectThumbnail(p);
   }
+  // First-run welcome tour (skipped if already seen).
+  maybeStart("projects");
 });
 
 // Render thumbnails for projects that arrive after the initial load.
@@ -187,7 +193,7 @@ function formatDate(ts: number): string {
               <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
             </svg>
           </button>
-          <button class="btn btn-primary new-btn" @click="createNew">
+          <button class="btn btn-primary new-btn" data-tour="new-project" @click="createNew">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 5v14M5 12h14" />
@@ -199,11 +205,59 @@ function formatDate(ts: number): string {
     </header>
 
     <main class="main">
-      <section class="join-card">
+
+      <!-- ── Hero strip — shown until the user has projects ── -->
+      <section v-if="projects.loaded && projects.activeProjects.length === 0" class="hero">
+        <h1 class="hero-title">A local-first collaborative whiteboard</h1>
+        <p class="hero-sub">Draw on an infinite canvas, share your screen live over the local network, and keep everything on your device — no account needed.</p>
+        <div class="hero-features">
+          <div class="feat">
+            <div class="feat-icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/>
+              </svg>
+            </div>
+            <div>
+              <div class="feat-label">Freehand drawing</div>
+              <div class="feat-desc muted">Pen, highlighter, text, shapes</div>
+            </div>
+          </div>
+          <div class="feat">
+            <div class="feat-icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1.5 8.5a13 13 0 0 1 21 0"/><path d="M5 12.5a9 9 0 0 1 14 0"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>
+              </svg>
+            </div>
+            <div>
+              <div class="feat-label">Share live</div>
+              <div class="feat-desc muted">Real-time streaming over local Wi-Fi</div>
+            </div>
+          </div>
+          <div class="feat">
+            <div class="feat-icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.68 3.32C1.63 2.18 2.49 1 3.65 1h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9a16 16 0 0 0 6.91 6.91l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 23 17z"/>
+              </svg>
+            </div>
+            <div>
+              <div class="feat-label">Works offline</div>
+              <div class="feat-desc muted">All data stays on your device</div>
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-primary hero-cta" @click="createNew">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          Start drawing
+        </button>
+      </section>
+
+      <section class="join-card" data-tour="join">
         <div class="join-text">
           <div class="join-title">Join a live session</div>
           <div class="muted join-sub">
-            Enter a code shared by the host device to watch live strokes.
+            Enter a code shared by the host to watch their canvas live.
           </div>
         </div>
         <form class="join-form" @submit.prevent="joinSession">
@@ -222,30 +276,18 @@ function formatDate(ts: number): string {
         </form>
       </section>
 
-      <div class="page-header">
+      <!-- Projects header only when projects exist — the hero covers the empty case. -->
+      <div v-if="projects.loaded && projects.activeProjects.length > 0" class="page-header">
         <h1 class="page-title">Projects</h1>
-        <div class="muted page-count" v-if="projects.loaded">
-          {{ projects.activeProjects.length }} total
-        </div>
+        <div class="muted page-count">{{ projects.activeProjects.length }} total</div>
       </div>
 
-      <div v-if="!projects.loaded" class="state muted">Loading.</div>
+      <div v-if="!projects.loaded" class="state muted">Loading…</div>
 
-      <div v-else-if="filtered.length === 0 && !query && projects.activeProjects.length === 0" class="empty">
-        <div class="empty-icon" aria-hidden="true">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <path d="M14 2v6h6" />
-            <path d="m10 12 1 4 4-8" />
-          </svg>
-        </div>
-        <div class="empty-title">No projects yet</div>
-        <div class="muted empty-sub">Create your first canvas to start writing.</div>
-        <button class="btn btn-primary" @click="createNew">New project</button>
-      </div>
-
-      <div v-else-if="filtered.length === 0" class="empty">
+      <div
+        v-else-if="filtered.length === 0 && projects.activeProjects.length > 0"
+        class="empty"
+      >
         <div class="empty-title">No matches</div>
         <div class="muted empty-sub">No projects match "{{ query }}".</div>
       </div>
@@ -326,7 +368,17 @@ function formatDate(ts: number): string {
         </ul>
       </section>
     </main>
+    <button
+      class="help-fab"
+      data-tour="help"
+      :class="{ active: helpOpen }"
+      @click="helpOpen = !helpOpen"
+      :aria-expanded="helpOpen"
+      title="Help"
+      aria-label="Help"
+    >?</button>
   </div>
+  <HelpPanel :open="helpOpen" @close="helpOpen = false" />
 </template>
 
 <style scoped>
@@ -389,6 +441,30 @@ function formatDate(ts: number): string {
   color: var(--color-text-muted);
 }
 
+.help-fab {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 20;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--color-glass-bg-strong);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-glass-border);
+  box-shadow: 0 2px 8px var(--color-glass-shadow);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: box-shadow 150ms, color 80ms, background 80ms;
+}
+.help-fab:hover { box-shadow: var(--shadow-md); color: var(--color-text); }
+.help-fab.active { background: var(--color-accent-soft); color: var(--color-accent); border-color: var(--color-accent); }
+
 .search {
   width: 260px;
 }
@@ -403,6 +479,75 @@ function formatDate(ts: number): string {
   margin: 0 auto;
   width: 100%;
   flex: 1;
+}
+
+/* ── Hero strip ── */
+.hero {
+  text-align: center;
+  padding: var(--space-10) var(--space-6) var(--space-8);
+}
+
+.hero-title {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  margin: 0 0 var(--space-3);
+}
+
+.hero-sub {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  max-width: 480px;
+  margin: 0 auto var(--space-8);
+  line-height: 1.6;
+}
+
+.hero-features {
+  display: flex;
+  gap: var(--space-6);
+  justify-content: center;
+  margin-bottom: var(--space-8);
+  flex-wrap: wrap;
+}
+
+.feat {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  text-align: left;
+  max-width: 180px;
+}
+
+.feat-icon {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.feat-label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.feat-desc {
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.hero-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-6);
+  height: 42px;
+  font-size: var(--text-sm);
 }
 
 .join-card {
@@ -720,6 +865,17 @@ function formatDate(ts: number): string {
 }
 
 /* Phone */
+@media (max-width: 600px) {
+  .hero-features {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-4);
+  }
+  .feat { max-width: none; }
+  .hero { padding: var(--space-8) var(--space-4) var(--space-6); }
+  .hero-title { font-size: var(--text-xl); }
+}
+
 @media (max-width: 767px) {
   .header-inner {
     padding: var(--space-2) var(--space-4);
