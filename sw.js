@@ -2,8 +2,8 @@
 // vite.config.ts: CACHE gets a per-build id (so every deploy installs a fresh
 // worker and purges old caches) and PRECACHE is filled with the build's real
 // asset URLs. The defaults below are only used by the dev server.
-const CACHE = "drawshare-b0ffa826";
-const PRECACHE = ["/DrawShare/","/DrawShare/apple-touch-icon.png","/DrawShare/assets/EditorView-DU9Tsst5.js","/DrawShare/assets/ProjectsView-8vINILB3.js","/DrawShare/assets/ViewerView-CNeIQqbm.js","/DrawShare/assets/_plugin-vue_export-helper-CRtzhIol.js","/DrawShare/assets/index-UKOytxPf.js","/DrawShare/assets/ink-Cf9glKkn.js","/DrawShare/assets/style-B6RrM2fV.css","/DrawShare/assets/useThumbnails-C00uKhf_.js","/DrawShare/favicon.svg","/DrawShare/icon-192.png","/DrawShare/icon-512.png","/DrawShare/index.html","/DrawShare/manifest.webmanifest"];
+const CACHE = "drawshare-a3879409";
+const PRECACHE = ["/DrawShare/","/DrawShare/apple-touch-icon.png","/DrawShare/assets/EditorView-yp0PZjK2.js","/DrawShare/assets/ProjectsView-BflyJMyg.js","/DrawShare/assets/ViewerView-DqW1FZSV.js","/DrawShare/assets/_plugin-vue_export-helper-DNu2T1j_.js","/DrawShare/assets/index-BiLe9l3Y.js","/DrawShare/assets/ink-CLxRJMMJ.js","/DrawShare/assets/style-C-XxvXYo.css","/DrawShare/assets/useThumbnails-DFTDv7ni.js","/DrawShare/favicon.svg","/DrawShare/icon-192.png","/DrawShare/icon-512.png","/DrawShare/index.html","/DrawShare/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   // Precache the whole current build — app shell + every hashed JS/CSS chunk
