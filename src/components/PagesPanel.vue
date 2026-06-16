@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { exportPageAsPng } from "@/composables/useExport";
+import {
+  exportNotebookPdf as exportNotebookPdfToPrint,
+  exportPageAsPng,
+} from "@/composables/useExport";
 import { useTheme } from "@/composables/useTheme";
 import { useThumbnails } from "@/composables/useThumbnails";
 import { devMode, setDevMode } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
-import { useProjectsStore } from "@/stores/projects";
+import { PAPER_SIZES, useProjectsStore } from "@/stores/projects";
 
 const props = defineProps<{ open?: boolean; collapsed?: boolean }>();
 const emit = defineEmits<{ close: []; toggle: []; share: [] }>();
@@ -38,15 +41,18 @@ let thumbDebounce: ReturnType<typeof setTimeout> | undefined;
 // Render current page thumbnail whenever strokes or texts change.
 // Skips debounce on first render so the thumbnail appears immediately on load.
 watch(
-  () => [editor.strokes, editor.currentPage?.texts],
+  () => [editor.strokes, editor.shapes, editor.images, editor.currentPage?.texts],
   () => {
     const page = editor.currentPage;
     if (!page) return;
     clearTimeout(thumbDebounce);
     if (!thumbnails.value[page.id]) {
-      renderThumbnail(page, editor.strokes);
+      renderThumbnail(page, editor.strokes, editor.shapes, editor.images);
     } else {
-      thumbDebounce = setTimeout(() => renderThumbnail(page, editor.strokes), 400);
+      thumbDebounce = setTimeout(
+        () => renderThumbnail(page, editor.strokes, editor.shapes, editor.images),
+        400,
+      );
     }
   },
   { deep: false },
@@ -119,7 +125,10 @@ async function remove(id: string, name: string) {
 }
 
 async function select(id: string) {
-  await editor.selectPage(id);
+  // Notebook mode is one continuous canvas — scroll to the sheet instead of
+  // switching pages. Free mode switches the visible page.
+  if (editor.notebookMode !== "off") editor.requestScrollToSheet(id);
+  else await editor.selectPage(id);
   emit("close");
 }
 
@@ -139,7 +148,58 @@ async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
 async function exportCurrentPage() {
   const page = editor.currentPage;
   if (!page) return;
-  await exportPageAsPng(page, editor.strokes);
+  await exportPageAsPng(page, editor.strokes, editor.shapes, editor.images);
+}
+
+async function exportNotebookPdf() {
+  if (editor.pages.length === 0) return;
+  await exportNotebookPdfToPrint(editor.pages, editor.strokes, editor.shapes, editor.images);
+}
+
+const paperSizes = PAPER_SIZES;
+
+const isLandscape = computed(() => {
+  const p = editor.currentPage;
+  return p ? p.width > p.height : false;
+});
+
+function isActivePaperSize(sz: (typeof PAPER_SIZES)[number]) {
+  const p = editor.currentPage;
+  if (!p) return false;
+  const pw = Math.min(p.width, p.height);
+  const ph = Math.max(p.width, p.height);
+  const sw = Math.min(sz.width, sz.height);
+  const sh = Math.max(sz.width, sz.height);
+  return pw === sw && ph === sh;
+}
+
+async function setPaperSize(sz: (typeof PAPER_SIZES)[number]) {
+  const page = editor.currentPage;
+  if (!page) return;
+  const landscape = isLandscape.value;
+  const w = landscape ? sz.height : sz.width;
+  const h = landscape ? sz.width : sz.height;
+  await editor.setPageSize(page.id, w, h);
+}
+
+async function setOrientation(orient: "portrait" | "landscape") {
+  const page = editor.currentPage;
+  if (!page) return;
+  const needsSwap = orient === "landscape" ? page.width < page.height : page.width > page.height;
+  if (needsSwap) await editor.setPageSize(page.id, page.height, page.width);
+}
+
+// "None": no fixed page boundary (true infinite canvas — no frame, export fits
+// the drawing). Stored as 0×0 dimensions.
+const isNoPageSize = computed(() => {
+  const p = editor.currentPage;
+  return p ? !p.width || !p.height : false;
+});
+
+async function setNoPageSize() {
+  const page = editor.currentPage;
+  if (!page) return;
+  await editor.setPageSize(page.id, 0, 0);
 }
 </script>
 
@@ -189,7 +249,7 @@ async function exportCurrentPage() {
 
       <!-- ── Share ── -->
       <div class="share-section">
-        <button class="share-btn" :class="{ live: live.isHosting }" @click="emit('share')" :title="live.isHosting ? `Live session: ${live.code}` : 'Start a live session'">
+        <button class="share-btn" data-tour="share" :class="{ live: live.isHosting }" @click="emit('share')" :title="live.isHosting ? `Live session: ${live.code}` : 'Start a live session'">
           <span v-if="live.isHosting" class="live-dot" aria-hidden="true"></span>
           <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -200,7 +260,7 @@ async function exportCurrentPage() {
       </div>
 
       <!-- ── Pages ── -->
-      <div class="section pages-section">
+      <div class="section pages-section" data-tour="pages">
         <div class="section-title pages-head">
           <span>Pages</span>
           <button class="add-page" @click="editor.addPage()" title="Add page">
@@ -278,6 +338,14 @@ async function exportCurrentPage() {
             </svg>
             <span>{{ isFullscreen ? 'Exit full' : 'Fullscreen' }}</span>
           </button>
+          <button v-if="editor.notebookMode !== 'off'" class="tool-btn" @click="exportNotebookPdf" title="Export A4 page as PDF">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>
+              <path d="M9 15h6M9 18h4"/>
+            </svg>
+            <span>Export PDF</span>
+          </button>
           <button class="tool-btn" :class="{ 'tool-active': devMode }" @click="setDevMode(!devMode)" title="Dev mode">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -301,6 +369,78 @@ async function exportCurrentPage() {
           >
             {{ b.label }}
           </button>
+        </div>
+      </div>
+
+      <!-- ── Page size (Free mode only; notebook mode uses fixed A4 sheets) ── -->
+      <div v-if="editor.notebookMode === 'off'" class="section">
+        <div class="section-title">Page size</div>
+        <div class="bg-grid">
+          <button
+            v-for="sz in paperSizes"
+            :key="sz.id"
+            class="bg-btn"
+            :class="{ active: isActivePaperSize(sz) }"
+            @click="setPaperSize(sz)"
+          >
+            {{ sz.label }}
+          </button>
+        </div>
+        <button
+          class="bg-btn none-btn"
+          :class="{ active: isNoPageSize }"
+          @click="setNoPageSize"
+          title="No page boundary — infinite canvas"
+        >
+          None (infinite canvas)
+        </button>
+        <div v-if="!isNoPageSize" class="orient-row">
+          <button
+            class="orient-btn"
+            :class="{ active: !isLandscape }"
+            @click="setOrientation('portrait')"
+            title="Portrait"
+            aria-label="Portrait orientation"
+          >
+            <svg width="11" height="15" viewBox="0 0 11 15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <rect x="0.75" y="0.75" width="9.5" height="13.5" rx="1.25"/>
+            </svg>
+            Portrait
+          </button>
+          <button
+            class="orient-btn"
+            :class="{ active: isLandscape }"
+            @click="setOrientation('landscape')"
+            title="Landscape"
+            aria-label="Landscape orientation"
+          >
+            <svg width="15" height="11" viewBox="0 0 15 11" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <rect x="0.75" y="0.75" width="13.5" height="9.5" rx="1.25"/>
+            </svg>
+            Landscape
+          </button>
+        </div>
+      </div>
+
+      <!-- ── Canvas mode ── -->
+      <div class="section">
+        <div class="section-title">Canvas Mode</div>
+        <div class="mode-btns">
+          <button class="mode-btn" :class="{ active: editor.notebookMode === 'off' }" @click="editor.setNotebookMode('off')">Free</button>
+          <button class="mode-btn" :class="{ active: editor.notebookMode === 'notebook' }" @click="editor.setNotebookMode('notebook')">Notebook</button>
+          <button class="mode-btn mode-btn-strict" :class="{ active: editor.notebookMode === 'strict' }" @click="editor.setNotebookMode('strict')">Strict</button>
+        </div>
+        <p class="mode-hint">
+          <template v-if="editor.notebookMode === 'off'">Infinite canvas — draw anywhere.</template>
+          <template v-else-if="editor.notebookMode === 'notebook'">A4 sheets as a guide; draw anywhere, only the sheets export.</template>
+          <template v-else>A4 sheets; drawing is locked to the sheet.</template>
+        </p>
+        <div v-if="editor.notebookMode !== 'off'" class="layout-row">
+          <span class="layout-label">Scroll</span>
+          <div class="mode-btns layout-btns">
+            <button class="mode-btn" :class="{ active: editor.notebookLayout === 'vertical' }" @click="editor.setNotebookLayout('vertical')">Vertical</button>
+            <button class="mode-btn" :class="{ active: editor.notebookLayout === 'horizontal' }" @click="editor.setNotebookLayout('horizontal')">Horizontal</button>
+          </div>
         </div>
       </div>
 
@@ -647,6 +787,58 @@ async function exportCurrentPage() {
   color: var(--color-success-strong);
 }
 
+/* ── Canvas mode ── */
+.mode-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.mode-btn {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-glass-bg);
+  padding: var(--space-2) var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+}
+.mode-btn:hover { background: var(--color-surface-2); color: var(--color-text); }
+.mode-btn.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-text);
+}
+.mode-btn-strict.active {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  color: #fff;
+}
+
+.mode-hint {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+.layout-row {
+  margin-top: var(--space-3);
+}
+.layout-label {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-2);
+}
+.layout-btns {
+  grid-template-columns: 1fr 1fr;
+}
+
 /* ── Background ── */
 .bg-grid {
   display: grid;
@@ -666,6 +858,40 @@ async function exportCurrentPage() {
 }
 .bg-btn:hover { background: var(--color-surface-2); color: var(--color-text); }
 .bg-btn.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-text);
+}
+
+.none-btn {
+  width: 100%;
+  margin-top: var(--space-2);
+}
+
+/* ── Orientation ── */
+.orient-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.orient-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-glass-bg);
+  padding: var(--space-2) var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+}
+.orient-btn:hover { background: var(--color-surface-2); color: var(--color-text); }
+.orient-btn.active {
   background: var(--color-accent);
   border-color: var(--color-accent);
   color: var(--color-accent-text);

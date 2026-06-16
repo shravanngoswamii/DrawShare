@@ -1,0 +1,110 @@
+/* Theme intro.js tours to match DrawShare. intro.js renders into <body>, so the
+   tooltip inherits the app's CSS variables from :root. Scoped to the .ds-introjs
+   tooltipClass so it never affects anything else. */
+
+.introjs-tooltip.ds-introjs {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  font-family: var(--font-sans);
+  min-width: 280px;
+  max-width: 340px;
+}
+
+.ds-introjs .introjs-tooltip-header {
+  padding: var(--space-4) var(--space-4) 0;
+}
+
+.ds-introjs .introjs-tooltip-title {
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+}
+
+.ds-introjs .introjs-tooltiptext {
+  padding: var(--space-2) var(--space-4) var(--space-4);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--color-text-muted);
+}
+
+/* Hide the connector arrow for a cleaner look — the highlight ring already
+   shows which element a step refers to. */
+.ds-introjs .introjs-arrow {
+  display: none;
+}
+
+.ds-introjs .introjs-bullets {
+  padding-top: var(--space-2);
+}
+.ds-introjs .introjs-bullets ul li a {
+  background: var(--color-border-strong);
+  width: 6px;
+  height: 6px;
+}
+.ds-introjs .introjs-bullets ul li a.active {
+  background: var(--color-accent);
+  width: 18px;
+}
+
+.ds-introjs .introjs-tooltipbuttons {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-3) var(--space-4);
+}
+
+.ds-introjs .introjs-button {
+  text-shadow: none;
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  padding: 5px 14px;
+  transition:
+    background 80ms ease,
+    color 80ms ease,
+    border-color 80ms ease;
+}
+.ds-introjs .introjs-button:hover,
+.ds-introjs .introjs-button:focus {
+  background: var(--color-surface-3, var(--color-surface-2));
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+  box-shadow: none;
+}
+.ds-introjs .introjs-nextbutton,
+.ds-introjs .introjs-donebutton {
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+  border-color: var(--color-accent);
+}
+.ds-introjs .introjs-nextbutton:hover,
+.ds-introjs .introjs-donebutton:hover {
+  background: var(--color-accent-hover);
+  color: var(--color-accent-text);
+  border-color: var(--color-accent-hover);
+}
+.ds-introjs .introjs-disabled,
+.ds-introjs .introjs-disabled:hover {
+  color: var(--color-text-muted);
+  background: transparent;
+  border-color: var(--color-border);
+  opacity: 0.6;
+}
+
+/* Rounded highlight ring around the targeted element. */
+.introjs-helperLayer {
+  border-radius: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .introjs-helperLayer,
+  .introjs-tooltipReferenceLayer,
+  .introjs-tooltip {
+    transition: none !important;
+  }
+}
