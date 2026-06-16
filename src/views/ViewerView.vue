@@ -128,7 +128,10 @@ async function copyResponse() {
     </header>
 
     <main class="stage-wrap">
-      <ViewerStage v-if="live.viewerCurrentPage" :page="live.viewerCurrentPage" />
+      <ViewerStage
+        v-if="live.viewerCurrentPage || (live.viewerIsNotebook && live.viewerPages.length)"
+        :page="live.viewerCurrentPage ?? live.viewerPages[0]"
+      />
       <div v-else class="state">
         <div v-if="live.status === 'error'" class="error-state">
           <div class="state-title">Couldn't connect</div>
@@ -170,7 +173,7 @@ async function copyResponse() {
         </div>
       </div>
 
-      <div v-if="showThumbs && live.viewerPages.length > 1" class="page-strip" role="tablist">
+      <div v-if="showThumbs && !live.viewerIsNotebook && live.viewerPages.length > 1" class="page-strip" role="tablist">
         <button
           v-for="p in live.viewerPages"
           :key="p.id"
