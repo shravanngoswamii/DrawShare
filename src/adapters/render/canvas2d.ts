@@ -127,6 +127,19 @@ export class Canvas2DRenderer implements Renderer {
     this.ctx.setTransform(s, 0, 0, s, (-x + dx) * s, (-y + dy) * s);
   }
 
+  pushClip(width: number, height: number): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, width, height);
+    ctx.clip();
+  }
+
+  popClip(): void {
+    this.ctx?.restore();
+  }
+
   drawSheetBackground(
     width: number,
     height: number,

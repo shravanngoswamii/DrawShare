@@ -53,6 +53,10 @@ export interface Renderer {
   // Used to place each A4 sheet of a notebook stack at its world position while
   // its strokes/texts stay in page-local coordinates.
   setOrigin(dx: number, dy: number): void;
+  // Clip subsequent draws to the local rect (0,0)..(width,height) until
+  // popClip() — keeps notebook ink inside its sheet. Save/restore based.
+  pushClip(width: number, height: number): void;
+  popClip(): void;
   // Paint a sheet's paper + background pattern at the current origin, in local
   // coords (0,0)..(width,height).
   drawSheetBackground(

@@ -362,6 +362,8 @@ function render() {
     // Free mode where drawOffset is 0).
     liveRenderer.setCamera({ x: cam.x - drawOffsetX, y: cam.y - drawOffsetY, zoom: cam.zoom });
     liveRenderer.beginFrame();
+    // Keep the in-progress stroke inside its sheet, matching the committed layer.
+    if (isNotebook()) liveRenderer.pushClip(PAGE_W, PAGE_H);
     if (predictedPoints.length > 0) {
       liveRenderer.drawLive({
         ...currentStroke,
@@ -370,6 +372,7 @@ function render() {
     } else {
       liveRenderer.drawLive(currentStroke);
     }
+    if (isNotebook()) liveRenderer.popClip();
     liveRenderer.endFrame();
     if (live.mode === "host" && currentStroke.points.length > liveSendCursor) {
       const newPoints = currentStroke.points.slice(liveSendCursor);

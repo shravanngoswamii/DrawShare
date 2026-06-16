@@ -37,11 +37,13 @@ export function drawStack(
     if (!page) continue;
     const { x, y } = sheetWorldPos(i, layout);
     renderer.setOrigin(x, y);
+    renderer.pushClip(PAGE_W, PAGE_H);
     renderer.drawSheetBackground(PAGE_W, PAGE_H, page.background, colors);
     const ps = byPage.get(page.id);
     if (ps) for (const s of ps) renderer.drawStroke(s);
     const texts = page.texts;
     if (texts) for (const t of texts) if (t.id !== editingTextId) renderer.drawText(t);
+    renderer.popClip();
   }
   renderer.endFrame();
 }
