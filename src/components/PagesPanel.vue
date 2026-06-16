@@ -200,7 +200,7 @@ async function exportNotebookPdf() {
 
       <!-- ── Share ── -->
       <div class="share-section">
-        <button class="share-btn" :class="{ live: live.isHosting }" @click="emit('share')" :title="live.isHosting ? `Live session: ${live.code}` : 'Start a live session'">
+        <button class="share-btn" data-tour="share" :class="{ live: live.isHosting }" @click="emit('share')" :title="live.isHosting ? `Live session: ${live.code}` : 'Start a live session'">
           <span v-if="live.isHosting" class="live-dot" aria-hidden="true"></span>
           <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -211,7 +211,7 @@ async function exportNotebookPdf() {
       </div>
 
       <!-- ── Pages ── -->
-      <div class="section pages-section">
+      <div class="section pages-section" data-tour="pages">
         <div class="section-title pages-head">
           <span>Pages</span>
           <button class="add-page" @click="editor.addPage()" title="Add page">

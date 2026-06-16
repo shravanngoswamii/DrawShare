@@ -1,14 +1,19 @@
 <script setup lang="ts">
+import { useRoute } from "vue-router";
 import { useOnboarding } from "@/composables/useOnboarding";
 import { devMode, setDevMode } from "@/debug";
 
 defineProps<{ open: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
-const { start: startTour } = useOnboarding();
+const route = useRoute();
+const { replay } = useOnboarding();
+// Replay the tour for whichever screen the panel is open on.
 function replayTour() {
+  const name = route.name === "editor" ? "editor" : "projects";
   emit("close");
-  startTour();
+  // Let the panel close before intro.js measures the page behind it.
+  requestAnimationFrame(() => replay(name));
 }
 
 const GITHUB_URL = "https://github.com/shravanngoswamii/DrawShare";
