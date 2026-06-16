@@ -8,7 +8,7 @@ import {
 import { WebRTCSession } from "@/adapters/sync/webrtc";
 import type { SyncMessage } from "@/core/sync";
 import { makeSessionCode } from "@/core/sync";
-import type { Page, Project, Stroke } from "@/core/types";
+import type { NotebookLayout, NotebookMode, Page, Project, Stroke } from "@/core/types";
 
 type Mode = "off" | "host" | "viewer";
 type Status =
@@ -41,12 +41,25 @@ interface LiveState {
   viewerLive: Stroke | undefined;
   viewerHostViewport: { width: number; height: number };
   viewerHostCamera: { x: number; y: number; zoom: number };
+  // Notebook stack mirror: every sheet's page-local strokes + the mode/layout.
+  viewerNotebookMode: NotebookMode;
+  viewerNotebookLayout: NotebookLayout;
+  viewerAllStrokes: Stroke[];
 }
 
 let session: WebRTCSession | undefined;
 let activePollCode: string | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 const MAX_RECONNECT_ATTEMPTS = 3;
+
+// Send a notebook's strokes as several batches so no single data-channel message
+// exceeds the size cap on large notebooks.
+const STROKE_CHUNK = 40;
+function sendStrokesChunked(strokes: Stroke[]): void {
+  for (let i = 0; i < strokes.length; i += STROKE_CHUNK) {
+    session?.send({ t: "notebook-strokes", strokes: strokes.slice(i, i + STROKE_CHUNK) });
+  }
+}
 
 export const useLiveStore = defineStore("live", {
   state: (): LiveState => ({
@@ -70,10 +83,16 @@ export const useLiveStore = defineStore("live", {
     viewerLive: undefined,
     viewerHostViewport: { width: 1920, height: 1080 },
     viewerHostCamera: { x: 0, y: 0, zoom: 1 },
+    viewerNotebookMode: "off",
+    viewerNotebookLayout: "vertical",
+    viewerAllStrokes: [],
   }),
   getters: {
     viewerCurrentPage(state): Page | undefined {
       return state.viewerPages.find((p) => p.id === state.viewerCurrentPageId);
+    },
+    viewerIsNotebook(state): boolean {
+      return state.viewerNotebookMode !== "off";
     },
     isHosting(state): boolean {
       return state.mode === "host" && state.status !== "idle" && state.status !== "error";
@@ -86,6 +105,9 @@ export const useLiveStore = defineStore("live", {
         pages: Page[];
         currentPageId: string;
         strokes: Stroke[];
+        notebookMode: NotebookMode;
+        notebookLayout: NotebookLayout;
+        allStrokes: Stroke[];
       },
     ) {
       if (this.mode !== "off") return;
@@ -104,6 +126,7 @@ export const useLiveStore = defineStore("live", {
             if (session !== activeSession) return;
             this.viewerCount = this.viewerCount + 1;
             const snap = snapshot();
+            const notebook = snap.notebookMode !== "off";
             const msg: SyncMessage = {
               t: "hello",
               project: snap.project,
@@ -112,8 +135,14 @@ export const useLiveStore = defineStore("live", {
               strokes: snap.strokes,
               hostViewport: { ...this.hostViewport },
               hostCamera: { ...this.hostCamera },
+              notebookMode: snap.notebookMode,
+              notebookLayout: snap.notebookLayout,
+              // Notebook strokes follow in chunked notebook-strokes messages to
+              // avoid one oversized data-channel send.
+              allStrokes: [],
             };
             session?.send(msg);
+            if (notebook) sendStrokesChunked(snap.allStrokes);
             void id;
           },
           onViewerLeave: () => {
@@ -177,6 +206,9 @@ export const useLiveStore = defineStore("live", {
       this.viewerLive = undefined;
       this.viewerHostViewport = { width: 1920, height: 1080 };
       this.viewerHostCamera = { x: 0, y: 0, zoom: 1 };
+      this.viewerNotebookMode = "off";
+      this.viewerNotebookLayout = "vertical";
+      this.viewerAllStrokes = [];
       this.offerToken = "";
       this.viewerResponseToken = "";
     },
@@ -316,6 +348,19 @@ export const useLiveStore = defineStore("live", {
       session?.send(msg);
     },
 
+    // Re-snapshot the notebook to viewers (mode/layout/pages), then stream the
+    // strokes in chunks. Used when the host toggles canvas mode mid-session.
+    broadcastNotebookSync(
+      notebookMode: NotebookMode,
+      notebookLayout: NotebookLayout,
+      pages: Page[],
+      allStrokes: Stroke[],
+    ) {
+      if (this.mode !== "host") return;
+      session?.send({ t: "notebook-sync", notebookMode, notebookLayout, pages, allStrokes: [] });
+      if (notebookMode !== "off") sendStrokesChunked(allStrokes);
+    },
+
     applyMessage(msg: SyncMessage) {
       switch (msg.t) {
         case "hello": {
@@ -326,6 +371,25 @@ export const useLiveStore = defineStore("live", {
           this.viewerLive = undefined;
           this.viewerHostViewport = { ...msg.hostViewport };
           this.viewerHostCamera = { ...msg.hostCamera };
+          this.viewerNotebookMode = msg.notebookMode ?? "off";
+          this.viewerNotebookLayout = msg.notebookLayout ?? "vertical";
+          this.viewerAllStrokes = msg.allStrokes ?? [];
+          break;
+        }
+        case "notebook-sync": {
+          this.viewerNotebookMode = msg.notebookMode;
+          this.viewerNotebookLayout = msg.notebookLayout;
+          this.viewerPages = msg.pages;
+          this.viewerAllStrokes = msg.allStrokes;
+          this.viewerLive = undefined;
+          break;
+        }
+        case "notebook-strokes": {
+          this.viewerAllStrokes = this.viewerAllStrokes.concat(msg.strokes);
+          break;
+        }
+        case "notebook-layout": {
+          this.viewerNotebookLayout = msg.layout;
           break;
         }
         case "viewport": {
@@ -335,9 +399,17 @@ export const useLiveStore = defineStore("live", {
         }
         case "page-set": {
           this.viewerPages = msg.pages;
-          this.viewerCurrentPageId = msg.pageId;
-          this.viewerStrokes = msg.strokes;
           this.viewerLive = undefined;
+          if (this.viewerIsNotebook) {
+            // Notebook: replace just this sheet's strokes in the full stack
+            // (used by the host's area-erase / undo flush).
+            this.viewerAllStrokes = this.viewerAllStrokes
+              .filter((s) => s.pageId !== msg.pageId)
+              .concat(msg.strokes);
+          } else {
+            this.viewerCurrentPageId = msg.pageId;
+            this.viewerStrokes = msg.strokes;
+          }
           break;
         }
         case "page-add": {
@@ -346,7 +418,9 @@ export const useLiveStore = defineStore("live", {
         }
         case "page-delete": {
           this.viewerPages = msg.pages;
-          if (this.viewerCurrentPageId === msg.pageId) {
+          if (this.viewerIsNotebook) {
+            this.viewerAllStrokes = this.viewerAllStrokes.filter((s) => s.pageId !== msg.pageId);
+          } else if (this.viewerCurrentPageId === msg.pageId) {
             this.viewerCurrentPageId = msg.fallbackPageId;
             this.viewerStrokes = [];
           }
@@ -363,12 +437,13 @@ export const useLiveStore = defineStore("live", {
           break;
         }
         case "stroke-begin": {
-          if (msg.stroke.pageId !== this.viewerCurrentPageId) break;
+          // Notebook renders the whole stack, so accept live strokes on any sheet.
+          if (!this.viewerIsNotebook && msg.stroke.pageId !== this.viewerCurrentPageId) break;
           this.viewerLive = { ...msg.stroke };
           break;
         }
         case "stroke-points": {
-          if (msg.pageId !== this.viewerCurrentPageId) break;
+          if (!this.viewerIsNotebook && msg.pageId !== this.viewerCurrentPageId) break;
           const live = this.viewerLive;
           if (!live || live.id !== msg.strokeId) break;
           live.points = live.points.concat(msg.points);
@@ -377,9 +452,14 @@ export const useLiveStore = defineStore("live", {
         }
         case "stroke-commit": {
           this.viewerLive = undefined;
-          if (msg.stroke.pageId !== this.viewerCurrentPageId) break;
-          if (this.viewerStrokes.some((s) => s.id === msg.stroke.id)) break;
-          this.viewerStrokes = [...this.viewerStrokes, msg.stroke];
+          if (this.viewerIsNotebook) {
+            if (this.viewerAllStrokes.some((s) => s.id === msg.stroke.id)) break;
+            this.viewerAllStrokes = [...this.viewerAllStrokes, msg.stroke];
+          } else {
+            if (msg.stroke.pageId !== this.viewerCurrentPageId) break;
+            if (this.viewerStrokes.some((s) => s.id === msg.stroke.id)) break;
+            this.viewerStrokes = [...this.viewerStrokes, msg.stroke];
+          }
           break;
         }
         case "stroke-cancel": {
@@ -389,7 +469,11 @@ export const useLiveStore = defineStore("live", {
           break;
         }
         case "stroke-delete": {
-          this.viewerStrokes = this.viewerStrokes.filter((s) => s.id !== msg.strokeId);
+          if (this.viewerIsNotebook) {
+            this.viewerAllStrokes = this.viewerAllStrokes.filter((s) => s.id !== msg.strokeId);
+          } else {
+            this.viewerStrokes = this.viewerStrokes.filter((s) => s.id !== msg.strokeId);
+          }
           break;
         }
         case "text-commit": {
@@ -405,7 +489,11 @@ export const useLiveStore = defineStore("live", {
           break;
         }
         case "clear-page": {
-          if (msg.pageId === this.viewerCurrentPageId) this.viewerStrokes = [];
+          if (this.viewerIsNotebook) {
+            this.viewerAllStrokes = this.viewerAllStrokes.filter((s) => s.pageId !== msg.pageId);
+          } else if (msg.pageId === this.viewerCurrentPageId) {
+            this.viewerStrokes = [];
+          }
           break;
         }
         case "viewer-ready":

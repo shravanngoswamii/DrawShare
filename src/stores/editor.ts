@@ -493,12 +493,20 @@ export const useEditorStore = defineStore("editor", {
       else if (!wasOff && mode === "off" && this.currentPageId) {
         await this.loadStrokes(this.currentPageId);
       }
+      // Re-snapshot live viewers onto the new mode/stack (strokes sent chunked).
+      useLiveStore().broadcastNotebookSync(
+        mode,
+        this.notebookLayout,
+        [...this.pages],
+        [...this.strokes],
+      );
     },
     async setNotebookLayout(layout: NotebookLayout) {
       if (!this.project || this.project.notebookLayout === layout) return;
       this.project.notebookLayout = layout;
       this.project.updatedAt = Date.now();
       await storage.putProject({ ...this.project });
+      useLiveStore().broadcast({ t: "notebook-layout", layout });
     },
   },
 });
