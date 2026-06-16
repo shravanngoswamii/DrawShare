@@ -1,4 +1,6 @@
 import type {
+  ID,
+  Layer,
   NotebookLayout,
   NotebookMode,
   Page,
@@ -80,7 +82,10 @@ export type SyncMessage =
   | { t: "shape-commit"; shape: Shape }
   | { t: "shape-delete"; pageId: string; shapeId: string }
   | { t: "presenter"; mode: "laser" | "spotlight"; x: number; y: number }
-  | { t: "presenter-off" };
+  | { t: "presenter-off" }
+  | { t: "layer-add"; layer: Layer }
+  | { t: "layer-delete"; layerId: ID }
+  | { t: "layer-update"; layer: Layer };
 
 export interface SessionHostHandlers {
   onViewerJoin(viewerId: string): void;

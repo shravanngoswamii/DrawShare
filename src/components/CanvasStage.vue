@@ -970,6 +970,10 @@ function handleDown(s: InputSample) {
     laserStart(s.x, s.y);
     return;
   }
+  // Can't create content on a locked or hidden layer; the eraser stays free so it
+  // can still clean up other (unlocked) layers.
+  const layer = editor.currentLayer;
+  if (layer && (layer.locked || !layer.visible) && editor.tool !== "eraser") return;
   // Commit a focused field (e.g. the project name) when drawing starts; the
   // canvas swallows the focus change otherwise so its blur never fires.
   const active = document.activeElement as HTMLElement | null;
@@ -1659,6 +1663,19 @@ watch(
   },
 );
 
+// Push layer visibility into both renderers and repaint when layers change
+// (toggle, reorder, add/delete, page switch).
+watch(
+  () => editor.layers,
+  (layers) => {
+    baseRenderer.setLayers([...layers]);
+    liveRenderer.setLayers([...layers]);
+    dirtyBase = true;
+    schedule();
+  },
+  { deep: true },
+);
+
 watch(
   () => editor.images,
   async (imgs) => {
@@ -1776,6 +1793,8 @@ onMounted(async () => {
   baseRenderer.attach(baseEl.value);
   liveRenderer.attach(liveEl.value);
   applyInkAdapter();
+  baseRenderer.setLayers([...editor.layers]);
+  liveRenderer.setLayers([...editor.layers]);
   if (wrap.value) sheetColors = resolveSheetColors(wrap.value);
   fitCanvas();
   // A project saved in notebook mode opens centered/fit on its first sheet.

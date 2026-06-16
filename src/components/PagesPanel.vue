@@ -124,6 +124,27 @@ async function remove(id: string, name: string) {
   await editor.deletePage(id);
 }
 
+// Layers — inline rename and delete.
+const renamingLayerId = ref<string | null>(null);
+const renameLayerValue = ref("");
+
+function startRenameLayer(id: string, current: string) {
+  renamingLayerId.value = id;
+  renameLayerValue.value = current;
+}
+
+async function commitRenameLayer() {
+  if (renamingLayerId.value) {
+    await editor.renameLayer(renamingLayerId.value, renameLayerValue.value);
+  }
+  renamingLayerId.value = null;
+}
+
+async function removeLayer(id: string) {
+  if (editor.layers.length <= 1) return;
+  await editor.deleteLayer(id);
+}
+
 async function select(id: string) {
   // Notebook mode is one continuous canvas — scroll to the sheet instead of
   // switching pages. Free mode switches the visible page.
@@ -356,6 +377,118 @@ async function setNoPageSize() {
             </svg>
             <span>Dev mode</span>
           </button>
+        </div>
+      </div>
+
+      <!-- ── Layers ── -->
+      <div class="section layers-section">
+        <div class="section-head">
+          <span class="section-title layers-title">Layers</span>
+          <button class="btn-icon" @click="editor.addLayer()" title="Add layer" aria-label="Add layer">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M5 12h14" /><path d="M12 5v14" />
+            </svg>
+          </button>
+        </div>
+        <div class="layers-list">
+          <div
+            v-for="layer in [...editor.layers].reverse()"
+            :key="layer.id"
+            class="layer-row"
+            :class="{ active: layer.id === editor.currentLayerId, locked: layer.locked, hidden: !layer.visible }"
+            @click="editor.selectLayer(layer.id)"
+          >
+            <button
+              class="layer-icon-btn"
+              @click.stop="editor.toggleLayerVisibility(layer.id)"
+              :title="layer.visible ? 'Hide layer' : 'Show layer'"
+              :aria-label="layer.visible ? 'Hide layer' : 'Show layer'"
+              :aria-pressed="layer.visible"
+            >
+              <svg v-if="layer.visible" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+              </svg>
+              <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </svg>
+            </button>
+            <button
+              class="layer-icon-btn"
+              @click.stop="editor.toggleLayerLock(layer.id)"
+              :title="layer.locked ? 'Unlock layer' : 'Lock layer'"
+              :aria-label="layer.locked ? 'Unlock layer' : 'Lock layer'"
+              :aria-pressed="layer.locked"
+            >
+              <svg v-if="layer.locked" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+              </svg>
+            </button>
+            <input
+              v-if="renamingLayerId === layer.id"
+              v-model="renameLayerValue"
+              class="input layer-rename"
+              :aria-label="`Rename layer: ${layer.name}`"
+              @blur="commitRenameLayer"
+              @keydown.enter="commitRenameLayer"
+              @keydown.esc="renamingLayerId = null"
+              @click.stop
+            />
+            <span
+              v-else
+              class="layer-name"
+              @dblclick.stop="startRenameLayer(layer.id, layer.name)"
+            >{{ layer.name }}</span>
+            <div class="layer-reorder">
+              <button
+                class="layer-icon-btn"
+                @click.stop="editor.moveLayerUp(layer.id)"
+                :disabled="layer.index >= editor.layers.length - 1"
+                title="Move layer up"
+                aria-label="Move layer up"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M18 15l-6-6-6 6" />
+                </svg>
+              </button>
+              <button
+                class="layer-icon-btn"
+                @click.stop="editor.moveLayerDown(layer.id)"
+                :disabled="layer.index <= 0"
+                title="Move layer down"
+                aria-label="Move layer down"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </button>
+            </div>
+            <button
+              v-if="editor.layers.length > 1"
+              class="layer-icon-btn layer-delete"
+              @click.stop="removeLayer(layer.id)"
+              title="Delete layer"
+              aria-label="Delete layer"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -904,6 +1037,98 @@ async function setNoPageSize() {
 }
 .rec-toggle.on .rec-knob {
   transform: translateX(16px);
+}
+
+/* ── Layers ── */
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+.layers-title {
+  margin-bottom: 0;
+}
+.btn-icon {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--color-accent);
+  flex-shrink: 0;
+  transition: background 80ms ease;
+}
+.btn-icon:hover { background: var(--color-accent-soft); }
+.layers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.layer-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px var(--space-2);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 80ms ease, border-color 80ms ease, opacity 80ms ease;
+  min-height: 32px;
+}
+.layer-row:hover { background: var(--color-surface-2); }
+.layer-row.active {
+  background: var(--color-accent-soft);
+  border-color: var(--color-border-strong);
+}
+.layer-row.hidden { opacity: 0.45; }
+.layer-row.locked { opacity: 0.7; }
+.layer-icon-btn {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+  transition: background 80ms ease, color 80ms ease;
+}
+.layer-icon-btn:hover:not(:disabled) {
+  background: var(--color-surface-3, var(--color-surface-2));
+  color: var(--color-text);
+}
+.layer-icon-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.layer-delete:hover:not(:disabled) {
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+}
+.layer-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: none;
+}
+.layer-rename {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 var(--space-2);
+  font-size: var(--text-sm);
+}
+.layer-reorder {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  flex-shrink: 0;
 }
 
 /* ── Background ── */

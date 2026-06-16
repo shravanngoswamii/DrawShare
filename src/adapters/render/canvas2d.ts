@@ -1,6 +1,6 @@
 import { getStroke } from "perfect-freehand";
 import type { Camera, Renderer } from "@/core/ports";
-import type { ImageItem, PenType, Shape, Stroke, StrokePoint, TextItem } from "@/core/types";
+import type { ImageItem, Layer, PenType, Shape, Stroke, StrokePoint, TextItem } from "@/core/types";
 
 type DrawCtx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -71,6 +71,7 @@ export class Canvas2DRenderer implements Renderer {
   private ctx: CanvasRenderingContext2D | undefined;
   private dpr = 1;
   private camera: Camera = { x: 0, y: 0, zoom: 1 };
+  private layers: Layer[] = [];
   private viewW = 0;
   private viewH = 0;
   // Active world origin offset from setOrigin (notebook sheets shift each sheet's
@@ -124,6 +125,19 @@ export class Canvas2DRenderer implements Renderer {
     this.inkAdapt = fn;
     // Cached live-stroke pixels used the old adapter; force a rebuild.
     this.liveCacheCount = 0;
+  }
+
+  setLayers(layers: Layer[]): void {
+    this.layers = layers;
+  }
+
+  // Layer visibility gate (distinct from viewport culling below). Items with no
+  // layerId (legacy/unassigned) or on an unknown layer always render; otherwise
+  // they follow their layer's `visible` flag.
+  private isLayerVisible(layerId?: string): boolean {
+    if (!layerId || this.layers.length === 0) return true;
+    const layer = this.layers.find((l) => l.id === layerId);
+    return layer ? layer.visible : true;
   }
 
   clear(): void {
@@ -260,6 +274,7 @@ export class Canvas2DRenderer implements Renderer {
 
   drawStroke(stroke: Stroke): void {
     if (!this.ctx || stroke.points.length === 0) return;
+    if (!this.isLayerVisible(stroke.layerId)) return;
     if (!this.isStrokeVisible(stroke)) return;
     this.renderToCtx(
       this.ctx,
@@ -275,6 +290,7 @@ export class Canvas2DRenderer implements Renderer {
   drawShape(shape: Shape): void {
     const ctx = this.ctx;
     if (!ctx) return;
+    if (!this.isLayerVisible(shape.layerId)) return;
     ctx.save();
     ctx.strokeStyle = this.inkAdapt(shape.color);
     ctx.lineWidth = shape.size;
@@ -318,6 +334,7 @@ export class Canvas2DRenderer implements Renderer {
   drawText(item: TextItem): void {
     const ctx = this.ctx;
     if (!ctx || !item.text) return;
+    if (!this.isLayerVisible(item.layerId)) return;
     ctx.save();
     ctx.fillStyle = this.inkAdapt(item.color);
     ctx.font = `${item.size}px ui-sans-serif, system-ui, -apple-system, sans-serif`;
@@ -333,6 +350,7 @@ export class Canvas2DRenderer implements Renderer {
   drawImageItem(item: ImageItem): void {
     const ctx = this.ctx;
     if (!ctx) return;
+    if (!this.isLayerVisible(item.layerId)) return;
     const bm = this.imageCache.get(item.id);
     if (!bm) return;
     ctx.save();

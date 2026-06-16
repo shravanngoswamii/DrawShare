@@ -1,4 +1,14 @@
-import type { ID, ImageItem, Page, Project, ReplayEvent, Shape, Stroke, TextItem } from "./types";
+import type {
+  ID,
+  ImageItem,
+  Layer,
+  Page,
+  Project,
+  ReplayEvent,
+  Shape,
+  Stroke,
+  TextItem,
+} from "./types";
 
 export interface StorageAdapter {
   init(): Promise<void>;
@@ -26,6 +36,11 @@ export interface StorageAdapter {
   putImage(img: ImageItem): Promise<void>;
   deleteImage(id: ID): Promise<void>;
   deleteImagesForPage(pageId: ID): Promise<void>;
+
+  listLayers(pageId: ID): Promise<Layer[]>;
+  putLayer(layer: Layer): Promise<void>;
+  deleteLayer(id: ID): Promise<void>;
+  deleteLayersForPage(pageId: ID): Promise<void>;
 
   // Session-recording event log (opt-in replay).
   appendEvent(e: ReplayEvent): Promise<void>;

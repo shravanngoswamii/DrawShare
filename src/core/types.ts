@@ -13,6 +13,18 @@ export interface StrokePoint {
   t: number;
 }
 
+// A named stack member of a page. Strokes, text, shapes and images each carry an
+// optional layerId; content with no layerId (legacy or unassigned) always renders.
+export interface Layer {
+  id: ID;
+  pageId: ID;
+  name: string;
+  visible: boolean;
+  locked: boolean;
+  index: number; // render order (lower = bottom)
+  createdAt: number;
+}
+
 export interface Stroke {
   id: ID;
   pageId: ID;
@@ -23,6 +35,7 @@ export interface Stroke {
   opacity: number;
   points: StrokePoint[];
   createdAt: number;
+  layerId?: ID;
 }
 
 export interface TextItem {
@@ -34,6 +47,7 @@ export interface TextItem {
   color: string;
   size: number;
   createdAt: number;
+  layerId?: ID;
 }
 
 export interface Page {
@@ -86,6 +100,7 @@ export interface Shape {
   size: number;
   opacity: number;
   createdAt: number;
+  layerId?: ID;
 }
 
 export interface ImageItem {
@@ -101,6 +116,7 @@ export interface ImageItem {
   // "Send to back" pushes it more negative; "Bring to front" more positive.
   z?: number;
   createdAt: number;
+  layerId?: ID;
 }
 
 export type HistoryEntry =
@@ -121,7 +137,18 @@ export type HistoryEntry =
   | { kind: "shape-add"; shape: Shape }
   | { kind: "shape-erase"; shape: Shape }
   | { kind: "image-add"; image: ImageItem }
-  | { kind: "image-erase"; image: ImageItem };
+  | { kind: "image-erase"; image: ImageItem }
+  | { kind: "layer-add"; layer: Layer }
+  | {
+      kind: "layer-delete";
+      layer: Layer;
+      // Content that lived on the deleted layer, captured so undo can restore both
+      // the layer and the original layer assignment of every item it held.
+      strokes: Stroke[];
+      texts: TextItem[];
+      shapes: Shape[];
+      images: ImageItem[];
+    };
 
 export interface BoundingBox {
   minX: number;
