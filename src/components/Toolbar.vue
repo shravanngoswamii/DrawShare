@@ -292,26 +292,26 @@ onMounted(() => {
 
         <!-- Eraser with its own popover (size + mode) -->
         <div class="pop-wrap">
-          <button class="tool" :class="{ active: editor.tool === 'eraser' }" :aria-pressed="editor.tool === 'eraser'" title="Eraser" @click="onEraserClick">
+          <button class="tool" :class="{ active: editor.tool === 'eraser' }" :aria-pressed="editor.tool === 'eraser'" title="Eraser" aria-label="Eraser" @click="onEraserClick">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" /><path d="M22 21H7" /><path d="m5 11 9 9" />
             </svg>
           </button>
-          <div v-if="popover === 'eraser'" class="popover" :class="`pop-${dock}`">
+          <div v-if="popover === 'eraser'" class="popover" :class="`pop-${dock}`" role="dialog" aria-label="Eraser settings">
             <div class="pop-title">Eraser size</div>
             <div class="size-row">
-              <input class="range" type="range" min="1" max="60" :value="editor.size" @input="setSize(Number(($event.target as HTMLInputElement).value))" />
-              <input class="num" type="number" min="1" max="200" :value="editor.size" @input="setSize(Number(($event.target as HTMLInputElement).value))" />
+              <input class="range" type="range" min="1" max="60" :value="editor.size" aria-label="Eraser size slider" @input="setSize(Number(($event.target as HTMLInputElement).value))" />
+              <input class="num" type="number" min="1" max="200" :value="editor.size" aria-label="Eraser size value" @input="setSize(Number(($event.target as HTMLInputElement).value))" />
             </div>
-            <div class="pop-sub">Mode</div>
-            <div class="seg">
-              <button :class="{ active: editor.eraserMode === 'stroke' }" @click="editor.setEraserMode('stroke')">Whole</button>
-              <button :class="{ active: editor.eraserMode === 'area' }" @click="editor.setEraserMode('area')">Area</button>
+            <div class="pop-sub" id="eraser-mode-label">Mode</div>
+            <div class="seg" role="group" aria-labelledby="eraser-mode-label">
+              <button :class="{ active: editor.eraserMode === 'stroke' }" :aria-pressed="editor.eraserMode === 'stroke'" @click="editor.setEraserMode('stroke')">Whole</button>
+              <button :class="{ active: editor.eraserMode === 'area' }" :aria-pressed="editor.eraserMode === 'area'" @click="editor.setEraserMode('area')">Area</button>
             </div>
-            <div class="pop-sub">Shape</div>
-            <div class="seg">
-              <button :class="{ active: editor.eraserShape === 'circle' }" @click="editor.setEraserShape('circle')">Circle</button>
-              <button :class="{ active: editor.eraserShape === 'square' }" @click="editor.setEraserShape('square')">Square</button>
+            <div class="pop-sub" id="eraser-shape-label">Shape</div>
+            <div class="seg" role="group" aria-labelledby="eraser-shape-label">
+              <button :class="{ active: editor.eraserShape === 'circle' }" :aria-pressed="editor.eraserShape === 'circle'" @click="editor.setEraserShape('circle')">Circle</button>
+              <button :class="{ active: editor.eraserShape === 'square' }" :aria-pressed="editor.eraserShape === 'square'" @click="editor.setEraserShape('square')">Square</button>
             </div>
           </div>
         </div>
@@ -366,38 +366,38 @@ onMounted(() => {
 
       <!-- Stroke size (hidden for eraser, which has its own) -->
       <div v-if="editor.tool !== 'eraser'" class="pop-wrap group">
-        <button class="tool" :class="{ active: popover === 'size' }" title="Stroke size" @click="toggle('size')">
+        <button class="tool" :class="{ active: popover === 'size' }" title="Stroke size" aria-label="Stroke size" :aria-expanded="popover === 'size'" @click="toggle('size')">
           <span class="size-dot" :style="{ width: `${Math.min(editor.size, 18)}px`, height: `${Math.min(editor.size, 18)}px` }"></span>
         </button>
         <div v-if="popover === 'size'" class="popover" :class="`pop-${dock}`">
           <div class="pop-title">Size</div>
           <div class="size-row">
-            <input class="range" type="range" min="1" max="40" :value="editor.size" @input="setSize(Number(($event.target as HTMLInputElement).value))" />
-            <input class="num" type="number" min="1" max="200" :value="editor.size" @input="setSize(Number(($event.target as HTMLInputElement).value))" />
+            <input class="range" type="range" min="1" max="40" :value="editor.size" aria-label="Stroke size slider" @input="setSize(Number(($event.target as HTMLInputElement).value))" />
+            <input class="num" type="number" min="1" max="200" :value="editor.size" aria-label="Stroke size value" @input="setSize(Number(($event.target as HTMLInputElement).value))" />
           </div>
         </div>
       </div>
 
       <!-- Colour (hidden for eraser) -->
       <div v-if="editor.tool !== 'eraser'" class="pop-wrap group">
-        <button class="tool color-trigger" :class="{ active: popover === 'color' }" title="Colour" @click="toggle('color')">
+        <button class="tool color-trigger" :class="{ active: popover === 'color' }" :title="`Stroke colour: ${editor.color}`" :aria-label="`Stroke colour: ${editor.color}`" :aria-expanded="popover === 'color'" @click="toggle('color')">
           <span class="color-chip" :style="{ background: editor.color }"></span>
         </button>
         <div v-if="popover === 'color'" class="popover" :class="`pop-${dock}`">
           <div class="pop-title">Colour</div>
-          <div class="swatches">
-            <button v-for="c in presetColors" :key="c" class="swatch" :class="{ active: editor.color.toLowerCase() === c }" :style="{ background: c }" :title="c" @click="chooseColor(c)"></button>
+          <div class="swatches" role="group" aria-label="Preset colours">
+            <button v-for="c in presetColors" :key="c" class="swatch" :class="{ active: editor.color.toLowerCase() === c }" :style="{ background: c }" :title="c" :aria-label="`Colour ${c}`" :aria-pressed="editor.color.toLowerCase() === c" @click="chooseColor(c)"></button>
           </div>
           <template v-if="recentColors.length">
             <div class="pop-sub">Recent</div>
-            <div class="swatches">
-              <button v-for="c in recentColors" :key="`r-${c}`" class="swatch" :class="{ active: editor.color === c }" :style="{ background: c }" :title="c" @click="chooseColor(c)"></button>
+            <div class="swatches" role="group" aria-label="Recent colours">
+              <button v-for="c in recentColors" :key="`r-${c}`" class="swatch" :class="{ active: editor.color === c }" :style="{ background: c }" :title="c" :aria-label="`Colour ${c}`" :aria-pressed="editor.color === c" @click="chooseColor(c)"></button>
             </div>
           </template>
           <div class="pop-sub">Custom</div>
           <div class="custom-row">
-            <input type="color" class="native-color" :value="editor.color" @input="chooseColor(($event.target as HTMLInputElement).value)" />
-            <input type="text" class="hex" v-model="hexInput" maxlength="7" spellcheck="false" placeholder="#000000" @change="chooseColor(hexInput)" @keydown.enter="chooseColor(hexInput)" />
+            <input type="color" class="native-color" :value="editor.color" aria-label="Custom colour picker" @input="chooseColor(($event.target as HTMLInputElement).value)" />
+            <input type="text" class="hex" v-model="hexInput" maxlength="7" spellcheck="false" placeholder="#000000" aria-label="Hex colour value" @change="chooseColor(hexInput)" @keydown.enter="chooseColor(hexInput)" />
           </div>
         </div>
       </div>
@@ -417,12 +417,12 @@ onMounted(() => {
       <div class="divider"></div>
 
       <div class="group">
-        <button class="tool" title="Undo" @click="editor.undo()" :disabled="editor.history.length === 0">
+        <button class="tool" title="Undo" aria-label="Undo" @click="editor.undo()" :disabled="editor.history.length === 0">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11" />
           </svg>
         </button>
-        <button class="tool" title="Redo" @click="editor.redo()" :disabled="editor.redoStack.length === 0">
+        <button class="tool" title="Redo" aria-label="Redo" @click="editor.redo()" :disabled="editor.redoStack.length === 0">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="m15 14 5-5-5-5" /><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5v0A5.5 5.5 0 0 0 9.5 20H13" />
           </svg>

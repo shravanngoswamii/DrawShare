@@ -219,11 +219,12 @@ async function setNoPageSize() {
         <input
           v-model="projectName"
           class="project-name"
+          aria-label="Project name"
           @blur="commitName"
           @keydown.enter="onNameEnter"
           :placeholder="editor.project?.name ?? 'Untitled'"
         />
-        <span class="save-chip" :class="{ saving: editor.saving > 0 }">{{ saveStatus }}</span>
+        <span class="save-chip" :class="{ saving: editor.saving > 0 }" role="status" aria-live="polite">{{ saveStatus }}</span>
         <button class="head-icon" @click="toggleTheme" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'" :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'">
           <svg v-if="isDark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -249,7 +250,7 @@ async function setNoPageSize() {
 
       <!-- ── Share ── -->
       <div class="share-section">
-        <button class="share-btn" data-tour="share" :class="{ live: live.isHosting }" @click="emit('share')" :title="live.isHosting ? `Live session: ${live.code}` : 'Start a live session'">
+        <button class="share-btn" data-tour="share" :class="{ live: live.isHosting }" @click="emit('share')" :title="live.isHosting ? `Live session: ${live.code}` : 'Start a live session'" :aria-label="live.isHosting ? `Live session active, code: ${live.code}` : 'Start a live session'">
           <span v-if="live.isHosting" class="live-dot" aria-hidden="true"></span>
           <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -263,7 +264,7 @@ async function setNoPageSize() {
       <div class="section pages-section" data-tour="pages">
         <div class="section-title pages-head">
           <span>Pages</span>
-          <button class="add-page" @click="editor.addPage()" title="Add page">
+          <button class="add-page" @click="editor.addPage()" title="Add page" aria-label="Add new page">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M5 12h14" /><path d="M12 5v14" />
@@ -278,7 +279,7 @@ async function setNoPageSize() {
             class="page"
             :class="{ active: editor.currentPageId === page.id }"
           >
-            <button class="page-main" @click="select(page.id)">
+            <button class="page-main" @click="select(page.id)" :aria-label="`Go to ${page.name}`" :aria-current="editor.currentPageId === page.id ? 'page' : undefined">
               <div class="page-thumb">
                 <img
                   v-if="thumbnails[page.id]"
@@ -294,6 +295,7 @@ async function setNoPageSize() {
                   v-if="renamingId === page.id"
                   v-model="renameValue"
                   class="input page-rename"
+                  :aria-label="`Rename page: ${page.name}`"
                   @blur="commitRename"
                   @keydown.enter="commitRename"
                   @keydown.esc="renamingId = null"
@@ -303,10 +305,11 @@ async function setNoPageSize() {
               </div>
             </button>
             <div class="page-actions">
-              <button class="page-action" @click="startRename(page.id, page.name)">Rename</button>
+              <button class="page-action" :aria-label="`Rename ${page.name}`" @click="startRename(page.id, page.name)">Rename</button>
               <button
                 v-if="editor.pages.length > 1"
                 class="page-action danger"
+                :aria-label="`Delete ${page.name}`"
                 @click="remove(page.id, page.name)"
               >Delete</button>
             </div>
@@ -315,7 +318,7 @@ async function setNoPageSize() {
 
         <!-- Page-level tools: export, clear, fullscreen, dev -->
         <div class="page-tools">
-          <button class="tool-btn" @click="exportCurrentPage" title="Export page as PNG">
+          <button class="tool-btn" @click="exportCurrentPage" title="Export page as PNG" aria-label="Export page as PNG">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -324,21 +327,21 @@ async function setNoPageSize() {
             </svg>
             <span>Export PNG</span>
           </button>
-          <button class="tool-btn" @click="clearPage" title="Clear all strokes">
+          <button class="tool-btn" @click="clearPage" title="Clear all strokes" aria-label="Clear all strokes on this page">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
             </svg>
             <span>Clear page</span>
           </button>
-          <button class="tool-btn" @click="toggleFullscreen" :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'">
+          <button class="tool-btn" @click="toggleFullscreen" :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'" :aria-label="isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'" :aria-pressed="isFullscreen">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M21 8V5a2 2 0 0 0-2-2h-3" /><path d="M3 16v3a2 2 0 0 0 2 2h3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" />
             </svg>
             <span>{{ isFullscreen ? 'Exit full' : 'Fullscreen' }}</span>
           </button>
-          <button v-if="editor.notebookMode !== 'off'" class="tool-btn" @click="exportNotebookPdf" title="Export A4 page as PDF">
+          <button v-if="editor.notebookMode !== 'off'" class="tool-btn" @click="exportNotebookPdf" title="Export A4 page as PDF" aria-label="Export notebook as PDF">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>
@@ -346,7 +349,7 @@ async function setNoPageSize() {
             </svg>
             <span>Export PDF</span>
           </button>
-          <button class="tool-btn" :class="{ 'tool-active': devMode }" @click="setDevMode(!devMode)" title="Dev mode">
+          <button class="tool-btn" :class="{ 'tool-active': devMode }" @click="setDevMode(!devMode)" title="Dev mode" aria-label="Toggle developer mode" :aria-pressed="devMode">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="m8 9-3 3 3 3" /><path d="m16 9 3 3-3 3" /><path d="M13.5 7.5 10 17" />
@@ -365,6 +368,8 @@ async function setNoPageSize() {
             :key="b.id"
             class="bg-btn"
             :class="{ active: editor.currentPage?.background === b.id }"
+            :aria-pressed="editor.currentPage?.background === b.id"
+            :aria-label="`${b.label} background`"
             @click="setBackground(b.id)"
           >
             {{ b.label }}
@@ -381,6 +386,8 @@ async function setNoPageSize() {
             :key="sz.id"
             class="bg-btn"
             :class="{ active: isActivePaperSize(sz) }"
+            :aria-pressed="isActivePaperSize(sz)"
+            :aria-label="`${sz.label} page size`"
             @click="setPaperSize(sz)"
           >
             {{ sz.label }}
@@ -389,8 +396,10 @@ async function setNoPageSize() {
         <button
           class="bg-btn none-btn"
           :class="{ active: isNoPageSize }"
+          :aria-pressed="isNoPageSize"
           @click="setNoPageSize"
           title="No page boundary — infinite canvas"
+          aria-label="No page boundary — infinite canvas"
         >
           None (infinite canvas)
         </button>
@@ -398,6 +407,7 @@ async function setNoPageSize() {
           <button
             class="orient-btn"
             :class="{ active: !isLandscape }"
+            :aria-pressed="!isLandscape"
             @click="setOrientation('portrait')"
             title="Portrait"
             aria-label="Portrait orientation"
@@ -410,6 +420,7 @@ async function setNoPageSize() {
           <button
             class="orient-btn"
             :class="{ active: isLandscape }"
+            :aria-pressed="isLandscape"
             @click="setOrientation('landscape')"
             title="Landscape"
             aria-label="Landscape orientation"
@@ -425,10 +436,10 @@ async function setNoPageSize() {
       <!-- ── Canvas mode ── -->
       <div class="section">
         <div class="section-title">Canvas Mode</div>
-        <div class="mode-btns">
-          <button class="mode-btn" :class="{ active: editor.notebookMode === 'off' }" @click="editor.setNotebookMode('off')">Free</button>
-          <button class="mode-btn" :class="{ active: editor.notebookMode === 'notebook' }" @click="editor.setNotebookMode('notebook')">Notebook</button>
-          <button class="mode-btn mode-btn-strict" :class="{ active: editor.notebookMode === 'strict' }" @click="editor.setNotebookMode('strict')">Strict</button>
+        <div class="mode-btns" role="group" aria-label="Canvas mode">
+          <button class="mode-btn" :class="{ active: editor.notebookMode === 'off' }" :aria-pressed="editor.notebookMode === 'off'" @click="editor.setNotebookMode('off')">Free</button>
+          <button class="mode-btn" :class="{ active: editor.notebookMode === 'notebook' }" :aria-pressed="editor.notebookMode === 'notebook'" @click="editor.setNotebookMode('notebook')">Notebook</button>
+          <button class="mode-btn mode-btn-strict" :class="{ active: editor.notebookMode === 'strict' }" :aria-pressed="editor.notebookMode === 'strict'" @click="editor.setNotebookMode('strict')">Strict</button>
         </div>
         <p class="mode-hint">
           <template v-if="editor.notebookMode === 'off'">Infinite canvas — draw anywhere.</template>
@@ -436,10 +447,10 @@ async function setNoPageSize() {
           <template v-else>A4 sheets; drawing is locked to the sheet.</template>
         </p>
         <div v-if="editor.notebookMode !== 'off'" class="layout-row">
-          <span class="layout-label">Scroll</span>
-          <div class="mode-btns layout-btns">
-            <button class="mode-btn" :class="{ active: editor.notebookLayout === 'vertical' }" @click="editor.setNotebookLayout('vertical')">Vertical</button>
-            <button class="mode-btn" :class="{ active: editor.notebookLayout === 'horizontal' }" @click="editor.setNotebookLayout('horizontal')">Horizontal</button>
+          <span class="layout-label" id="scroll-layout-label">Scroll</span>
+          <div class="mode-btns layout-btns" role="group" aria-labelledby="scroll-layout-label">
+            <button class="mode-btn" :class="{ active: editor.notebookLayout === 'vertical' }" :aria-pressed="editor.notebookLayout === 'vertical'" @click="editor.setNotebookLayout('vertical')">Vertical</button>
+            <button class="mode-btn" :class="{ active: editor.notebookLayout === 'horizontal' }" :aria-pressed="editor.notebookLayout === 'horizontal'" @click="editor.setNotebookLayout('horizontal')">Horizontal</button>
           </div>
         </div>
       </div>
@@ -451,6 +462,7 @@ async function setNoPageSize() {
           <button
             class="rec-toggle"
             role="switch"
+            aria-label="Record session"
             :aria-checked="editor.recordReplay"
             :class="{ on: editor.recordReplay }"
             @click="editor.setRecordReplay(!editor.recordReplay)"

@@ -145,6 +145,7 @@ onBeforeUnmount(() => removeProbe?.());
 
 <template>
   <div class="editor" :class="{ closing }">
+    <a href="#canvas-main" class="skip-link">Skip to canvas</a>
     <div class="body">
       <button class="hub-btn" :class="{ quiet: editor.isDrawing }" @click="panelOpen = !panelOpen" title="Menu" aria-label="Open menu">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
@@ -152,9 +153,9 @@ onBeforeUnmount(() => removeProbe?.());
         </svg>
       </button>
       <Toolbar :collapsed="toolbarCollapsed" @toggle="toolbarCollapsed = !toolbarCollapsed" @image-import="canvasStage?.triggerFileImport()" />
-      <main class="stage-wrap" @pointerdown="helpOpen = false">
+      <main id="canvas-main" class="stage-wrap" aria-label="Drawing canvas" @pointerdown="helpOpen = false">
         <CanvasStage v-if="editor.currentPage" ref="canvasStage" :page="editor.currentPage" />
-        <div v-else class="loading muted">Loading.</div>
+        <div v-else class="loading muted" aria-live="polite">Loading.</div>
       </main>
       <PagesPanel :open="panelOpen" :collapsed="pagesCollapsed" @close="panelOpen = false" @toggle="pagesCollapsed = !pagesCollapsed" @share="shareOpen = true" />
       <!-- Sidebar re-open pills -->
@@ -164,9 +165,9 @@ onBeforeUnmount(() => removeProbe?.());
           <path d="m15 5 4 4" />
         </svg>
       </button>
-      <button v-if="pagesCollapsed" class="sidebar-pill pill-right" :class="{ quiet: editor.isDrawing }" @click="pagesCollapsed = false" title="Show pages">
+      <button v-if="pagesCollapsed" class="sidebar-pill pill-right" :class="{ quiet: editor.isDrawing }" @click="pagesCollapsed = false" title="Show pages" :aria-label="`Show pages panel — ${editor.pages.length} page${editor.pages.length === 1 ? '' : 's'}`">
         <span>{{ editor.currentPage?.name ?? 'Pages' }}</span>
-        <span class="pill-badge">{{ editor.pages.length }}</span>
+        <span class="pill-badge" aria-hidden="true">{{ editor.pages.length }}</span>
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" aria-hidden="true">
           <path fill="currentColor" fill-rule="evenodd" d="M10 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-8zM9 7H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3zM4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" clip-rule="evenodd"/>
         </svg>
@@ -202,6 +203,23 @@ onBeforeUnmount(() => removeProbe?.());
 </template>
 
 <style scoped>
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 0;
+  z-index: 100;
+  padding: 8px 16px;
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+  border-radius: 0 0 var(--radius-md) 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: none;
+}
+.skip-link:focus {
+  top: 0;
+}
+
 .editor {
   height: 100vh;
   height: 100dvh;
