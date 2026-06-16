@@ -361,10 +361,11 @@ details[open] .faq-q::before { transform: rotate(90deg); }
 }
 
 .dev-status {
+  display: inline-flex;
+  align-items: center;
   font-family: var(--font-mono);
   font-size: 10px;
   line-height: 1;
-  padding-top: 1px;
 }
 
 .foot-credit {

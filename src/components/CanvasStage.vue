@@ -138,6 +138,28 @@ function strictFinalSampleOutOfBounds(sample?: InputSample): boolean {
   return !isInPage(w.x, w.y);
 }
 
+// World point where the segment from an in-page point to an out-of-page point
+// crosses the page boundary. Used in strict mode so a stroke ends exactly on the
+// edge instead of stopping short of it or leaking past it on fast moves.
+function clampToPageBoundary(
+  inside: { x: number; y: number },
+  outside: { x: number; y: number },
+): { x: number; y: number } {
+  const left = editor.pageOriginX;
+  const right = editor.pageOriginX + PAGE_W;
+  const top = editor.pageOriginY;
+  const bottom = editor.pageOriginY + PAGE_H;
+  const dx = outside.x - inside.x;
+  const dy = outside.y - inside.y;
+  let t = 1;
+  if (dx > 0) t = Math.min(t, (right - inside.x) / dx);
+  else if (dx < 0) t = Math.min(t, (left - inside.x) / dx);
+  if (dy > 0) t = Math.min(t, (bottom - inside.y) / dy);
+  else if (dy < 0) t = Math.min(t, (top - inside.y) / dy);
+  t = Math.max(0, Math.min(1, t));
+  return { x: inside.x + dx * t, y: inside.y + dy * t };
+}
+
 function updatePageOverlay() {
   pageOverlayStyle.value = {
     left: `${(editor.pageOriginX - cam.x) * cam.zoom}px`,
@@ -537,21 +559,23 @@ function handleMove(samples: InputSample[]) {
       schedule();
       return;
     }
-    const allowed: InputSample[] = [];
+    predictedPoints = [];
     for (const pt of samples) {
       const w = toWorld(pt.x, pt.y);
       if (!isInPage(w.x, w.y)) {
+        // Stroke is leaving the page — end it exactly on the boundary.
+        const prev = currentStroke.points[currentStroke.points.length - 1];
+        if (prev && isInPage(prev.x, prev.y)) {
+          const edge = clampToPageBoundary(prev, w);
+          currentStroke.points.push({ x: edge.x, y: edge.y, p: pt.pressure, t: pt.t });
+        }
         strictBlocked = true;
         break;
       }
-      allowed.push(pt);
+      currentStroke.points.push(toPagePoint(pt));
     }
-    samples = allowed;
-    if (samples.length === 0) {
-      predictedPoints = [];
-      schedule();
-      return;
-    }
+    schedule();
+    return;
   }
   if (textDrag) {
     const s = samples[samples.length - 1];
@@ -584,8 +608,28 @@ function handleMove(samples: InputSample[]) {
 
 function handlePredict(samples: InputSample[]) {
   if (!currentStroke || panActive || pinchActive) return;
-  if (editor.notebookMode === "strict" && strictBlocked) {
-    predictedPoints = [];
+  if (editor.notebookMode === "strict") {
+    if (strictBlocked) {
+      predictedPoints = [];
+      schedule();
+      return;
+    }
+    const pts: StrokePoint[] = [];
+    let prev: StrokePoint | undefined = currentStroke.points[currentStroke.points.length - 1];
+    for (const s of samples) {
+      const w = toWorld(s.x, s.y);
+      if (!isInPage(w.x, w.y)) {
+        if (prev && isInPage(prev.x, prev.y)) {
+          const edge = clampToPageBoundary(prev, w);
+          pts.push({ x: edge.x, y: edge.y, p: s.pressure, t: s.t });
+        }
+        break;
+      }
+      const p = toPagePoint(s);
+      pts.push(p);
+      prev = p;
+    }
+    predictedPoints = pts;
     schedule();
     return;
   }
@@ -610,7 +654,30 @@ function appendFinalPoint(stroke: Stroke, sample?: InputSample) {
   }
 }
 
+// Append the final pointer sample, respecting the strict-mode boundary: if the
+// pointer is released outside the page and the crossing was not already clamped
+// during the move, end the stroke on the boundary instead of dropping the point.
+function appendStrictAwareFinalPoint(
+  stroke: Stroke,
+  sample: InputSample | undefined,
+  alreadyClamped: boolean,
+) {
+  if (!sample) return;
+  if (editor.notebookMode === "strict" && strictFinalSampleOutOfBounds(sample)) {
+    if (alreadyClamped) return;
+    const w = toWorld(sample.x, sample.y);
+    const prev = stroke.points[stroke.points.length - 1];
+    if (prev && isInPage(prev.x, prev.y)) {
+      const edge = clampToPageBoundary(prev, w);
+      stroke.points.push({ x: edge.x, y: edge.y, p: sample.pressure, t: sample.t });
+    }
+    return;
+  }
+  appendFinalPoint(stroke, sample);
+}
+
 async function handleUp(sample?: InputSample) {
+  const wasStrictBlocked = strictBlocked;
   strictBlocked = false;
   if (textDrag) {
     const d = textDrag;
@@ -636,7 +703,7 @@ async function handleUp(sample?: InputSample) {
   }
   if (!currentStroke) return;
   predictedPoints = [];
-  if (!strictFinalSampleOutOfBounds(sample)) appendFinalPoint(currentStroke, sample);
+  appendStrictAwareFinalPoint(currentStroke, sample, wasStrictBlocked);
   const finished = currentStroke;
   currentStroke = undefined;
   liveSendCursor = 0;
@@ -646,6 +713,7 @@ async function handleUp(sample?: InputSample) {
 }
 
 async function handleCancel(sample?: InputSample) {
+  const wasStrictBlocked = strictBlocked;
   strictBlocked = false;
   if (textDrag) {
     if (textDrag.moved) editor.commitText({ ...textDrag.item });
@@ -666,7 +734,7 @@ async function handleCancel(sample?: InputSample) {
   }
   if (!currentStroke) return;
   predictedPoints = [];
-  if (!strictFinalSampleOutOfBounds(sample)) appendFinalPoint(currentStroke, sample);
+  appendStrictAwareFinalPoint(currentStroke, sample, wasStrictBlocked);
   if (currentStroke.points.length >= 2) {
     const partial = currentStroke;
     currentStroke = undefined;
