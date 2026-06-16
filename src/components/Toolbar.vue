@@ -248,6 +248,7 @@ onMounted(() => {
 <template>
   <aside
     class="toolbar"
+    data-tour="toolbar"
     :class="[`dock-${dock}`, { 'is-collapsed': collapsed, quiet: editor.isDrawing, horizontal, dragging, 'no-transition': noTransition }]"
     :style="Object.keys(dragStyle).length > 0 ? dragStyle : dockStyle"
     aria-label="Drawing tools"

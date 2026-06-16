@@ -9,6 +9,7 @@ import type {
   PenType,
   Project,
   Stroke,
+  StrokePoint,
   TextItem,
   Tool,
 } from "@/core/types";
@@ -50,7 +51,7 @@ export const useEditorStore = defineStore("editor", {
     color: "#0f172a",
     toolSizes: { pen: 4, highlighter: 20, eraser: 24, text: 4 },
     opacity: 1,
-    eraserMode: "stroke",
+    eraserMode: "area",
     eraserShape: "circle",
     saving: 0,
     history: [],
@@ -398,12 +399,58 @@ export const useEditorStore = defineStore("editor", {
     setEraserShape(shape: "circle" | "square") {
       this.eraserShape = shape;
     },
-    // Area eraser: drop points within `radius` of (wx, wy) and split each
-    // affected stroke into the surviving runs of points. In-memory only and
-    // synchronous (called rapidly during a drag); persist once via flushPage.
+    // Area eraser: remove the parts of each stroke that fall under the eraser.
+    // Clips the polyline against the eraser shape — segments crossing the eraser
+    // are cut exactly at the boundary, so ink passing through with no recorded
+    // point inside is still erased, and points outside are kept (no over-erase).
+    // In-memory and synchronous (called rapidly during a drag); persist via flushPage.
     eraseArea(pageId: string, wx: number, wy: number, radius: number): boolean {
-      const r2 = radius * radius;
       const square = this.eraserShape === "square";
+      const r2 = radius * radius;
+      const insideAt = (x: number, y: number): boolean =>
+        square
+          ? Math.abs(x - wx) <= radius && Math.abs(y - wy) <= radius
+          : (x - wx) ** 2 + (y - wy) ** 2 <= r2;
+      // The sub-interval [t1,t2] of segment A→B that lies inside the eraser, else null.
+      const insideInterval = (a: StrokePoint, b: StrokePoint): [number, number] | null => {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        if (square) {
+          const slab = (p0: number, d: number, lo: number, hi: number): [number, number] | null => {
+            if (Math.abs(d) < 1e-9) return p0 >= lo && p0 <= hi ? [0, 1] : null;
+            let t0 = (lo - p0) / d;
+            let t1 = (hi - p0) / d;
+            if (t0 > t1) [t0, t1] = [t1, t0];
+            return [t0, t1];
+          };
+          const xi = slab(a.x, dx, wx - radius, wx + radius);
+          if (!xi) return null;
+          const yi = slab(a.y, dy, wy - radius, wy + radius);
+          if (!yi) return null;
+          const t1 = Math.max(0, xi[0], yi[0]);
+          const t2 = Math.min(1, xi[1], yi[1]);
+          return t1 <= t2 ? [t1, t2] : null;
+        }
+        const fx = a.x - wx;
+        const fy = a.y - wy;
+        const aa = dx * dx + dy * dy;
+        if (aa < 1e-9) return fx * fx + fy * fy <= r2 ? [0, 1] : null;
+        const bb = 2 * (fx * dx + fy * dy);
+        const cc = fx * fx + fy * fy - r2;
+        const disc = bb * bb - 4 * aa * cc;
+        if (disc < 0) return null;
+        const sq = Math.sqrt(disc);
+        const t1 = Math.max(0, (-bb - sq) / (2 * aa));
+        const t2 = Math.min(1, (-bb + sq) / (2 * aa));
+        return t1 <= t2 ? [t1, t2] : null;
+      };
+      const lerp = (a: StrokePoint, b: StrokePoint, t: number): StrokePoint => ({
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        p: a.p + (b.p - a.p) * t,
+        t: a.t + (b.t - a.t) * t,
+      });
+
       const survivors: Stroke[] = [];
       let changed = false;
       for (const stroke of this.strokes) {
@@ -411,36 +458,63 @@ export const useEditorStore = defineStore("editor", {
           survivors.push(stroke);
           continue;
         }
-        const runs: Stroke["points"][] = [];
-        let run: Stroke["points"] = [];
+        const pts = stroke.points;
+        const runs: StrokePoint[][] = [];
+        let run: StrokePoint[] = [];
         let hit = false;
-        for (const p of stroke.points) {
-          const dx = p.x - wx;
-          const dy = p.y - wy;
-          const inside = square
-            ? Math.abs(dx) <= radius && Math.abs(dy) <= radius
-            : dx * dx + dy * dy <= r2;
-          if (inside) {
-            hit = true;
-            if (run.length) {
-              runs.push(run);
-              run = [];
+        const flush = () => {
+          if (run.length >= 2) runs.push(run);
+          run = [];
+        };
+        for (let i = 0; i < pts.length; i++) {
+          if (i === 0) {
+            if (insideAt(pts[0].x, pts[0].y)) hit = true;
+            else run.push(pts[0]);
+            continue;
+          }
+          const a = pts[i - 1];
+          const b = pts[i];
+          const aIn = insideAt(a.x, a.y);
+          const bIn = insideAt(b.x, b.y);
+          if (!aIn && !bIn) {
+            const iv = insideInterval(a, b);
+            if (iv && iv[1] - iv[0] > 1e-6) {
+              // Segment passes through the eraser — cut it.
+              hit = true;
+              run.push(lerp(a, b, iv[0]));
+              flush();
+              run.push(lerp(a, b, iv[1]));
+              run.push(b);
+            } else {
+              run.push(b);
             }
+          } else if (aIn && !bIn) {
+            // Exiting the eraser — start a new run at the boundary.
+            hit = true;
+            const iv = insideInterval(a, b);
+            run.push(lerp(a, b, iv ? iv[1] : 0));
+            run.push(b);
+          } else if (!aIn && bIn) {
+            // Entering the eraser — end the current run at the boundary.
+            hit = true;
+            const iv = insideInterval(a, b);
+            run.push(lerp(a, b, iv ? iv[0] : 1));
+            flush();
           } else {
-            run.push(p);
+            // Both endpoints inside — drop, ending any open run.
+            hit = true;
+            flush();
           }
         }
-        if (run.length) runs.push(run);
+        flush();
         if (!hit) {
           survivors.push(stroke);
           continue;
         }
         changed = true;
-        runs
-          .filter((pts) => pts.length >= 2)
-          .forEach((pts, i) => {
-            survivors.push({ ...stroke, id: i === 0 ? stroke.id : newId(), points: pts });
-          });
+        runs.forEach((rpts, i) => {
+          survivors.push({ ...stroke, id: i === 0 ? stroke.id : newId(), points: rpts });
+        });
       }
       if (changed) this.strokes = survivors;
       return changed;

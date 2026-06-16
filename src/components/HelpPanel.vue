@@ -1,8 +1,20 @@
 <script setup lang="ts">
+import { useRoute } from "vue-router";
+import { useOnboarding } from "@/composables/useOnboarding";
 import { devMode, setDevMode } from "@/debug";
 
 defineProps<{ open: boolean }>();
 const emit = defineEmits<{ close: [] }>();
+
+const route = useRoute();
+const { replay } = useOnboarding();
+// Replay the tour for whichever screen the panel is open on.
+function replayTour() {
+  const name = route.name === "editor" ? "editor" : "projects";
+  emit("close");
+  // Let the panel close before intro.js measures the page behind it.
+  requestAnimationFrame(() => replay(name));
+}
 
 const GITHUB_URL = "https://github.com/shravanngoswamii/DrawShare";
 
@@ -90,6 +102,16 @@ const faqs = [
               <p class="faq-a">{{ f.a }}</p>
             </details>
           </div>
+        </section>
+
+        <!-- Replay tour -->
+        <section class="help-section">
+          <button class="replay-btn" @click="replayTour">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.36 2.64L3 8"/><path d="M3 3v5h5"/>
+            </svg>
+            Replay welcome tour
+          </button>
         </section>
 
         <!-- Dev mode & credit -->
@@ -358,6 +380,26 @@ details[open] .faq-q::before { transform: rotate(90deg); }
   background: var(--color-success-soft);
   border-color: var(--color-success);
   color: var(--color-success-strong);
+}
+
+.replay-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-glass-bg);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+}
+.replay-btn:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text);
 }
 
 .dev-status {

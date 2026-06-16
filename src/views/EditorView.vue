@@ -8,6 +8,7 @@ import HelpPanel from "@/components/HelpPanel.vue";
 import PagesPanel from "@/components/PagesPanel.vue";
 import ShareSessionModal from "@/components/ShareSessionModal.vue";
 import Toolbar from "@/components/Toolbar.vue";
+import { useOnboarding } from "@/composables/useOnboarding";
 import { devMode } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
@@ -18,6 +19,7 @@ const editor = useEditorStore();
 const live = useLiveStore();
 const projects = useProjectsStore();
 const router = useRouter();
+const { maybeStart } = useOnboarding();
 
 const panelOpen = ref(false);
 const toolbarCollapsed = ref(false);
@@ -43,6 +45,9 @@ onMounted(async () => {
   if (!projects.loaded) await projects.load();
   try {
     await editor.open(props.id);
+    // First-board feature tour, once the open animation has settled so intro.js
+    // measures the tools/panel at their final positions.
+    maybeStart("editor", 700);
   } catch {
     router.replace({ name: "projects" });
   }

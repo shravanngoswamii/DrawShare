@@ -84,6 +84,7 @@ const eraseCursor = ref<{ x: number; y: number } | null>(null);
 
 let currentStroke: Stroke | undefined;
 let isErasing = false;
+let lastEraseWorld: { x: number; y: number } | null = null;
 let textDrag: {
   item: TextItem;
   downX: number;
@@ -411,6 +412,26 @@ function distToSegment(
 
 let areaErased = false;
 
+// Stamp the eraser at wx,wy, then interpolate from lastEraseWorld to fill gaps
+// created by fast pointer movement between frames.
+function eraseStamp(wx: number, wy: number) {
+  const r = editor.size / cam.zoom;
+  if (lastEraseWorld) {
+    const dx = wx - lastEraseWorld.x;
+    const dy = wy - lastEraseWorld.y;
+    const dist = Math.hypot(dx, dy);
+    const step = Math.max(1, r * 0.5);
+    if (dist > step) {
+      const n = Math.ceil(dist / step);
+      for (let i = 1; i < n; i++) {
+        eraseAt(lastEraseWorld.x + (dx * i) / n, lastEraseWorld.y + (dy * i) / n);
+      }
+    }
+  }
+  eraseAt(wx, wy);
+  lastEraseWorld = { x: wx, y: wy };
+}
+
 function eraseAt(wx: number, wy: number) {
   const r = editor.size / cam.zoom;
   // Area erase stays on the sheet it started on (keeps its snapshot coherent).
@@ -645,12 +666,13 @@ function handleDown(s: InputSample) {
   editor.setDrawing(true);
   if (editor.tool === "eraser") {
     isErasing = true;
+    lastEraseWorld = null;
     eraseCursor.value = { x: s.x, y: s.y };
     eraseLockId = onSheet ? targetPageId : undefined;
     eraseOffX = drawOffsetX;
     eraseOffY = drawOffsetY;
     if (editor.eraserMode === "area" && eraseLockId) editor.beginAreaErase(eraseLockId);
-    eraseAt(w.x, w.y);
+    eraseStamp(w.x, w.y);
     return;
   }
   const point = toPagePoint(s);
@@ -718,7 +740,7 @@ function handleMove(samples: InputSample[]) {
     eraseCursor.value = { x: last.x, y: last.y };
     for (const s of samples) {
       const w = toWorld(s.x, s.y);
-      eraseAt(w.x, w.y);
+      eraseStamp(w.x, w.y);
     }
     return;
   }
@@ -815,6 +837,7 @@ async function handleUp(sample?: InputSample) {
   editor.setDrawing(false);
   if (isErasing) {
     isErasing = false;
+    lastEraseWorld = null;
     eraseCursor.value = null;
     if (areaErased) {
       areaErased = false;
@@ -847,6 +870,7 @@ async function handleCancel(sample?: InputSample) {
   editor.setDrawing(false);
   if (isErasing) {
     isErasing = false;
+    lastEraseWorld = null;
     eraseCursor.value = null;
     if (areaErased) {
       areaErased = false;

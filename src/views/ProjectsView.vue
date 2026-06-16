@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import HelpPanel from "@/components/HelpPanel.vue";
+import { useOnboarding } from "@/composables/useOnboarding";
 import { useProjectBackup } from "@/composables/useProjectBackup";
 import { useTheme } from "@/composables/useTheme";
 import { useThumbnails } from "@/composables/useThumbnails";
@@ -16,6 +17,7 @@ const router = useRouter();
 const { isDark, toggleTheme } = useTheme();
 const { exportAll, exportProject, importAll } = useProjectBackup();
 const { projectThumbnails, renderProjectThumbnail } = useThumbnails();
+const { maybeStart } = useOnboarding();
 const importInput = ref<HTMLInputElement | null>(null);
 const importing = ref(false);
 const query = ref("");
@@ -55,6 +57,8 @@ onMounted(async () => {
   for (const p of projects.projects) {
     renderProjectThumbnail(p);
   }
+  // First-run welcome tour (skipped if already seen).
+  maybeStart("projects");
 });
 
 // Render thumbnails for projects that arrive after the initial load.
@@ -189,7 +193,7 @@ function formatDate(ts: number): string {
               <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
             </svg>
           </button>
-          <button class="btn btn-primary new-btn" @click="createNew">
+          <button class="btn btn-primary new-btn" data-tour="new-project" @click="createNew">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 5v14M5 12h14" />
@@ -201,7 +205,7 @@ function formatDate(ts: number): string {
     </header>
 
     <main class="main">
-      <section class="join-card">
+      <section class="join-card" data-tour="join">
         <div class="join-text">
           <div class="join-title">Join a live session</div>
           <div class="muted join-sub">
@@ -330,6 +334,7 @@ function formatDate(ts: number): string {
     </main>
     <button
       class="help-fab"
+      data-tour="help"
       :class="{ active: helpOpen }"
       @click="helpOpen = !helpOpen"
       :aria-expanded="helpOpen"
