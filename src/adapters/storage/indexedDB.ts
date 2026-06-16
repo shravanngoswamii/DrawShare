@@ -1,9 +1,11 @@
 import { type IDBPDatabase, openDB } from "idb";
 import type { StorageAdapter } from "@/core/ports";
-import type { ID, Page, Project, Shape, Stroke } from "@/core/types";
+import type { ID, ImageItem, Page, Project, Shape, Stroke } from "@/core/types";
 
 const DB_NAME = "drawshare";
-const DB_VERSION = 2;
+// v2 added the shapes store; v3 adds the images store. The guarded upgrade below
+// is idempotent, so any prior version migrates forward by creating what's missing.
+const DB_VERSION = 3;
 
 // Strip Vue reactive Proxies: structured clone (IndexedDB) throws on them.
 function toPlain<T>(value: T): T {
@@ -15,6 +17,7 @@ interface Schema {
   pages: { key: string; value: Page; indexes: { byProject: string } };
   strokes: { key: string; value: Stroke; indexes: { byPage: string } };
   shapes: { key: string; value: Shape; indexes: { byPage: string } };
+  images: { key: string; value: ImageItem; indexes: { byPage: string } };
 }
 
 export class IndexedDBStorage implements StorageAdapter {
@@ -37,6 +40,10 @@ export class IndexedDBStorage implements StorageAdapter {
         if (!db.objectStoreNames.contains("shapes")) {
           const shapes = db.createObjectStore("shapes", { keyPath: "id" });
           shapes.createIndex("byPage", "pageId");
+        }
+        if (!db.objectStoreNames.contains("images")) {
+          const images = db.createObjectStore("images", { keyPath: "id" });
+          images.createIndex("byPage", "pageId");
         }
       },
     });
@@ -62,7 +69,7 @@ export class IndexedDBStorage implements StorageAdapter {
 
   async deleteProject(id: ID): Promise<void> {
     const db = this.require();
-    const tx = db.transaction(["projects", "pages", "strokes", "shapes"], "readwrite");
+    const tx = db.transaction(["projects", "pages", "strokes", "shapes", "images"], "readwrite");
     const pages = await tx.objectStore("pages").index("byProject").getAllKeys(id);
     for (const pageId of pages) {
       const strokeIds = await tx
@@ -78,6 +85,13 @@ export class IndexedDBStorage implements StorageAdapter {
         .getAllKeys(pageId as string);
       for (const sid of shapeIds) {
         await tx.objectStore("shapes").delete(sid);
+      }
+      const imageIds = await tx
+        .objectStore("images")
+        .index("byPage")
+        .getAllKeys(pageId as string);
+      for (const iid of imageIds) {
+        await tx.objectStore("images").delete(iid);
       }
       await tx.objectStore("pages").delete(pageId);
     }
@@ -99,9 +113,15 @@ export class IndexedDBStorage implements StorageAdapter {
   }
 
   async deletePage(id: ID): Promise<void> {
-    await this.deleteStrokesForPage(id);
-    await this.deleteShapesForPage(id);
-    await this.require().delete("pages", id);
+    // Atomic: a mid-cascade failure must not leave a page with orphaned children.
+    const db = this.require();
+    const tx = db.transaction(["pages", "strokes", "shapes", "images"], "readwrite");
+    for (const store of ["strokes", "shapes", "images"] as const) {
+      const keys = await tx.objectStore(store).index("byPage").getAllKeys(id);
+      for (const k of keys) await tx.objectStore(store).delete(k);
+    }
+    await tx.objectStore("pages").delete(id);
+    await tx.done;
   }
 
   listStrokes(pageId: ID): Promise<Stroke[]> {
@@ -139,6 +159,26 @@ export class IndexedDBStorage implements StorageAdapter {
   async deleteShapesForPage(pageId: ID): Promise<void> {
     const db = this.require();
     const tx = db.transaction("shapes", "readwrite");
+    const keys = await tx.store.index("byPage").getAllKeys(pageId);
+    for (const k of keys) await tx.store.delete(k);
+    await tx.done;
+  }
+
+  listImages(pageId: ID): Promise<ImageItem[]> {
+    return this.require().getAllFromIndex("images", "byPage", pageId);
+  }
+
+  async putImage(img: ImageItem): Promise<void> {
+    await this.require().put("images", toPlain(img));
+  }
+
+  async deleteImage(id: ID): Promise<void> {
+    await this.require().delete("images", id);
+  }
+
+  async deleteImagesForPage(pageId: ID): Promise<void> {
+    const db = this.require();
+    const tx = db.transaction("images", "readwrite");
     const keys = await tx.store.index("byPage").getAllKeys(pageId);
     for (const k of keys) await tx.store.delete(k);
     await tx.done;

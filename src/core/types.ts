@@ -86,6 +86,21 @@ export interface Shape {
   createdAt: number;
 }
 
+export interface ImageItem {
+  id: ID;
+  pageId: ID;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  src: string; // data URL
+  // Stacking order vs the drawing. <= 0 (or absent) renders behind strokes/
+  // shapes/text; > 0 renders in front. Within a band, sorted by z then createdAt.
+  // "Send to back" pushes it more negative; "Bring to front" more positive.
+  z?: number;
+  createdAt: number;
+}
+
 export type HistoryEntry =
   | { kind: "stroke-add"; stroke: Stroke }
   | { kind: "stroke-erase"; stroke: Stroke }
@@ -102,7 +117,9 @@ export type HistoryEntry =
       shapesAfter: Shape[];
     }
   | { kind: "shape-add"; shape: Shape }
-  | { kind: "shape-erase"; shape: Shape };
+  | { kind: "shape-erase"; shape: Shape }
+  | { kind: "image-add"; image: ImageItem }
+  | { kind: "image-erase"; image: ImageItem };
 
 export interface BoundingBox {
   minX: number;

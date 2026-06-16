@@ -1,4 +1,4 @@
-import type { ID, Page, Project, Shape, Stroke, TextItem } from "./types";
+import type { ID, ImageItem, Page, Project, Shape, Stroke, TextItem } from "./types";
 
 export interface StorageAdapter {
   init(): Promise<void>;
@@ -21,6 +21,11 @@ export interface StorageAdapter {
   putShape(s: Shape): Promise<void>;
   deleteShape(id: ID): Promise<void>;
   deleteShapesForPage(pageId: ID): Promise<void>;
+
+  listImages(pageId: ID): Promise<ImageItem[]>;
+  putImage(img: ImageItem): Promise<void>;
+  deleteImage(id: ID): Promise<void>;
+  deleteImagesForPage(pageId: ID): Promise<void>;
 }
 
 export interface InputAdapter {
@@ -53,6 +58,11 @@ export interface Renderer {
   drawLive(s: Stroke): void;
   drawText(item: TextItem): void;
   drawShape(s: Shape): void;
+  // Images: decode/cache a bitmap (async), draw a cached one at its rect, and
+  // free it. Drawn below strokes/shapes/text. Cache keyed by image id.
+  loadImage(item: ImageItem): Promise<void>;
+  drawImageItem(item: ImageItem): void;
+  releaseImage(id: ID): void;
   beginFrame(): void;
   endFrame(): void;
   // Shift the world origin by (dx, dy) so subsequent draws land at that offset.

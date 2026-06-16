@@ -4,6 +4,7 @@ import { newId } from "@/core/ids";
 import { shapeSegments } from "@/core/shapes";
 import type {
   HistoryEntry,
+  ImageItem,
   NotebookLayout,
   NotebookMode,
   Page,
@@ -71,6 +72,7 @@ interface EditorState {
   currentPageId: string | undefined;
   strokes: Stroke[];
   shapes: Shape[];
+  images: ImageItem[];
   tool: Tool;
   penType: PenType;
   color: string;
@@ -97,6 +99,7 @@ export const useEditorStore = defineStore("editor", {
     currentPageId: undefined,
     strokes: [],
     shapes: [],
+    images: [],
     tool: "pen",
     penType: "ballpoint",
     color: "#0f172a",
@@ -159,13 +162,15 @@ export const useEditorStore = defineStore("editor", {
       }
       this.currentPageId = this.pages[0].id;
       // Notebook mode renders the whole stack at once, so load every sheet's
-      // strokes/shapes; Free mode keeps only the current page in memory.
+      // strokes/shapes/images; Free mode keeps only the current page in memory.
       if (this.notebookMode !== "off") {
         await this.loadAllStrokes();
         await this.loadAllShapes();
+        await this.loadAllImages();
       } else {
         await this.loadStrokes(this.currentPageId);
         await this.loadShapes(this.currentPageId);
+        await this.loadImages(this.currentPageId);
       }
       this.history = [];
       this.redoStack = [];
@@ -175,6 +180,8 @@ export const useEditorStore = defineStore("editor", {
       this.pages = [page];
       this.currentPageId = page.id;
       this.strokes = [];
+      this.shapes = [];
+      this.images = [];
       this.history = [];
       this.redoStack = [];
     },
@@ -184,8 +191,11 @@ export const useEditorStore = defineStore("editor", {
     async loadShapes(pageId: string) {
       this.shapes = await storage.listShapes(pageId);
     },
-    // Notebook mode: load every sheet's strokes/shapes into one array (each tagged
-    // by pageId). The renderer offsets each sheet to its world position.
+    async loadImages(pageId: string) {
+      this.images = await storage.listImages(pageId);
+    },
+    // Notebook mode: load every sheet's strokes/shapes/images into one array (each
+    // tagged by pageId). The renderer offsets each sheet to its world position.
     async loadAllStrokes() {
       const lists = await Promise.all(this.pages.map((p) => storage.listStrokes(p.id)));
       this.strokes = lists.flat();
@@ -194,6 +204,10 @@ export const useEditorStore = defineStore("editor", {
       const lists = await Promise.all(this.pages.map((p) => storage.listShapes(p.id)));
       this.shapes = lists.flat();
     },
+    async loadAllImages() {
+      const lists = await Promise.all(this.pages.map((p) => storage.listImages(p.id)));
+      this.images = lists.flat();
+    },
     // Free mode only: switch the visible page (reloads its strokes, resets
     // history, tells viewers to follow). Notebook mode uses setActiveSheet.
     async selectPage(pageId: string) {
@@ -201,6 +215,7 @@ export const useEditorStore = defineStore("editor", {
       this.currentPageId = pageId;
       await this.loadStrokes(pageId);
       await this.loadShapes(pageId);
+      await this.loadImages(pageId);
       this.history = [];
       this.redoStack = [];
       useLiveStore().broadcast({
@@ -277,10 +292,11 @@ export const useEditorStore = defineStore("editor", {
         fallbackPageId: fallback,
       });
       if (this.notebookMode !== "off") {
-        // Continuous stack: drop the removed sheet's strokes/shapes from memory
-        // and re-point the active sheet without a page switch.
+        // Continuous stack: drop the removed sheet's strokes/shapes/images from
+        // memory and re-point the active sheet without a page switch.
         this.strokes = this.strokes.filter((s) => s.pageId !== pageId);
         this.shapes = this.shapes.filter((s) => s.pageId !== pageId);
+        this.images = this.images.filter((i) => i.pageId !== pageId);
         if (this.currentPageId === pageId) this.setActiveSheet(fallback);
       } else if (this.currentPageId === pageId) {
         await this.selectPage(fallback);
@@ -444,6 +460,12 @@ export const useEditorStore = defineStore("editor", {
         this.shapes = [...this.shapes, entry.shape];
         await storage.putShape(entry.shape);
         useLiveStore().broadcast({ t: "shape-commit", shape: entry.shape });
+      } else if (entry.kind === "image-add") {
+        this.images = this.images.filter((i) => i.id !== entry.image.id);
+        await storage.deleteImage(entry.image.id);
+      } else if (entry.kind === "image-erase") {
+        this.images = [...this.images, entry.image];
+        await storage.putImage(entry.image);
       }
     },
     async redo() {
@@ -506,15 +528,89 @@ export const useEditorStore = defineStore("editor", {
           pageId: entry.shape.pageId,
           shapeId: entry.shape.id,
         });
+      } else if (entry.kind === "image-add") {
+        this.images = [...this.images, entry.image];
+        await storage.putImage(entry.image);
+      } else if (entry.kind === "image-erase") {
+        this.images = this.images.filter((i) => i.id !== entry.image.id);
+        await storage.deleteImage(entry.image.id);
       }
+    },
+    async commitImage(image: ImageItem) {
+      this.saving++;
+      try {
+        this.images = [...this.images, image];
+        this.history = [...this.history, { kind: "image-add", image }];
+        this.redoStack = [];
+        await storage.putImage(image);
+        if (this.project) await useProjectsStore().touch(this.project.id);
+      } finally {
+        this.saving--;
+      }
+    },
+    async deleteImage(imageId: string) {
+      const image = this.images.find((i) => i.id === imageId);
+      if (!image) return;
+      this.images = this.images.filter((i) => i.id !== imageId);
+      this.history = [...this.history, { kind: "image-erase", image }];
+      this.redoStack = [];
+      await storage.deleteImage(imageId);
+    },
+    async moveImage(imageId: string, x: number, y: number) {
+      const image = this.images.find((i) => i.id === imageId);
+      if (!image) return;
+      const prev = { ...image };
+      image.x = x;
+      image.y = y;
+      // A move is a fresh edit: invalidate any outstanding redo branch (consistent
+      // with all other mutations). The move itself is not pushed to undo history.
+      this.redoStack = [];
+      await storage.putImage({ ...image });
+      if (this.project) await useProjectsStore().touch(this.project.id);
+      return prev;
+    },
+    // Resize (and reposition, since corner-drag anchors the opposite corner).
+    // Like moveImage: persisted, clears redo, not pushed to undo history.
+    async resizeImage(imageId: string, x: number, y: number, width: number, height: number) {
+      const image = this.images.find((i) => i.id === imageId);
+      if (!image) return;
+      image.x = x;
+      image.y = y;
+      image.width = width;
+      image.height = height;
+      this.redoStack = [];
+      await storage.putImage({ ...image });
+      if (this.project) await useProjectsStore().touch(this.project.id);
+    },
+    // Stacking order vs the drawing. Front = above strokes/shapes/text and above
+    // other front images; back = below the drawing and below other back images.
+    async bringImageToFront(imageId: string) {
+      const image = this.images.find((i) => i.id === imageId);
+      if (!image) return;
+      const maxZ = this.images.reduce((m, i) => Math.max(m, i.z ?? 0), 0);
+      image.z = maxZ + 1;
+      this.redoStack = [];
+      await storage.putImage({ ...image });
+      if (this.project) await useProjectsStore().touch(this.project.id);
+    },
+    async sendImageToBack(imageId: string) {
+      const image = this.images.find((i) => i.id === imageId);
+      if (!image) return;
+      const minZ = this.images.reduce((m, i) => Math.min(m, i.z ?? 0), 0);
+      image.z = minZ - 1;
+      this.redoStack = [];
+      await storage.putImage({ ...image });
+      if (this.project) await useProjectsStore().touch(this.project.id);
     },
     async clearPage() {
       if (!this.currentPageId) return;
       await storage.deleteStrokesForPage(this.currentPageId);
       await storage.deleteShapesForPage(this.currentPageId);
+      await storage.deleteImagesForPage(this.currentPageId);
       const pageId = this.currentPageId;
       this.strokes = [];
       this.shapes = [];
+      this.images = [];
       this.history = [];
       this.redoStack = [];
       useLiveStore().broadcast({ t: "clear-page", pageId });
@@ -718,14 +814,16 @@ export const useEditorStore = defineStore("editor", {
       this.project.notebookMode = mode;
       this.project.updatedAt = Date.now();
       await storage.putProject({ ...this.project });
-      // Entering the stack needs every sheet's strokes/shapes; leaving it
+      // Entering the stack needs every sheet's strokes/shapes/images; leaving it
       // restores the Free-mode single-page invariant.
       if (wasOff && mode !== "off") {
         await this.loadAllStrokes();
         await this.loadAllShapes();
+        await this.loadAllImages();
       } else if (!wasOff && mode === "off" && this.currentPageId) {
         await this.loadStrokes(this.currentPageId);
         await this.loadShapes(this.currentPageId);
+        await this.loadImages(this.currentPageId);
       }
       // Re-snapshot live viewers onto the new mode/stack (strokes sent chunked).
       useLiveStore().broadcastNotebookSync(

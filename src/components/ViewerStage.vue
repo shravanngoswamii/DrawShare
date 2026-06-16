@@ -120,6 +120,8 @@ function render() {
         live.viewerPages,
         live.viewerAllStrokes,
         live.viewerAllShapes,
+        // Images are not broadcast to viewers yet (large data URLs, no chunking).
+        [],
         live.viewerNotebookLayout,
         sheetColors,
         {

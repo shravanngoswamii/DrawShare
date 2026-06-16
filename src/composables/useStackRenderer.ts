@@ -1,6 +1,7 @@
+import { splitImageLayers } from "@/core/images";
 import { PAGE_H, PAGE_W, sheetWorldPos } from "@/core/layout";
 import type { Renderer } from "@/core/ports";
-import type { NotebookLayout, Page, Shape, Stroke } from "@/core/types";
+import type { ImageItem, NotebookLayout, Page, Shape, Stroke } from "@/core/types";
 
 export interface SheetColors {
   paper: string;
@@ -27,6 +28,7 @@ export function drawStack(
   pages: Page[],
   strokes: Stroke[],
   shapes: Shape[],
+  images: ImageItem[],
   layout: NotebookLayout,
   colors: SheetColors,
   opts: DrawStackOptions = {},
@@ -43,6 +45,12 @@ export function drawStack(
     const arr = shapesByPage.get(sh.pageId);
     if (arr) arr.push(sh);
     else shapesByPage.set(sh.pageId, [sh]);
+  }
+  const imagesByPage = new Map<string, ImageItem[]>();
+  for (const img of images) {
+    const arr = imagesByPage.get(img.pageId);
+    if (arr) arr.push(img);
+    else imagesByPage.set(img.pageId, [img]);
   }
   const first = Math.max(0, range?.first ?? 0);
   const last = Math.min(pages.length - 1, range?.last ?? pages.length - 1);
@@ -66,12 +74,16 @@ export function drawStack(
     const { x, y } = sheetWorldPos(i, layout);
     renderer.setOrigin(x, y);
     if (clip) renderer.pushClip(PAGE_W, PAGE_H);
+    // Images split into a behind band (below the drawing) and a front band (above).
+    const { behind, front } = splitImageLayers(imagesByPage.get(page.id) ?? []);
+    for (const img of behind) renderer.drawImageItem(img);
     const ps = byPage.get(page.id);
     if (ps) for (const s of ps) renderer.drawStroke(s);
     const shs = shapesByPage.get(page.id);
     if (shs) for (const sh of shs) renderer.drawShape(sh);
     const texts = page.texts;
     if (texts) for (const t of texts) if (t.id !== editingTextId) renderer.drawText(t);
+    for (const img of front) renderer.drawImageItem(img);
     if (clip) renderer.popClip();
   }
   renderer.endFrame();

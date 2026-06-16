@@ -1,5 +1,6 @@
 import { getStroke } from "perfect-freehand";
-import type { Page, Shape, Stroke, TextItem } from "@/core/types";
+import { splitImageLayers } from "@/core/images";
+import type { ImageItem, Page, Shape, Stroke, TextItem } from "@/core/types";
 
 const PADDING = 32;
 // A4 at 96 DPI — matches CanvasStage PAGE_W / PAGE_H constants.
@@ -24,6 +25,7 @@ function contentBounds(
   strokes: Stroke[],
   texts: TextItem[],
   shapes: Shape[],
+  images: ImageItem[],
   page: Page,
 ): { minX: number; minY: number; maxX: number; maxY: number } {
   let minX = 0;
@@ -52,6 +54,13 @@ function contentBounds(
     if (sy < minY) minY = sy;
     if (ex > maxX) maxX = ex;
     if (ey > maxY) maxY = ey;
+  }
+
+  for (const img of images) {
+    if (img.x < minX) minX = img.x;
+    if (img.y < minY) minY = img.y;
+    if (img.x + img.width > maxX) maxX = img.x + img.width;
+    if (img.y + img.height > maxY) maxY = img.y + img.height;
   }
 
   for (const item of texts) {
@@ -190,17 +199,42 @@ function drawBackground(ctx: OffscreenCanvasRenderingContext2D, page: Page): voi
   ctx.restore();
 }
 
+async function drawImageToCtx(
+  ctx: OffscreenCanvasRenderingContext2D,
+  item: ImageItem,
+): Promise<void> {
+  try {
+    const img = new Image();
+    await new Promise<void>((res, rej) => {
+      img.onload = () => res();
+      img.onerror = rej;
+      img.src = item.src;
+    });
+    ctx.drawImage(img, item.x, item.y, item.width, item.height);
+  } catch {
+    // Skip undecodable images silently
+  }
+}
+
 export async function exportPageAsPng(
   page: Page,
   strokes: Stroke[],
   shapes: Shape[] = [],
+  images: ImageItem[] = [],
 ): Promise<void> {
   const pageStrokes = strokes.filter((s) => s.pageId === page.id);
   const pageShapes = shapes.filter((s) => s.pageId === page.id);
+  const pageImages = images.filter((i) => i.pageId === page.id);
   const texts = page.texts ?? [];
 
   // Size the export canvas to all content, not just the page guide rectangle.
-  const { minX, minY, maxX, maxY } = contentBounds(pageStrokes, texts, pageShapes, page);
+  const { minX, minY, maxX, maxY } = contentBounds(
+    pageStrokes,
+    texts,
+    pageShapes,
+    pageImages,
+    page,
+  );
   const canvasW = Math.ceil(maxX - minX + 2 * PADDING);
   const canvasH = Math.ceil(maxY - minY + 2 * PADDING);
 
@@ -216,9 +250,13 @@ export async function exportPageAsPng(
 
   ctx.translate(offsetX, offsetY);
   drawBackground(ctx, page);
+  // Images split into behind/front bands, matching canvas layer order.
+  const { behind, front } = splitImageLayers(pageImages);
+  for (const img of behind) await drawImageToCtx(ctx, img);
   for (const stroke of pageStrokes) drawStrokeToCtx(ctx, stroke);
   for (const shape of pageShapes) drawShapeToCtx(ctx, shape);
   for (const item of texts) drawTextToCtx(ctx, item);
+  for (const img of front) await drawImageToCtx(ctx, img);
 
   const blob = await canvas.convertToBlob({ type: "image/png" });
   const url = URL.createObjectURL(blob);
@@ -243,7 +281,12 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 // Render one notebook sheet to a 2×-resolution A4 PNG. Strokes/texts are stored
 // page-local (0,0)..(A4_W,A4_H), so no world offset is needed — just clip to the
 // sheet box and paint.
-async function renderSheet(page: Page, strokes: Stroke[], shapes: Shape[]): Promise<string> {
+async function renderSheet(
+  page: Page,
+  strokes: Stroke[],
+  shapes: Shape[],
+  images: ImageItem[],
+): Promise<string> {
   const scale = 2;
   const canvas = new OffscreenCanvas(A4_W * scale, A4_H * scale);
   const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D;
@@ -255,9 +298,13 @@ async function renderSheet(page: Page, strokes: Stroke[], shapes: Shape[]): Prom
   ctx.rect(0, 0, A4_W, A4_H);
   ctx.clip();
   drawBackground(ctx, { ...page, width: A4_W, height: A4_H });
+  // Images split into behind/front bands, matching the canvas layer order.
+  const { behind, front } = splitImageLayers(images.filter((i) => i.pageId === page.id));
+  for (const img of behind) await drawImageToCtx(ctx, img);
   for (const s of strokes) if (s.pageId === page.id) drawStrokeToCtx(ctx, s);
   for (const sh of shapes) if (sh.pageId === page.id) drawShapeToCtx(ctx, sh);
   for (const t of page.texts ?? []) drawTextToCtx(ctx, t);
+  for (const img of front) await drawImageToCtx(ctx, img);
   ctx.restore();
   return blobToDataUrl(await canvas.convertToBlob({ type: "image/png" }));
 }
@@ -278,20 +325,23 @@ export async function exportNotebookPdf(
   pages: Page[],
   strokes: Stroke[],
   shapes: Shape[] = [],
+  images: ImageItem[] = [],
 ): Promise<void> {
   if (pages.length === 0) return;
-  const images = await Promise.all(pages.map((p) => renderSheet(p, strokes, shapes)));
+  const sheetUrls = await Promise.all(pages.map((p) => renderSheet(p, strokes, shapes, images)));
 
   const win = window.open("", "_blank");
   if (!win) {
     // Popup blocked: download each sheet as a PNG instead.
-    images.forEach((src, i) => {
+    sheetUrls.forEach((src, i) => {
       downloadDataUrl(src, `page-${i + 1}.png`);
     });
     return;
   }
 
-  const sheets = images.map((src) => `<div class="sheet"><img src="${src}" alt=""></div>`).join("");
+  const sheets = sheetUrls
+    .map((src) => `<div class="sheet"><img src="${src}" alt=""></div>`)
+    .join("");
   win.document.write(`<!DOCTYPE html>
 <html>
 <head>
