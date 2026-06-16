@@ -222,7 +222,18 @@ onBeforeUnmount(() => {
               </svg>
             </div>
             <h3 class="feature-title">Freehand drawing</h3>
-            <p class="feature-desc">Pressure-sensitive pen with ballpoint, brush, and marker styles. Shapes, text, and image import too.</p>
+            <p class="feature-desc">Pressure-sensitive pens — ballpoint, brush and marker — plus shapes, text and drag-and-drop image import.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 2 2 7l10 5 10-5-10-5z"/>
+                <path d="m2 17 10 5 10-5"/>
+                <path d="m2 12 10 5 10-5"/>
+              </svg>
+            </div>
+            <h3 class="feature-title">Layers</h3>
+            <p class="feature-desc">Stack your work in named layers — show/hide, lock, reorder and rename to keep sketches, ink and notes apart.</p>
           </div>
           <div class="feature-card">
             <div class="feature-icon">
@@ -235,17 +246,17 @@ onBeforeUnmount(() => {
               </svg>
             </div>
             <h3 class="feature-title">Live sharing</h3>
-            <p class="feature-desc">Stream your strokes in real time to any device on your local network. No account, no cloud — just a code.</p>
+            <p class="feature-desc">Stream your strokes in real time to any device — share a short code, no account and no cloud in the middle.</p>
           </div>
           <div class="feature-card">
             <div class="feature-icon">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.42 2 2 0 0 1 3.6 1.22h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.81"/>
-                <line x1="1" y1="1" x2="23" y2="23"/>
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
               </svg>
             </div>
-            <h3 class="feature-title">Works offline</h3>
-            <p class="feature-desc">All your drawings live on your device — no internet required. Install as a PWA for the full app experience.</p>
+            <h3 class="feature-title">Read-only snapshot links</h3>
+            <p class="feature-desc">Publish a page as a self-contained link. The whole snapshot lives in the URL — nothing is uploaded to a server.</p>
           </div>
           <div class="feature-card">
             <div class="feature-icon">
@@ -255,8 +266,8 @@ onBeforeUnmount(() => {
                 <line x1="12" y1="17" x2="12" y2="21"/>
               </svg>
             </div>
-            <h3 class="feature-title">Teaching & presenting</h3>
-            <p class="feature-desc">Laser pointer, spotlight mode, session replay and notebook A4 mode — built for classrooms and presentations.</p>
+            <h3 class="feature-title">Present & teach</h3>
+            <p class="feature-desc">Laser pointer, spotlight, step-by-step replay and an A4 notebook mode — built for classrooms and live demos.</p>
           </div>
           <div class="feature-card">
             <div class="feature-icon">
@@ -266,20 +277,34 @@ onBeforeUnmount(() => {
                 <line x1="12" y1="15" x2="12" y2="3"/>
               </svg>
             </div>
-            <h3 class="feature-title">Export anywhere</h3>
-            <p class="feature-desc">Export pages as PNG. Back up and restore your entire project library as a portable JSON file.</p>
-          </div>
-          <div class="feature-card">
-            <div class="feature-icon">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="10"/>
-                <polyline points="12 6 12 12 16 14"/>
-              </svg>
-            </div>
-            <h3 class="feature-title">Session replay</h3>
-            <p class="feature-desc">Play back how any page was drawn — point by point. Pause, seek, and control speed for step-by-step teaching.</p>
+            <h3 class="feature-title">Offline & export</h3>
+            <p class="feature-desc">Works fully offline as an installable PWA. Export pages to PNG or PDF, and back up everything as portable JSON.</p>
           </div>
         </div>
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section class="steps">
+      <div class="steps-inner">
+        <h2 class="section-title">From blank page to shared in seconds</h2>
+        <ol class="steps-grid">
+          <li class="step">
+            <span class="step-num">1</span>
+            <h3 class="step-title">Draw</h3>
+            <p class="step-desc">Open the app and sketch on an infinite canvas or A4 notebook — pens, shapes, text and images, all stored on your device.</p>
+          </li>
+          <li class="step">
+            <span class="step-num">2</span>
+            <h3 class="step-title">Share a code</h3>
+            <p class="step-desc">Start a live session and hand out the short code, or publish a read-only snapshot link that needs no server at all.</p>
+          </li>
+          <li class="step">
+            <span class="step-num">3</span>
+            <h3 class="step-title">They watch live</h3>
+            <p class="step-desc">Viewers enter the code and your strokes appear on their screen in real time — point with the laser, spotlight a region, replay it later.</p>
+          </li>
+        </ol>
       </div>
     </section>
 
@@ -671,9 +696,65 @@ onBeforeUnmount(() => {
   margin: 0;
 }
 
+/* ── How it works ── */
+.steps {
+  padding: 72px var(--space-6);
+  background: var(--color-bg);
+}
+
+.steps-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.steps-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-8);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.step-num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+  font-weight: 700;
+  font-size: var(--text-md);
+  margin-bottom: var(--space-1);
+}
+
+.step-title {
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.step-desc {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  line-height: 1.55;
+  margin: 0;
+}
+
 /* ── Join section ── */
 .join-section {
   padding: 72px var(--space-6);
+  border-top: 1px solid var(--color-border);
 }
 
 .join-inner {
@@ -798,6 +879,9 @@ onBeforeUnmount(() => {
 
   .features { padding: 48px var(--space-4); }
   .features-grid { grid-template-columns: 1fr; gap: var(--space-3); }
+
+  .steps { padding: 48px var(--space-4); }
+  .steps-grid { grid-template-columns: 1fr; gap: var(--space-6); }
 
   .join-section { padding: 48px var(--space-4); }
   .join-inner { flex-direction: column; align-items: flex-start; gap: var(--space-6); }
