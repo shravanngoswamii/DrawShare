@@ -30,6 +30,7 @@ import type {
 import { dlog } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
+import { useReplayStore } from "@/stores/replay";
 
 const SHAPE_TOOLS = new Set<Tool>(["rect", "ellipse", "line", "arrow"]);
 function isShapeTool(t: Tool): t is ShapeType {
@@ -41,6 +42,7 @@ type ResizeCorner = "nw" | "ne" | "sw" | "se";
 const props = defineProps<{ page: Page }>();
 const editor = useEditorStore();
 const live = useLiveStore();
+const replay = useReplayStore();
 const { isDark } = useTheme();
 
 function applyInkAdapter() {
@@ -598,7 +600,43 @@ function render() {
   frameQueued = false;
   if (dirtyBase) {
     baseRenderer.clear();
-    if (isNotebook()) {
+    if (replay.active) {
+      // Replay: render everything revealed up to the current time — strokes
+      // animate point-by-point; shapes/images/text pop in at their creation time.
+      const rStrokes = replay.displayStrokes;
+      const rShapes = replay.displayShapes;
+      const rImages = replay.displayImages;
+      const rTextIds = replay.displayTextIds;
+      if (isNotebook()) {
+        drawStack(
+          baseRenderer,
+          editor.pages,
+          rStrokes,
+          rShapes,
+          rImages,
+          editor.notebookLayout,
+          sheetColors,
+          {
+            range: visibleRange(),
+            clip: editor.notebookMode === "strict",
+            revealedTextIds: rTextIds,
+          },
+        );
+      } else {
+        baseRenderer.beginFrame();
+        const { behind, front } = splitImageLayers(
+          rImages.filter((img) => img.pageId === props.page.id),
+        );
+        for (const img of behind) baseRenderer.drawImageItem(img);
+        for (const s of rStrokes) baseRenderer.drawStroke(s);
+        for (const sh of rShapes) baseRenderer.drawShape(sh);
+        for (const t of editor.currentPage?.texts ?? []) {
+          if (rTextIds.has(t.id)) baseRenderer.drawText(t);
+        }
+        for (const img of front) baseRenderer.drawImageItem(img);
+        baseRenderer.endFrame();
+      }
+    } else if (isNotebook()) {
       drawStack(
         baseRenderer,
         editor.pages,
@@ -632,7 +670,7 @@ function render() {
     dirtyBase = false;
   }
   liveRenderer.clear();
-  if (currentShape) {
+  if (!replay.active && currentShape) {
     // The in-progress shape is page-local; shift the live camera by the active
     // sheet origin (no-op in Free mode where drawOffset is 0).
     liveRenderer.setCamera({ x: cam.x - drawOffsetX, y: cam.y - drawOffsetY, zoom: cam.zoom });
@@ -642,7 +680,7 @@ function render() {
     liveRenderer.drawShape(currentShape);
     if (clipShape) liveRenderer.popClip();
     liveRenderer.endFrame();
-  } else if (currentStroke && currentStroke.points.length > 0) {
+  } else if (!replay.active && currentStroke && currentStroke.points.length > 0) {
     // The in-progress stroke is page-local; shift the live camera by the active
     // sheet origin so drawLive paints it at the sheet's world position (no-op in
     // Free mode where drawOffset is 0).
@@ -914,6 +952,7 @@ function commitEditing() {
 }
 
 function handleDown(s: InputSample) {
+  if (replay.active) return;
   if (panActive || pinchActive) return;
   // Commit a focused field (e.g. the project name) when drawing starts; the
   // canvas swallows the focus change otherwise so its blur never fires.
@@ -1618,6 +1657,17 @@ watch(
     if (editor.scrollRequestPageId) scrollToSheet(editor.scrollRequestPageId);
   },
 );
+
+watch([() => replay.active, () => replay.time], () => {
+  if (replay.active) {
+    dirtyBase = true;
+    schedule();
+  } else {
+    // Replay ended — redraw with the real strokes
+    dirtyBase = true;
+    schedule();
+  }
+});
 
 // ── Lifecycle ──────────────────────────────────────────────────────────────
 

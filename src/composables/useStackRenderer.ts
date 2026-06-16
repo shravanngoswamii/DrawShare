@@ -21,6 +21,9 @@ export interface DrawStackOptions {
   // Strict mode clips ink to each sheet; non-strict ("notebook") leaves the sheet
   // a guide and shows ink drawn outside it. Defaults to clipped.
   clip?: boolean;
+  // Replay only: when set, draw a text item just if its id is in this set. Lets
+  // replay reveal texts over time without touching the stored page.texts.
+  revealedTextIds?: Set<string>;
 }
 
 export function drawStack(
@@ -33,7 +36,7 @@ export function drawStack(
   colors: SheetColors,
   opts: DrawStackOptions = {},
 ): void {
-  const { range, editingTextId, clip = true } = opts;
+  const { range, editingTextId, clip = true, revealedTextIds } = opts;
   const byPage = new Map<string, Stroke[]>();
   for (const s of strokes) {
     const arr = byPage.get(s.pageId);
@@ -82,7 +85,12 @@ export function drawStack(
     const shs = shapesByPage.get(page.id);
     if (shs) for (const sh of shs) renderer.drawShape(sh);
     const texts = page.texts;
-    if (texts) for (const t of texts) if (t.id !== editingTextId) renderer.drawText(t);
+    if (texts)
+      for (const t of texts) {
+        if (t.id === editingTextId) continue;
+        if (revealedTextIds && !revealedTextIds.has(t.id)) continue;
+        renderer.drawText(t);
+      }
     for (const img of front) renderer.drawImageItem(img);
     if (clip) renderer.popClip();
   }

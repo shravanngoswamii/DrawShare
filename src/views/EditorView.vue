@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
 import { installPointerProbe } from "@/adapters/input/pointerDebug";
 // biome-ignore lint/style/useImportType: rendered in the template — needs a value import, not `import type` (would break runtime component resolution).
@@ -7,6 +7,7 @@ import CanvasStage from "@/components/CanvasStage.vue";
 import DebugConsole from "@/components/DebugConsole.vue";
 import HelpPanel from "@/components/HelpPanel.vue";
 import PagesPanel from "@/components/PagesPanel.vue";
+import ReplayControls from "@/components/ReplayControls.vue";
 import ShareSessionModal from "@/components/ShareSessionModal.vue";
 import Toolbar from "@/components/Toolbar.vue";
 import { useOnboarding } from "@/composables/useOnboarding";
@@ -14,6 +15,7 @@ import { devMode } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
 import { useProjectsStore } from "@/stores/projects";
+import { useReplayStore } from "@/stores/replay";
 
 const canvasStage = ref<InstanceType<typeof CanvasStage> | null>(null);
 
@@ -21,8 +23,18 @@ const props = defineProps<{ id: string }>();
 const editor = useEditorStore();
 const live = useLiveStore();
 const projects = useProjectsStore();
+const replay = useReplayStore();
 const router = useRouter();
 const { maybeStart } = useOnboarding();
+
+// Replay is offered whenever the project has anything to replay (any content type).
+const hasContent = computed(
+  () =>
+    editor.strokes.length > 0 ||
+    editor.shapes.length > 0 ||
+    editor.images.length > 0 ||
+    editor.pages.some((p) => (p.texts?.length ?? 0) > 0),
+);
 
 const panelOpen = ref(false);
 const toolbarCollapsed = ref(false);
@@ -141,6 +153,21 @@ onBeforeUnmount(() => removeProbe?.());
           <path fill="currentColor" fill-rule="evenodd" d="M10 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-8zM9 7H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3zM4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" clip-rule="evenodd"/>
         </svg>
       </button>
+      <!-- Replay FAB: shown when the page has any content and replay isn't active -->
+      <button
+        v-if="hasContent && !replay.active"
+        class="replay-fab"
+        :class="{ quiet: editor.isDrawing }"
+        title="Replay drawing"
+        aria-label="Replay drawing"
+        @click="replay.start({ strokes: editor.strokes, shapes: editor.shapes, images: editor.images, pages: editor.pages })"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M8 5v14l11-7z"/>
+        </svg>
+      </button>
+      <!-- Replay controls overlay (absolutely positioned inside .body) -->
+      <ReplayControls v-if="replay.active" />
       <button
         class="help-fab"
         :class="{ quiet: editor.isDrawing, active: helpOpen }"
@@ -304,6 +331,40 @@ onBeforeUnmount(() => removeProbe?.());
 .pencil-fab:active { transform: scale(0.96); }
 
 .pencil-fab.quiet {
+  opacity: 0.06;
+  pointer-events: none;
+}
+
+.replay-fab {
+  position: absolute;
+  bottom: 56px;
+  left: 12px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-pill);
+  background: var(--color-glass-bg-strong);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-glass-border);
+  box-shadow: 0 4px 14px var(--color-glass-shadow), 0 1px 2px var(--color-glass-shadow);
+  color: var(--color-accent);
+  transition: transform 100ms ease, box-shadow 150ms ease, opacity 150ms ease;
+}
+
+.replay-fab:hover {
+  transform: scale(1.05);
+  box-shadow: var(--shadow-md);
+}
+
+.replay-fab:active {
+  transform: scale(0.96);
+}
+
+.replay-fab.quiet {
   opacity: 0.06;
   pointer-events: none;
 }
