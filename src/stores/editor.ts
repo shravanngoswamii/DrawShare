@@ -18,6 +18,56 @@ import { dlog } from "@/debug";
 import { useLiveStore } from "./live";
 import { DEFAULT_PAGE_SIZE, useProjectsStore } from "./projects";
 
+// Trace a shape's outline as an ink polyline so the area eraser can cut just the
+// swept portion (a vector shape can't be partially erased while staying a shape).
+// rect → 4 edges; line → segment; arrow → segment + the two head strokes;
+// ellipse → sampled polygon. Same colour/size/opacity, rendered as a pen stroke.
+function shapeToStroke(shape: Shape): Stroke {
+  const { x1, y1, x2, y2 } = shape;
+  const pts: Array<{ x: number; y: number }> = [];
+  if (shape.type === "line") {
+    pts.push({ x: x1, y: y1 }, { x: x2, y: y2 });
+  } else if (shape.type === "arrow") {
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+    const headLen = Math.max(10, shape.size * 5);
+    const hl = {
+      x: x2 - headLen * Math.cos(angle - Math.PI / 6),
+      y: y2 - headLen * Math.sin(angle - Math.PI / 6),
+    };
+    const hr = {
+      x: x2 - headLen * Math.cos(angle + Math.PI / 6),
+      y: y2 - headLen * Math.sin(angle + Math.PI / 6),
+    };
+    pts.push({ x: x1, y: y1 }, { x: x2, y: y2 }, hl, { x: x2, y: y2 }, hr);
+  } else if (shape.type === "rect") {
+    const a = Math.min(x1, x2);
+    const b = Math.max(x1, x2);
+    const c = Math.min(y1, y2);
+    const d = Math.max(y1, y2);
+    pts.push({ x: a, y: c }, { x: b, y: c }, { x: b, y: d }, { x: a, y: d }, { x: a, y: c });
+  } else {
+    const cx = (x1 + x2) / 2;
+    const cy = (y1 + y2) / 2;
+    const rx = Math.abs(x2 - x1) / 2;
+    const ry = Math.abs(y2 - y1) / 2;
+    const N = 48;
+    for (let i = 0; i <= N; i++) {
+      const ang = (i / N) * Math.PI * 2;
+      pts.push({ x: cx + rx * Math.cos(ang), y: cy + ry * Math.sin(ang) });
+    }
+  }
+  return {
+    id: newId(),
+    pageId: shape.pageId,
+    tool: "pen",
+    color: shape.color,
+    size: shape.size,
+    opacity: shape.opacity,
+    points: pts.map((p, i) => ({ x: p.x, y: p.y, p: 0.5, t: i })),
+    createdAt: shape.createdAt,
+  };
+}
+
 interface EditorState {
   project: Project | undefined;
   pages: Page[];
@@ -35,6 +85,7 @@ interface EditorState {
   history: HistoryEntry[];
   redoStack: HistoryEntry[];
   _areaEraseBefore: Stroke[] | null;
+  _areaEraseShapesBefore: Shape[] | null;
   camera: { x: number; y: number; zoom: number };
   isDrawing: boolean;
   // Bumped to ask the canvas to scroll/animate to a sheet (notebook overview clicks).
@@ -69,6 +120,7 @@ export const useEditorStore = defineStore("editor", {
     history: [],
     redoStack: [],
     _areaEraseBefore: null,
+    _areaEraseShapesBefore: null,
     camera: { x: 0, y: 0, zoom: 1 },
     isDrawing: false,
     scrollRequestPageId: undefined,
@@ -368,14 +420,20 @@ export const useEditorStore = defineStore("editor", {
         }
       } else if (entry.kind === "area-erase") {
         this.strokes = [...this.strokes.filter((s) => s.pageId !== entry.pageId), ...entry.before];
+        this.shapes = [
+          ...this.shapes.filter((s) => s.pageId !== entry.pageId),
+          ...entry.shapesBefore,
+        ];
         await storage.deleteStrokesForPage(entry.pageId);
         for (const s of entry.before) await storage.putStroke(s);
+        await storage.deleteShapesForPage(entry.pageId);
+        for (const s of entry.shapesBefore) await storage.putShape(s);
         useLiveStore().broadcast({
           t: "page-set",
           pageId: entry.pageId,
           pages: [...this.pages],
           strokes: entry.before,
-          shapes: this.shapes.filter((s) => s.pageId === entry.pageId),
+          shapes: entry.shapesBefore,
         });
       } else if (entry.kind === "shape-add") {
         this.shapes = this.shapes.filter((s) => s.id !== entry.shape.id);
@@ -424,14 +482,20 @@ export const useEditorStore = defineStore("editor", {
         }
       } else if (entry.kind === "area-erase") {
         this.strokes = [...this.strokes.filter((s) => s.pageId !== entry.pageId), ...entry.after];
+        this.shapes = [
+          ...this.shapes.filter((s) => s.pageId !== entry.pageId),
+          ...entry.shapesAfter,
+        ];
         await storage.deleteStrokesForPage(entry.pageId);
         for (const s of entry.after) await storage.putStroke(s);
+        await storage.deleteShapesForPage(entry.pageId);
+        for (const s of entry.shapesAfter) await storage.putShape(s);
         useLiveStore().broadcast({
           t: "page-set",
           pageId: entry.pageId,
           pages: [...this.pages],
           strokes: entry.after,
-          shapes: this.shapes.filter((s) => s.pageId === entry.pageId),
+          shapes: entry.shapesAfter,
         });
       } else if (entry.kind === "shape-add") {
         this.shapes = [...this.shapes, entry.shape];
@@ -599,26 +663,42 @@ export const useEditorStore = defineStore("editor", {
     // Call before starting an area-erase gesture to snapshot the before-state.
     beginAreaErase(pageId: string) {
       this._areaEraseBefore = this.strokes.filter((s) => s.pageId === pageId);
+      this._areaEraseShapesBefore = this.shapes.filter((s) => s.pageId === pageId);
     },
-    // Persist the current strokes of a page after an area-erase gesture.
+    // Area eraser hit a shape: replace it with an equivalent ink stroke (in memory)
+    // so the eraser can cut out just the swept part. Persistence + history are
+    // handled by flushPage at the end of the gesture.
+    rasterizeShapeForErase(shape: Shape) {
+      this.shapes = this.shapes.filter((s) => s.id !== shape.id);
+      this.strokes = [...this.strokes, shapeToStroke(shape)];
+    },
+    // Persist the current strokes + shapes of a page after an area-erase gesture.
     async flushPage(pageId: string) {
       this.saving++;
       try {
         const after = this.strokes.filter((s) => s.pageId === pageId);
         const before = this._areaEraseBefore ?? after;
         this._areaEraseBefore = null;
-        if (before !== after) {
-          this.history = [...this.history, { kind: "area-erase", pageId, before, after }];
+        const shapesAfter = this.shapes.filter((s) => s.pageId === pageId);
+        const shapesBefore = this._areaEraseShapesBefore ?? shapesAfter;
+        this._areaEraseShapesBefore = null;
+        if (before !== after || shapesBefore !== shapesAfter) {
+          this.history = [
+            ...this.history,
+            { kind: "area-erase", pageId, before, after, shapesBefore, shapesAfter },
+          ];
           this.redoStack = [];
         }
         await storage.deleteStrokesForPage(pageId);
         for (const s of this.strokes) if (s.pageId === pageId) await storage.putStroke(s);
+        await storage.deleteShapesForPage(pageId);
+        for (const s of shapesAfter) await storage.putShape(s);
         useLiveStore().broadcast({
           t: "page-set",
           pageId,
           pages: [...this.pages],
           strokes: after,
-          shapes: this.shapes.filter((s) => s.pageId === pageId),
+          shapes: shapesAfter,
         });
       } finally {
         this.saving--;

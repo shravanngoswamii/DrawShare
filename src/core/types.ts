@@ -91,7 +91,16 @@ export type HistoryEntry =
   | { kind: "stroke-erase"; stroke: Stroke }
   | { kind: "text-upsert"; prev: TextItem | null; next: TextItem }
   | { kind: "text-delete"; text: TextItem }
-  | { kind: "area-erase"; pageId: string; before: Stroke[]; after: Stroke[] }
+  | {
+      kind: "area-erase";
+      pageId: string;
+      before: Stroke[];
+      after: Stroke[];
+      // Shapes touched by the sweep are rasterized to ink, so the area-erase also
+      // restores/reapplies the page's shapes on undo/redo.
+      shapesBefore: Shape[];
+      shapesAfter: Shape[];
+    }
   | { kind: "shape-add"; shape: Shape }
   | { kind: "shape-erase"; shape: Shape };
 

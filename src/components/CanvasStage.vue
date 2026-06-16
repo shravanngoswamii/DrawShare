@@ -503,11 +503,20 @@ function shapeHitByEraser(s: Shape, lx: number, ly: number, r: number): boolean 
 }
 
 // Whole-delete any shape whose outline the eraser touches on the given sheet.
-// Shapes are atomic vectors, so both eraser modes remove the entire shape.
+// Used by the "whole" eraser mode — a tap removes the entire shape.
 function eraseShapesAt(pageId: string, lx: number, ly: number, r: number): boolean {
   const hit = editor.shapes.filter((s) => s.pageId === pageId && shapeHitByEraser(s, lx, ly, r));
   if (hit.length === 0) return false;
   for (const s of hit) editor.deleteShape(s.id);
+  return true;
+}
+
+// Area mode: rasterize each touched shape to ink so the sweep can erase just the
+// part it passes over (the subsequent eraseArea clips the resulting stroke).
+function rasterizeTouchedShapes(pageId: string, lx: number, ly: number, r: number): boolean {
+  const hit = editor.shapes.filter((s) => s.pageId === pageId && shapeHitByEraser(s, lx, ly, r));
+  if (hit.length === 0) return false;
+  for (const s of hit) editor.rasterizeShapeForErase(s);
   return true;
 }
 
@@ -518,10 +527,12 @@ function eraseAt(wx: number, wy: number) {
     if (!eraseLockId) return;
     const lx = wx - eraseOffX;
     const ly = wy - eraseOffY;
-    let changed = editor.eraseArea(eraseLockId, lx, ly, r);
-    if (changed) areaErased = true;
-    if (eraseShapesAt(eraseLockId, lx, ly, r)) changed = true;
+    // Convert any shape the eraser touches into ink first, so the sweep cuts out
+    // only the swept part rather than deleting the whole shape.
+    let changed = rasterizeTouchedShapes(eraseLockId, lx, ly, r);
+    if (editor.eraseArea(eraseLockId, lx, ly, r)) changed = true;
     if (changed) {
+      areaErased = true;
       dirtyBase = true;
       schedule();
     }
