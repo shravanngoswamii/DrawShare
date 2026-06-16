@@ -1,7 +1,17 @@
 import { defineStore } from "pinia";
 import { storage } from "@/adapters/storage/indexedDB";
 import { newId } from "@/core/ids";
-import type { HistoryEntry, Page, PenType, Project, Stroke, TextItem, Tool } from "@/core/types";
+import type {
+  HistoryEntry,
+  NotebookLayout,
+  NotebookMode,
+  Page,
+  PenType,
+  Project,
+  Stroke,
+  TextItem,
+  Tool,
+} from "@/core/types";
 import { dlog } from "@/debug";
 import { useLiveStore } from "./live";
 import { DEFAULT_PAGE_SIZE, useProjectsStore } from "./projects";
@@ -24,6 +34,9 @@ interface EditorState {
   _areaEraseBefore: Stroke[] | null;
   camera: { x: number; y: number; zoom: number };
   isDrawing: boolean;
+  // Bumped to ask the canvas to scroll/animate to a sheet (notebook overview clicks).
+  scrollRequestPageId: string | undefined;
+  scrollRequestNonce: number;
 }
 
 export const useEditorStore = defineStore("editor", {
@@ -45,6 +58,8 @@ export const useEditorStore = defineStore("editor", {
     _areaEraseBefore: null,
     camera: { x: 0, y: 0, zoom: 1 },
     isDrawing: false,
+    scrollRequestPageId: undefined,
+    scrollRequestNonce: 0,
   }),
   getters: {
     currentPage(state): Page | undefined {
@@ -52,6 +67,14 @@ export const useEditorStore = defineStore("editor", {
     },
     size(state): number {
       return state.toolSizes[state.tool];
+    },
+    // Canvas style is a project-wide setting (persisted on the project).
+    notebookMode(state): NotebookMode {
+      return state.project?.notebookMode ?? "off";
+    },
+    // Tiling direction of the A4 stack (project-wide); "vertical" when unset.
+    notebookLayout(state): NotebookLayout {
+      return state.project?.notebookLayout ?? "vertical";
     },
   },
   actions: {
@@ -61,13 +84,22 @@ export const useEditorStore = defineStore("editor", {
       const project = await storage.getProject(projectId);
       if (!project) throw new Error("Project not found");
       this.project = project;
+      // Point the projects-list store at this same object. Otherwise it keeps a
+      // separate copy loaded at startup, and its background touch()/rename writes
+      // would clobber editor-side fields like notebookMode on the next save.
+      const projects = useProjectsStore();
+      const idx = projects.projects.findIndex((p) => p.id === projectId);
+      if (idx >= 0) projects.projects[idx] = project;
       this.pages = await storage.listPages(projectId);
       if (this.pages.length === 0) {
         const page = await this.createPageInternal(0);
         this.pages = [page];
       }
       this.currentPageId = this.pages[0].id;
-      await this.loadStrokes(this.currentPageId);
+      // Notebook mode renders the whole stack at once, so load every sheet's
+      // strokes; Free mode keeps only the current page in memory.
+      if (this.notebookMode !== "off") await this.loadAllStrokes();
+      else await this.loadStrokes(this.currentPageId);
       this.history = [];
       this.redoStack = [];
     },
@@ -82,6 +114,14 @@ export const useEditorStore = defineStore("editor", {
     async loadStrokes(pageId: string) {
       this.strokes = await storage.listStrokes(pageId);
     },
+    // Notebook mode: load every sheet's strokes into one array (each tagged by
+    // pageId). The renderer offsets each sheet to its world position.
+    async loadAllStrokes() {
+      const lists = await Promise.all(this.pages.map((p) => storage.listStrokes(p.id)));
+      this.strokes = lists.flat();
+    },
+    // Free mode only: switch the visible page (reloads its strokes, resets
+    // history, tells viewers to follow). Notebook mode uses setActiveSheet.
     async selectPage(pageId: string) {
       if (this.currentPageId === pageId) return;
       this.currentPageId = pageId;
@@ -95,6 +135,18 @@ export const useEditorStore = defineStore("editor", {
         strokes: [...this.strokes],
       });
     },
+    // Notebook mode: mark which sheet is "active" (panel highlight, export-current,
+    // add-after) without reloading strokes, clearing history, or broadcasting —
+    // every sheet is already loaded and there is no page switch in a continuous stack.
+    setActiveSheet(pageId: string) {
+      this.currentPageId = pageId;
+    },
+    // Ask the canvas to scroll/animate to a sheet (notebook overview clicks).
+    requestScrollToSheet(pageId: string) {
+      this.currentPageId = pageId;
+      this.scrollRequestPageId = pageId;
+      this.scrollRequestNonce++;
+    },
     async createPageInternal(index: number): Promise<Page> {
       if (!this.project) throw new Error("No project");
       const now = Date.now();
@@ -106,6 +158,8 @@ export const useEditorStore = defineStore("editor", {
         width: DEFAULT_PAGE_SIZE.width,
         height: DEFAULT_PAGE_SIZE.height,
         background: "blank",
+        originX: 0,
+        originY: 0,
         createdAt: now,
         updatedAt: now,
       };
@@ -124,7 +178,10 @@ export const useEditorStore = defineStore("editor", {
         page,
         pages: [...this.pages],
       });
-      await this.selectPage(page.id);
+      // New sheet has no strokes, so in notebook mode just scroll to it (all
+      // strokes already in memory); Free mode switches to it.
+      if (this.notebookMode !== "off") this.requestScrollToSheet(page.id);
+      else await this.selectPage(page.id);
       await useProjectsStore().touch(this.project.id);
     },
     async deletePage(pageId: string) {
@@ -143,7 +200,12 @@ export const useEditorStore = defineStore("editor", {
         pages: [...this.pages],
         fallbackPageId: fallback,
       });
-      if (this.currentPageId === pageId) {
+      if (this.notebookMode !== "off") {
+        // Continuous stack: drop the removed sheet's strokes from memory and
+        // re-point the active sheet without a page switch.
+        this.strokes = this.strokes.filter((s) => s.pageId !== pageId);
+        if (this.currentPageId === pageId) this.setActiveSheet(fallback);
+      } else if (this.currentPageId === pageId) {
         await this.selectPage(fallback);
       }
     },
@@ -418,6 +480,33 @@ export const useEditorStore = defineStore("editor", {
     },
     setDrawing(active: boolean) {
       this.isDrawing = active;
+    },
+    async setNotebookMode(mode: NotebookMode) {
+      if (!this.project || this.project.notebookMode === mode) return;
+      const wasOff = (this.project.notebookMode ?? "off") === "off";
+      this.project.notebookMode = mode;
+      this.project.updatedAt = Date.now();
+      await storage.putProject({ ...this.project });
+      // Entering the stack needs every sheet's strokes; leaving it restores the
+      // Free-mode single-page invariant.
+      if (wasOff && mode !== "off") await this.loadAllStrokes();
+      else if (!wasOff && mode === "off" && this.currentPageId) {
+        await this.loadStrokes(this.currentPageId);
+      }
+      // Re-snapshot live viewers onto the new mode/stack (strokes sent chunked).
+      useLiveStore().broadcastNotebookSync(
+        mode,
+        this.notebookLayout,
+        [...this.pages],
+        [...this.strokes],
+      );
+    },
+    async setNotebookLayout(layout: NotebookLayout) {
+      if (!this.project || this.project.notebookLayout === layout) return;
+      this.project.notebookLayout = layout;
+      this.project.updatedAt = Date.now();
+      await storage.putProject({ ...this.project });
+      useLiveStore().broadcast({ t: "notebook-layout", layout });
     },
   },
 });

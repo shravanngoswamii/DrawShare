@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import HelpPanel from "@/components/HelpPanel.vue";
 import { useProjectBackup } from "@/composables/useProjectBackup";
 import { useTheme } from "@/composables/useTheme";
 import { useThumbnails } from "@/composables/useThumbnails";
@@ -18,6 +19,7 @@ const { projectThumbnails, renderProjectThumbnail } = useThumbnails();
 const importInput = ref<HTMLInputElement | null>(null);
 const importing = ref(false);
 const query = ref("");
+const helpOpen = ref(false);
 const renamingId = ref<string | null>(null);
 const renameValue = ref("");
 const joinCode = ref("");
@@ -326,7 +328,16 @@ function formatDate(ts: number): string {
         </ul>
       </section>
     </main>
+    <button
+      class="help-fab"
+      :class="{ active: helpOpen }"
+      @click="helpOpen = !helpOpen"
+      :aria-expanded="helpOpen"
+      title="Help"
+      aria-label="Help"
+    >?</button>
   </div>
+  <HelpPanel :open="helpOpen" @close="helpOpen = false" />
 </template>
 
 <style scoped>
@@ -388,6 +399,30 @@ function formatDate(ts: number): string {
   flex-shrink: 0;
   color: var(--color-text-muted);
 }
+
+.help-fab {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 20;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--color-glass-bg-strong);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-glass-border);
+  box-shadow: 0 2px 8px var(--color-glass-shadow);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: box-shadow 150ms, color 80ms, background 80ms;
+}
+.help-fab:hover { box-shadow: var(--shadow-md); color: var(--color-text); }
+.help-fab.active { background: var(--color-accent-soft); color: var(--color-accent); border-color: var(--color-accent); }
 
 .search {
   width: 260px;

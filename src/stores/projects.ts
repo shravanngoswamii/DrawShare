@@ -39,6 +39,7 @@ export const useProjectsStore = defineStore("projects", {
         createdAt: now,
         updatedAt: now,
         pageOrder: [pageId],
+        notebookMode: "off",
       };
       const page: Page = {
         id: pageId,
@@ -48,6 +49,8 @@ export const useProjectsStore = defineStore("projects", {
         width: A4_PORTRAIT.width,
         height: A4_PORTRAIT.height,
         background: "blank",
+        originX: 0,
+        originY: 0,
         createdAt: now,
         updatedAt: now,
       };

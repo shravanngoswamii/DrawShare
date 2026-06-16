@@ -2,6 +2,9 @@ import { getStroke } from "perfect-freehand";
 import type { Page, Stroke, TextItem } from "@/core/types";
 
 const PADDING = 32;
+// A4 at 96 DPI — matches CanvasStage PAGE_W / PAGE_H constants.
+const A4_W = 794;
+const A4_H = 1123;
 
 const PEN_OPTIONS = {
   size: 1,
@@ -168,4 +171,85 @@ export async function exportPageAsPng(page: Page, strokes: Stroke[]): Promise<vo
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.readAsDataURL(blob);
+  });
+}
+
+// Render one notebook sheet to a 2×-resolution A4 PNG. Strokes/texts are stored
+// page-local (0,0)..(A4_W,A4_H), so no world offset is needed — just clip to the
+// sheet box and paint.
+async function renderSheet(page: Page, strokes: Stroke[]): Promise<string> {
+  const scale = 2;
+  const canvas = new OffscreenCanvas(A4_W * scale, A4_H * scale);
+  const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, A4_W * scale, A4_H * scale);
+  ctx.save();
+  ctx.scale(scale, scale);
+  ctx.beginPath();
+  ctx.rect(0, 0, A4_W, A4_H);
+  ctx.clip();
+  drawBackground(ctx, { ...page, width: A4_W, height: A4_H });
+  for (const s of strokes) if (s.pageId === page.id) drawStrokeToCtx(ctx, s);
+  for (const t of page.texts ?? []) drawTextToCtx(ctx, t);
+  ctx.restore();
+  return blobToDataUrl(await canvas.convertToBlob({ type: "image/png" }));
+}
+
+function downloadDataUrl(dataUrl: string, name: string): void {
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+// Export the whole notebook as a print-ready multi-page PDF (one A4 page per
+// sheet) via the browser's "Save as PDF". No PDF dependency — each sheet is an
+// A4 image laid out one-per-printed-page with CSS page breaks.
+export async function exportNotebookPdf(pages: Page[], strokes: Stroke[]): Promise<void> {
+  if (pages.length === 0) return;
+  const images = await Promise.all(pages.map((p) => renderSheet(p, strokes)));
+
+  const win = window.open("", "_blank");
+  if (!win) {
+    // Popup blocked: download each sheet as a PNG instead.
+    images.forEach((src, i) => {
+      downloadDataUrl(src, `page-${i + 1}.png`);
+    });
+    return;
+  }
+
+  const sheets = images.map((src) => `<div class="sheet"><img src="${src}" alt=""></div>`).join("");
+  win.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Notebook</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+@page { size: A4 portrait; margin: 0; }
+html, body { background: #fff; }
+.sheet { width: 210mm; height: 297mm; overflow: hidden; page-break-after: always; }
+.sheet:last-child { page-break-after: auto; }
+img { width: 210mm; height: 297mm; display: block; }
+@media screen {
+  body { background: #e5e7eb; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 12px; }
+  .sheet { box-shadow: 0 4px 24px rgba(0,0,0,.18); }
+}
+</style>
+</head>
+<body>${sheets}</body>
+</html>`);
+  win.document.close();
+  win.addEventListener("load", () => {
+    setTimeout(() => win.print(), 300);
+  });
 }

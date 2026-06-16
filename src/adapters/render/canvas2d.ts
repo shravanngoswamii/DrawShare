@@ -120,6 +120,73 @@ export class Canvas2DRenderer implements Renderer {
     /* noop */
   }
 
+  setOrigin(dx: number, dy: number): void {
+    if (!this.ctx) return;
+    const { x, y, zoom } = this.camera;
+    const s = this.dpr * zoom;
+    this.ctx.setTransform(s, 0, 0, s, (-x + dx) * s, (-y + dy) * s);
+  }
+
+  pushClip(width: number, height: number): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, width, height);
+    ctx.clip();
+  }
+
+  popClip(): void {
+    this.ctx?.restore();
+  }
+
+  drawSheetBackground(
+    width: number,
+    height: number,
+    background: "blank" | "ruled" | "grid" | "dotted",
+    colors: { paper: string; line: string; dot: string },
+  ): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    ctx.save();
+    ctx.fillStyle = colors.paper;
+    ctx.fillRect(0, 0, width, height);
+    const spacing = 32;
+    if (background === "ruled") {
+      ctx.strokeStyle = colors.line;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let y = spacing; y < height; y += spacing) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+      }
+      ctx.stroke();
+    } else if (background === "grid") {
+      ctx.strokeStyle = colors.line;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = spacing; x < width; x += spacing) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+      }
+      for (let y = spacing; y < height; y += spacing) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+      }
+      ctx.stroke();
+    } else if (background === "dotted") {
+      ctx.fillStyle = colors.dot;
+      for (let x = spacing; x < width; x += spacing) {
+        for (let y = spacing; y < height; y += spacing) {
+          ctx.beginPath();
+          ctx.arc(x, y, 1.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+    ctx.restore();
+  }
+
   drawStroke(stroke: Stroke): void {
     if (!this.ctx || stroke.points.length === 0) return;
     this.renderToCtx(

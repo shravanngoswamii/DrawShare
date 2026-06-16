@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { exportPageAsPng } from "@/composables/useExport";
+import {
+  exportNotebookPdf as exportNotebookPdfToPrint,
+  exportPageAsPng,
+} from "@/composables/useExport";
 import { useTheme } from "@/composables/useTheme";
 import { useThumbnails } from "@/composables/useThumbnails";
 import { devMode, setDevMode } from "@/debug";
@@ -119,7 +122,10 @@ async function remove(id: string, name: string) {
 }
 
 async function select(id: string) {
-  await editor.selectPage(id);
+  // Notebook mode is one continuous canvas — scroll to the sheet instead of
+  // switching pages. Free mode switches the visible page.
+  if (editor.notebookMode !== "off") editor.requestScrollToSheet(id);
+  else await editor.selectPage(id);
   emit("close");
 }
 
@@ -140,6 +146,11 @@ async function exportCurrentPage() {
   const page = editor.currentPage;
   if (!page) return;
   await exportPageAsPng(page, editor.strokes);
+}
+
+async function exportNotebookPdf() {
+  if (editor.pages.length === 0) return;
+  await exportNotebookPdfToPrint(editor.pages, editor.strokes);
 }
 </script>
 
@@ -278,6 +289,14 @@ async function exportCurrentPage() {
             </svg>
             <span>{{ isFullscreen ? 'Exit full' : 'Fullscreen' }}</span>
           </button>
+          <button v-if="editor.notebookMode !== 'off'" class="tool-btn" @click="exportNotebookPdf" title="Export A4 page as PDF">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>
+              <path d="M9 15h6M9 18h4"/>
+            </svg>
+            <span>Export PDF</span>
+          </button>
           <button class="tool-btn" :class="{ 'tool-active': devMode }" @click="setDevMode(!devMode)" title="Dev mode">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -301,6 +320,28 @@ async function exportCurrentPage() {
           >
             {{ b.label }}
           </button>
+        </div>
+      </div>
+
+      <!-- ── Canvas mode ── -->
+      <div class="section">
+        <div class="section-title">Canvas Mode</div>
+        <div class="mode-btns">
+          <button class="mode-btn" :class="{ active: editor.notebookMode === 'off' }" @click="editor.setNotebookMode('off')">Free</button>
+          <button class="mode-btn" :class="{ active: editor.notebookMode === 'notebook' }" @click="editor.setNotebookMode('notebook')">Notebook</button>
+          <button class="mode-btn mode-btn-strict" :class="{ active: editor.notebookMode === 'strict' }" @click="editor.setNotebookMode('strict')">Strict</button>
+        </div>
+        <p class="mode-hint">
+          <template v-if="editor.notebookMode === 'off'">Infinite canvas — draw anywhere.</template>
+          <template v-else-if="editor.notebookMode === 'notebook'">A4 sheets as a guide; draw anywhere, only the sheets export.</template>
+          <template v-else>A4 sheets; drawing is locked to the sheet.</template>
+        </p>
+        <div v-if="editor.notebookMode !== 'off'" class="layout-row">
+          <span class="layout-label">Scroll</span>
+          <div class="mode-btns layout-btns">
+            <button class="mode-btn" :class="{ active: editor.notebookLayout === 'vertical' }" @click="editor.setNotebookLayout('vertical')">Vertical</button>
+            <button class="mode-btn" :class="{ active: editor.notebookLayout === 'horizontal' }" @click="editor.setNotebookLayout('horizontal')">Horizontal</button>
+          </div>
         </div>
       </div>
 
@@ -645,6 +686,58 @@ async function exportCurrentPage() {
   background: var(--color-success-soft);
   border-color: var(--color-success);
   color: var(--color-success-strong);
+}
+
+/* ── Canvas mode ── */
+.mode-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.mode-btn {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-glass-bg);
+  padding: var(--space-2) var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+}
+.mode-btn:hover { background: var(--color-surface-2); color: var(--color-text); }
+.mode-btn.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-text);
+}
+.mode-btn-strict.active {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  color: #fff;
+}
+
+.mode-hint {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+.layout-row {
+  margin-top: var(--space-3);
+}
+.layout-label {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-2);
+}
+.layout-btns {
+  grid-template-columns: 1fr 1fr;
 }
 
 /* ── Background ── */
