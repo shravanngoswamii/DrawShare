@@ -479,6 +479,14 @@ export const useLiveStore = defineStore("live", {
           if (p) p.background = msg.background;
           break;
         }
+        case "page-size": {
+          const p = this.viewerPages.find((x) => x.id === msg.pageId);
+          if (p) {
+            p.width = msg.width;
+            p.height = msg.height;
+          }
+          break;
+        }
         case "stroke-begin": {
           // Notebook renders the whole stack, so accept live strokes on any sheet.
           if (!this.viewerIsNotebook && msg.stroke.pageId !== this.viewerCurrentPageId) break;

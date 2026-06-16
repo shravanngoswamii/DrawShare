@@ -47,6 +47,7 @@ export type SyncMessage =
   | { t: "page-delete"; pageId: string; pages: Page[]; fallbackPageId: string }
   | { t: "page-rename"; pageId: string; name: string }
   | { t: "page-background"; pageId: string; background: Page["background"] }
+  | { t: "page-size"; pageId: string; width: number; height: number }
   // Notebook stack: re-snapshot all sheets (mode/layout change mid-session) and
   // cheap layout-direction / reorder updates.
   | {

@@ -28,10 +28,14 @@ function contentBounds(
   images: ImageItem[],
   page: Page,
 ): { minX: number; minY: number; maxX: number; maxY: number } {
-  let minX = 0;
-  let minY = 0;
-  let maxX = page.width;
-  let maxY = page.height;
+  // A sized page seeds the bounds with its rectangle (so a blank page still
+  // exports at full dimensions). A "no page size" page (0×0) seeds empty and
+  // fits the content exactly.
+  const sized = page.width > 0 && page.height > 0;
+  let minX = sized ? 0 : Infinity;
+  let minY = sized ? 0 : Infinity;
+  let maxX = sized ? page.width : -Infinity;
+  let maxY = sized ? page.height : -Infinity;
 
   for (const stroke of strokes) {
     // perfect-freehand caps expand roughly by size/2; add a small buffer.
@@ -75,6 +79,10 @@ function contentBounds(
     if (item.y + estH > maxY) maxY = item.y + estH;
   }
 
+  // Empty no-size page (no content to bound) — fall back to a sane default.
+  if (!Number.isFinite(minX)) {
+    return { minX: 0, minY: 0, maxX: page.width || 1240, maxY: page.height || 1754 };
+  }
   return { minX, minY, maxX, maxY };
 }
 

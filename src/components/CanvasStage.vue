@@ -66,6 +66,23 @@ const cam = { x: 0, y: 0, zoom: 1 };
 const zoomLabel = ref("100%");
 const bgStyle = ref({ backgroundSize: "32px 32px", backgroundPosition: "0px 0px" });
 const panCursor = ref(false);
+const pageFrameStyle = ref<Record<string, string> | null>(null);
+
+function updatePageFrame() {
+  const { width, height } = props.page;
+  // The page-boundary frame is a Free-mode affordance; notebook mode draws its
+  // own fixed A4 sheet frames instead, so hide it there.
+  if (!width || !height || editor.notebookMode !== "off") {
+    pageFrameStyle.value = null;
+    return;
+  }
+  pageFrameStyle.value = {
+    left: `${(0 - cam.x) * cam.zoom}px`,
+    top: `${(0 - cam.y) * cam.zoom}px`,
+    width: `${width * cam.zoom}px`,
+    height: `${height * cam.zoom}px`,
+  };
+}
 
 // ── Notebook stack (continuous A4 sheets) ───────────────────────────────────
 const isNotebook = () => editor.notebookMode !== "off";
@@ -501,6 +518,7 @@ function syncCamera() {
   updateActiveSheet();
   updateEditStyle();
   updateImageSelStyle();
+  updatePageFrame();
   live.setHostCamera(cam.x, cam.y, cam.zoom);
   dirtyBase = true;
   schedule();
@@ -521,6 +539,7 @@ function fitCanvas() {
   live.setHostViewport(viewW, viewH);
   updateBg();
   updatePageOverlay();
+  updatePageFrame();
   dirtyBase = true;
   schedule();
 }
@@ -1562,12 +1581,22 @@ watch(
   { deep: true },
 );
 watch(
+  () => [props.page.width, props.page.height] as const,
+  () => {
+    updatePageFrame();
+    dirtyBase = true;
+    schedule();
+  },
+);
+// Entering/leaving notebook mode re-centres and re-frames the stack.
+watch(
   () => editor.notebookMode,
   (mode, prev) => {
     if (mode !== "off" && prev === "off" && editor.currentPageId) {
       centerOnSheet(editor.currentPageId);
     }
     updatePageOverlay();
+    updatePageFrame();
     dirtyBase = true;
     schedule();
   },
@@ -1714,6 +1743,12 @@ onBeforeUnmount(() => {
       class="eraser-cursor"
       :class="editor.eraserShape"
       :style="{ left: `${eraseCursor.x}px`, top: `${eraseCursor.y}px`, width: `${editor.size * 2}px`, height: `${editor.size * 2}px` }"
+    ></div>
+    <div
+      v-if="pageFrameStyle"
+      class="page-size-frame"
+      :style="pageFrameStyle"
+      aria-hidden="true"
     ></div>
     <div class="cam-controls">
       <button class="cam-btn" title="Zoom out" @click="zoomOut">
@@ -1878,6 +1913,16 @@ onBeforeUnmount(() => {
 }
 .eraser-cursor.circle { border-radius: 50%; }
 .eraser-cursor.square { border-radius: 3px; }
+
+/* Free-mode page-size boundary (distinct from the notebook .page-frame sheets). */
+.page-size-frame {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  border: 1px dashed var(--color-accent, #3b82f6);
+  opacity: 0.3;
+  border-radius: 1px;
+}
 
 .text-edit {
   position: absolute;
