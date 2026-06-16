@@ -112,13 +112,26 @@ function toggleDrawMode() {
   drawMode.value = !drawMode.value;
 }
 
+function exitDrawMode() {
+  if (!drawMode.value) return;
+  painting = false;
+  live = [];
+  drawMode.value = false;
+}
+
+function onKey(e: KeyboardEvent) {
+  if (e.key === "Escape") exitDrawMode();
+}
+
 onMounted(() => {
   resizeCanvas();
   window.addEventListener("resize", resizeCanvas);
+  window.addEventListener("keydown", onKey);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("resize", resizeCanvas);
+  window.removeEventListener("keydown", onKey);
   cancelAnimationFrame(rafId);
 });
 </script>
@@ -402,12 +415,25 @@ onBeforeUnmount(() => {
       </div>
     </transition>
 
+    <!-- Doodle-mode hint: makes the mode obvious and gives a one-tap exit, since
+         the drawing layer covers the page and intercepts clicks while active. -->
+    <transition name="hint-fade">
+      <button v-if="drawMode" class="draw-hint" @click="exitDrawMode">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
+          <path d="m15 5 4 4"/>
+        </svg>
+        <span>Doodle mode — tap here or press <kbd>Esc</kbd> to exit</span>
+      </button>
+    </transition>
+
     <!-- Draw FAB -->
     <button
       class="draw-fab"
       :class="{ 'draw-fab-active': drawMode }"
-      :title="drawMode ? 'Stop drawing' : 'Draw on this page'"
-      :aria-label="drawMode ? 'Stop drawing' : 'Draw on this page'"
+      :title="drawMode ? 'Exit doodle mode' : 'Doodle on this page'"
+      :aria-label="drawMode ? 'Exit doodle mode' : 'Doodle on this page'"
+      :aria-pressed="drawMode"
       @click="toggleDrawMode"
     >
       <!-- Pencil icon (browse mode) -->
@@ -415,8 +441,8 @@ onBeforeUnmount(() => {
         <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
         <path d="m15 5 4 4"/>
       </svg>
-      <!-- X icon (draw mode active) -->
-      <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+      <!-- Close icon (draw mode active) -->
+      <svg v-else width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M18 6 6 18M6 6l12 12"/>
       </svg>
     </button>
@@ -948,6 +974,46 @@ onBeforeUnmount(() => {
   background: var(--color-accent);
   border-color: var(--color-accent);
   color: #fff;
+}
+
+/* Doodle-mode hint — sits above the drawing layer and exits on tap */
+.draw-hint {
+  position: fixed;
+  top: calc(var(--safe-top) + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 41;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: calc(100% - 32px);
+  padding: 8px 16px;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+}
+
+.draw-hint kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+}
+
+.hint-fade-enter-active,
+.hint-fade-leave-active {
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.hint-fade-enter-from,
+.hint-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-8px);
 }
 
 /* Color palette toolbar */
