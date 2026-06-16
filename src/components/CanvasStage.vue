@@ -601,26 +601,39 @@ function render() {
   if (dirtyBase) {
     baseRenderer.clear();
     if (replay.active) {
-      // Replay (v1: strokes only) — render the strokes revealed up to the current
-      // time. Uses drawStack in notebook mode so they land on the right sheets.
-      const rstrokes = replay.displayStrokes;
+      // Replay: render everything revealed up to the current time — strokes
+      // animate point-by-point; shapes/images/text pop in at their creation time.
+      const rStrokes = replay.displayStrokes;
+      const rShapes = replay.displayShapes;
+      const rImages = replay.displayImages;
+      const rTextIds = replay.displayTextIds;
       if (isNotebook()) {
         drawStack(
           baseRenderer,
           editor.pages,
-          rstrokes,
-          [],
-          [],
+          rStrokes,
+          rShapes,
+          rImages,
           editor.notebookLayout,
           sheetColors,
           {
             range: visibleRange(),
             clip: editor.notebookMode === "strict",
+            revealedTextIds: rTextIds,
           },
         );
       } else {
         baseRenderer.beginFrame();
-        for (const s of rstrokes) baseRenderer.drawStroke(s);
+        const { behind, front } = splitImageLayers(
+          rImages.filter((img) => img.pageId === props.page.id),
+        );
+        for (const img of behind) baseRenderer.drawImageItem(img);
+        for (const s of rStrokes) baseRenderer.drawStroke(s);
+        for (const sh of rShapes) baseRenderer.drawShape(sh);
+        for (const t of editor.currentPage?.texts ?? []) {
+          if (rTextIds.has(t.id)) baseRenderer.drawText(t);
+        }
+        for (const img of front) baseRenderer.drawImageItem(img);
         baseRenderer.endFrame();
       }
     } else if (isNotebook()) {

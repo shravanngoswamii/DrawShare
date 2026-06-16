@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
 import { installPointerProbe } from "@/adapters/input/pointerDebug";
 // biome-ignore lint/style/useImportType: rendered in the template — needs a value import, not `import type` (would break runtime component resolution).
@@ -26,6 +26,15 @@ const projects = useProjectsStore();
 const replay = useReplayStore();
 const router = useRouter();
 const { maybeStart } = useOnboarding();
+
+// Replay is offered whenever the project has anything to replay (any content type).
+const hasContent = computed(
+  () =>
+    editor.strokes.length > 0 ||
+    editor.shapes.length > 0 ||
+    editor.images.length > 0 ||
+    editor.pages.some((p) => (p.texts?.length ?? 0) > 0),
+);
 
 const panelOpen = ref(false);
 const toolbarCollapsed = ref(false);
@@ -144,14 +153,14 @@ onBeforeUnmount(() => removeProbe?.());
           <path fill="currentColor" fill-rule="evenodd" d="M10 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-8zM9 7H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3zM4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" clip-rule="evenodd"/>
         </svg>
       </button>
-      <!-- Replay FAB: shown when there are strokes and replay is not active -->
+      <!-- Replay FAB: shown when the page has any content and replay isn't active -->
       <button
-        v-if="editor.strokes.length > 0 && !replay.active"
+        v-if="hasContent && !replay.active"
         class="replay-fab"
         :class="{ quiet: editor.isDrawing }"
         title="Replay drawing"
         aria-label="Replay drawing"
-        @click="replay.start(editor.strokes)"
+        @click="replay.start({ strokes: editor.strokes, shapes: editor.shapes, images: editor.images, pages: editor.pages })"
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M8 5v14l11-7z"/>
