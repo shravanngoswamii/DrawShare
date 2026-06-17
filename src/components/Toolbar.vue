@@ -809,7 +809,11 @@ onMounted(() => {
     flex-direction: row;
     justify-content: center;
     align-items: center;
-    transform: none;
+    /* The desktop dockStyle is applied inline (incl. transform: translateX(-50%)
+       for centering); !important is needed to neutralize it on mobile, otherwise
+       the full-width static bar gets shifted half the viewport off-centre. */
+    transform: none !important;
+    inset: auto !important;
     background: var(--color-surface);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
