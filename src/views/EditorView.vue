@@ -82,7 +82,7 @@ onMounted(async () => {
     // measures the tools/panel at their final positions.
     maybeStart("editor", 700);
   } catch {
-    router.replace({ name: "projects" });
+    router.replace({ name: "app" });
   }
 });
 
@@ -94,7 +94,7 @@ watch(
       try {
         await editor.open(next);
       } catch {
-        router.replace({ name: "projects" });
+        router.replace({ name: "app" });
       }
     }
   },

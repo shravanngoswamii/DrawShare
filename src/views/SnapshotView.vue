@@ -254,7 +254,7 @@ async function copyLink() {
   <div class="snapshot-view">
     <header class="bar" v-if="state === 'ready' || state === 'loading'">
       <div class="left">
-        <button class="btn btn-ghost btn-icon" @click="router.push({ name: 'projects' })" aria-label="Back to projects">
+        <button class="btn btn-ghost btn-icon" @click="router.push({ name: 'app' })" aria-label="Back to projects">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="m12 19-7-7 7-7" />
@@ -301,7 +301,7 @@ async function copyLink() {
         <div class="error-card">
           <div class="state-title">Couldn't load snapshot</div>
           <div class="muted state-msg">{{ errorMsg }}</div>
-          <button class="btn btn-primary" @click="router.push({ name: 'projects' })">Back to projects</button>
+          <button class="btn btn-primary" @click="router.push({ name: 'app' })">Back to projects</button>
         </div>
       </div>
 

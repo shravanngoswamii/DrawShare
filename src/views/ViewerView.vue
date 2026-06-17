@@ -57,7 +57,7 @@ async function reconnect() {
 
 function leave() {
   live.stop();
-  router.replace({ name: "projects" });
+  router.replace({ name: "app" });
 }
 
 async function toggleFullscreen() {
