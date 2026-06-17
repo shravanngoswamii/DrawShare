@@ -13,12 +13,24 @@
   max-width: 340px;
 }
 
-/* On a phone the 280px min-width plus intro.js's edge positioning pushed the
-   tooltip off-screen. Let it shrink and never exceed the viewport width. */
+/* On a phone, intro.js's element-anchored positioning pushed the tooltip
+   off-screen or crushed it into a narrow column at the edge. Pin it to a
+   full-width card near the top instead (the highlight ring still shows which
+   element a step refers to). !important overrides intro.js's inline styles. */
 @media (max-width: 767px) {
   .introjs-tooltip.ds-introjs {
+    position: fixed !important;
+    left: 12px !important;
+    right: 12px !important;
+    top: calc(env(safe-area-inset-top, 0px) + 64px) !important;
+    bottom: auto !important;
+    transform: none !important;
     min-width: 0;
-    max-width: calc(100vw - 24px);
+    max-width: none;
+    width: auto !important;
+  }
+  .ds-introjs .introjs-arrow {
+    display: none !important;
   }
 }
 

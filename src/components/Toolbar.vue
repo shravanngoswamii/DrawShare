@@ -807,13 +807,8 @@ onMounted(() => {
     width: 100%;
     height: auto;
     flex-direction: row;
-    /* Wrap every tool into rows that fit the phone width instead of overflowing
-       off-screen. No overflow clip, so the tool popovers can open above the bar. */
-    flex-wrap: wrap;
     justify-content: center;
     align-items: center;
-    row-gap: var(--space-1);
-    column-gap: var(--space-1);
     transform: none;
     background: var(--color-surface);
     backdrop-filter: none;
@@ -822,14 +817,23 @@ onMounted(() => {
     border: none;
     border-top: 1px solid var(--color-border);
     box-shadow: none;
-    padding: var(--space-2) var(--space-3);
+    padding: var(--space-2) var(--space-2);
     padding-bottom: calc(var(--safe-bottom) + var(--space-2));
     overflow: visible;
     opacity: 1 !important;
     pointer-events: auto !important;
   }
   .grip, .toggle-btn { display: none; }
-  .toolbar-body { display: contents; }
+  /* Real wrapping flex row: every tool fits the phone width across centered rows
+     (no overflow clip, so the tool popovers can open above the bar). */
+  .toolbar-body {
+    display: flex;
+    flex-flow: row wrap;
+    justify-content: center;
+    align-items: center;
+    gap: var(--space-1);
+    width: 100%;
+  }
   .group { flex-direction: row; gap: var(--space-1); flex-shrink: 0; }
   /* Dividers waste horizontal room and look odd across wrapped rows. */
   .divider { display: none; }
