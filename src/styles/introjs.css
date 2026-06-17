@@ -13,34 +13,16 @@
   max-width: 340px;
 }
 
-/* On a phone, intro.js's element-anchored positioning pushed the tooltip
-   off-screen or crushed it into a narrow column at the edge. Pin it to a
-   full-width card near the top instead (the highlight ring still shows which
-   element a step refers to). !important overrides intro.js's inline styles.
-   The reference layer that wraps the tooltip is positioned with an inline
-   transform at the target; that transform makes a fixed tooltip resolve against
-   the layer, so flatten the layer to the full viewport first. */
+/* On a phone the 280px min-width forced tooltips wider than the slot next to
+   their target, so intro.js either overflowed them off-screen or crushed them
+   into a narrow column. Let them shrink and cap to the viewport so intro.js can
+   keep placing each one next to (synced with) its element, on-screen. */
 @media (max-width: 767px) {
-  .introjs-tooltipReferenceLayer {
-    position: fixed !important;
-    inset: 0 !important;
-    width: 100vw !important;
-    height: 100dvh !important;
-    transform: none !important;
-  }
   .introjs-tooltip.ds-introjs {
-    position: absolute !important;
-    left: 12px !important;
-    right: 12px !important;
-    top: calc(env(safe-area-inset-top, 0px) + 64px) !important;
-    bottom: auto !important;
-    transform: none !important;
     min-width: 0;
-    max-width: none;
-    width: auto !important;
-  }
-  .ds-introjs .introjs-arrow {
-    display: none !important;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
   }
 }
 
