@@ -108,7 +108,8 @@ interface DockPositions {
   bottom: number;
 }
 
-const dock = ref<Dock>("left");
+// Default dock: top-centre (top + 0.5 fraction). A saved choice overrides on mount.
+const dock = ref<Dock>("top");
 const dockPositions = ref<DockPositions>({ left: 0.5, right: 0.5, top: 0.5, bottom: 0.5 });
 const dragging = ref(false);
 const noTransition = ref(false);
