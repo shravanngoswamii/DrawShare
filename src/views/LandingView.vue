@@ -1,17 +1,55 @@
 <script setup lang="ts">
 import { getStroke } from "perfect-freehand";
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useTheme } from "@/composables/useTheme";
+import { useThumbnails } from "@/composables/useThumbnails";
 import { makeSessionCode } from "@/core/sync";
+import { useEditorStore } from "@/stores/editor";
+import { useProjectsStore } from "@/stores/projects";
 
 const router = useRouter();
 const { isDark, toggleTheme } = useTheme();
+const projects = useProjectsStore();
+const editor = useEditorStore();
+const { projectThumbnails, renderProjectThumbnail } = useThumbnails();
 
 const joinCode = ref("");
 
+// A few most-recent boards surface on the landing for returning users; the full
+// grid lives on /projects so the page stays uncluttered. Hidden when there are
+// none (first-time visitors just see the hero).
+const RECENT_LIMIT = 4;
+const recentProjects = computed(() =>
+  [...projects.activeProjects].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, RECENT_LIMIT),
+);
+
+function relativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  const mins = Math.round(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// "Start drawing" goes straight to a fresh board (Free canvas) — no projects-grid
+// detour. Notebook/paper-size choices stay on the full /projects screen.
 function startDrawing() {
-  router.push({ name: "app" });
+  const { project, page } = projects.create("Untitled", { mode: "free", size: "a4" });
+  editor.initNew(project, page);
+  router.push({ name: "editor", params: { id: project.id } });
+}
+
+function openAllBoards() {
+  router.push({ name: "projects" });
+}
+
+function openProject(id: string) {
+  router.push({ name: "editor", params: { id } });
 }
 
 function joinSession() {
@@ -297,11 +335,20 @@ onMounted(() => {
   if (hostCanvas.value) resizeObserver.observe(hostCanvas.value);
   if (viewerCanvas.value) resizeObserver.observe(viewerCanvas.value);
   animateCode();
+
+  void (async () => {
+    if (!projects.loaded) await projects.load();
+    for (const p of recentProjects.value) renderProjectThumbnail(p);
+  })();
 });
 
 // Intro ink uses the theme colour (graphite on paper, chalk on slate); repaint
-// when the theme flips so committed strokes recolour.
-watch(isDark, () => renderBoth());
+// when the theme flips so committed strokes recolour. Board thumbnails bake in
+// the theme too, so re-render those as well.
+watch(isDark, () => {
+  renderBoth();
+  for (const p of recentProjects.value) renderProjectThumbnail(p);
+});
 
 onBeforeUnmount(() => {
   resizeObserver?.disconnect();
@@ -339,7 +386,7 @@ onBeforeUnmount(() => {
               <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
             </svg>
           </button>
-          <button class="btn btn-primary nav-cta" @click="startDrawing">Open app</button>
+          <button class="btn btn-primary nav-cta" @click="openAllBoards">Open app</button>
         </div>
       </div>
     </nav>
@@ -427,6 +474,41 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </header>
+
+    <!-- Recent boards — only for returning visitors who have boards. The full
+         grid (rename, backup, trash) lives on /projects to keep this clean. -->
+    <section v-if="recentProjects.length" class="recent">
+      <div class="shell">
+        <div class="recent-head">
+          <h2 class="section-title left recent-title h-display">Your boards</h2>
+          <div class="recent-head-actions">
+            <button class="btn btn-ghost btn-sm" @click="startDrawing">New board</button>
+            <button class="recent-all" @click="openAllBoards">
+              View all
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M5 12h14" /><path d="m12 5 7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <ul class="recent-grid">
+          <li v-for="p in recentProjects" :key="p.id" class="recent-card">
+            <button class="recent-thumb" @click="openProject(p.id)" :aria-label="`Open ${p.name}`">
+              <img
+                v-if="projectThumbnails[p.id]"
+                :src="projectThumbnails[p.id]"
+                class="recent-thumb-img"
+                :alt="`Preview of ${p.name}`"
+                aria-hidden="true"
+              />
+              <div v-else class="recent-thumb-ph paper-grid"></div>
+            </button>
+            <button class="recent-name" @click="openProject(p.id)">{{ p.name }}</button>
+            <span class="recent-meta mono">{{ relativeTime(p.updatedAt) }}</span>
+          </li>
+        </ul>
+      </div>
+    </section>
 
     <!-- How it works -->
     <section class="steps">
@@ -896,6 +978,96 @@ onBeforeUnmount(() => {
   margin-bottom: var(--space-2);
 }
 
+/* ── Recent boards ── */
+.recent {
+  padding: clamp(40px, 6vw, 64px) var(--space-6) clamp(16px, 2.5vw, 28px);
+}
+.recent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+.recent-title {
+  margin: 0;
+  font-size: clamp(1.3rem, 2.4vw, 1.7rem);
+}
+.recent-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+.recent-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-accent);
+}
+.recent-all:hover {
+  text-decoration: underline;
+}
+.recent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-4);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.recent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.recent-thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+  overflow: hidden;
+  transition: border-color 120ms, box-shadow 120ms, transform 120ms;
+}
+.recent-thumb:hover {
+  border-color: var(--color-border-strong, var(--color-border));
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+.recent-thumb-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.recent-thumb-ph {
+  width: 100%;
+  height: 100%;
+}
+.recent-name {
+  font-size: var(--text-sm);
+  font-weight: 650;
+  color: var(--color-text);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  transition: color 80ms ease;
+}
+.recent-name:hover {
+  color: var(--color-accent);
+}
+.recent-meta {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
 /* ── Steps ── */
 .steps {
   padding: clamp(56px, 8vw, 88px) var(--space-6);
@@ -1108,12 +1280,17 @@ onBeforeUnmount(() => {
   .screen.viewer {
     transform: none;
   }
+  .recent,
   .steps,
   .features,
   .join,
   .cta {
     padding-left: var(--space-4);
     padding-right: var(--space-4);
+  }
+  .recent-head {
+    flex-wrap: wrap;
+    gap: var(--space-2);
   }
   .steps-row {
     grid-template-columns: 1fr;

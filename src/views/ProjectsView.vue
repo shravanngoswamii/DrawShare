@@ -166,7 +166,7 @@ function formatDate(ts: number): string {
   <div class="page">
     <header class="header">
       <div class="header-inner">
-        <div class="brand">
+        <button class="brand" type="button" @click="router.push({ name: 'landing' })" title="Back to home" aria-label="Back to home">
           <svg class="brand-mark" width="28" height="28" viewBox="0 0 1024 1024" aria-hidden="true">
             <path d="M916.668 273.393l-66.711 66.711-168.533-168.532 66.712-66.712c52.639-52.639 132.855-57.328 179.24-10.942 23.311 23.309 33.783 55.149 31.698 87.511-1.802 32.647-16.207 65.765-42.406 91.964z" fill="#FF3B30"/>
             <path d="M762.348 163.22c-2.195 0-4.427-0.49-6.534-1.518-7.41-3.613-10.494-12.555-6.877-19.972 21.34-43.746 70.902-63.624 110.446-44.341 7.41 3.618 10.494 12.558 6.876 19.973-3.623 7.408-12.551 10.484-19.976 6.879-24.737-12.065-56.382 1.652-70.494 30.588-2.589 5.305-7.906 8.391-13.441 8.391z" fill="#FFFFFF"/>
@@ -178,7 +178,7 @@ function formatDate(ts: number): string {
             <path d="M317.969 621.444a14.888 14.888 0 0 1-10.561-4.375c-5.834-5.831-5.834-15.29 0-21.121L641.67 261.687c5.836-5.834 15.287-5.834 21.121 0 5.834 5.831 5.834 15.29 0 21.121L328.529 617.07a14.887 14.887 0 0 1-10.56 4.374z" fill="#FFFFFF"/>
           </svg>
           <div class="brand-name">DrawShare</div>
-        </div>
+        </button>
         <div class="header-actions">
           <input
             v-model="query"

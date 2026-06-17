@@ -7,14 +7,11 @@ const routes: RouteRecordRaw[] = [
     component: () => import("./views/LandingView.vue"),
   },
   {
-    path: "/app",
-    name: "app",
-    component: () => import("./views/ProjectsView.vue"),
-  },
-  {
-    // Keep the old root path as a redirect for any bookmarks / deep links
+    // Full boards grid — create, open, rename, back up. The landing page shows
+    // only a few recent boards, so all-board management lives on its own route.
     path: "/projects",
-    redirect: { name: "app" },
+    name: "projects",
+    component: () => import("./views/ProjectsView.vue"),
   },
   {
     path: "/p/:id",

@@ -90,7 +90,7 @@ onMounted(async () => {
     // measures the tools/panel at their final positions.
     maybeStart("editor", 700);
   } catch {
-    router.replace({ name: "app" });
+    router.replace({ name: "projects" });
   }
 });
 
@@ -102,7 +102,7 @@ watch(
       try {
         await editor.open(next);
       } catch {
-        router.replace({ name: "app" });
+        router.replace({ name: "projects" });
       }
     }
   },
@@ -162,7 +162,7 @@ onBeforeUnmount(() => removeProbe?.());
       </main>
       <PagesPanel :open="panelOpen" :collapsed="pagesCollapsed" @close="panelOpen = false" @toggle="onPanelToggle" @share="shareOpen = true" />
       <!-- Back to projects (top-left) -->
-      <button class="back-fab" :class="{ quiet: editor.isDrawing }" @click="router.push({ name: 'app' })" title="Back to projects" aria-label="Back to projects">
+      <button class="back-fab" :class="{ quiet: editor.isDrawing }" @click="router.push({ name: 'projects' })" title="Back to projects" aria-label="Back to projects">
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="m12 19-7-7 7-7" /><path d="M19 12H5" />
         </svg>
