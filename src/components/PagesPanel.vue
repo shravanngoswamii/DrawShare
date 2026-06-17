@@ -408,6 +408,14 @@ function removeSnapshot() {
               </button>
             </li>
           </ul>
+          <!-- Notebook: scroll the sheet stack vertically or horizontally. -->
+          <div v-if="editor.notebookMode !== 'off'" class="layout-row">
+            <span class="layout-label" id="nb-layout-label">Layout</span>
+            <div class="mode-btns layout-btns" role="group" aria-labelledby="nb-layout-label">
+              <button class="mode-btn" :class="{ active: editor.notebookLayout === 'vertical' }" :aria-pressed="editor.notebookLayout === 'vertical'" @click="editor.setNotebookLayout('vertical')">Vertical</button>
+              <button class="mode-btn" :class="{ active: editor.notebookLayout === 'horizontal' }" :aria-pressed="editor.notebookLayout === 'horizontal'" @click="editor.setNotebookLayout('horizontal')">Horizontal</button>
+            </div>
+          </div>
         </section>
 
         <!-- Current page: rename + delete -->
@@ -589,7 +597,7 @@ function removeSnapshot() {
               </svg>
               <span>Export PNG</span>
             </button>
-            <button v-if="editor.notebookMode !== 'off'" class="tool-btn" @click="exportNotebookPdf" title="Export A4 page as PDF" aria-label="Export notebook as PDF">
+            <button v-if="editor.notebookMode !== 'off'" class="tool-btn" @click="exportNotebookPdf" title="Export all pages as PDF" aria-label="Export notebook as PDF">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6M9 18h4"/>
               </svg>

@@ -1,12 +1,19 @@
 import type { NotebookLayout } from "./types";
 
-// Canonical A4 sheet geometry for the continuous notebook, in world units
-// (210×297mm at 96 DPI). The stored page.width/height (legacy 150 DPI) is NOT
-// used for sheet layout — this module is the single source of sheet geometry.
-export const PAGE_W = 794;
-export const PAGE_H = 1123;
+// Sheet geometry for the continuous notebook, in world units. Defaults to A4;
+// set per project from the chosen paper size via setSheetSize() (called when a
+// project opens). Mutable so the whole stack honors A4/Letter/Legal/Square.
+export let PAGE_W = 1240;
+export let PAGE_H = 1754;
 // Gap between consecutive sheets in the scroll stack.
 export const PAGE_GAP = 48;
+
+// Set the notebook sheet size for the active project. Falls back to A4 for a
+// free project (0×0 page) — the value is unused there since no stack renders.
+export function setSheetSize(width: number, height: number): void {
+  PAGE_W = width > 0 ? width : 1240;
+  PAGE_H = height > 0 ? height : 1754;
+}
 
 // Top-left world position of the sheet at `index` for the given layout.
 export function sheetWorldPos(index: number, layout: NotebookLayout): { x: number; y: number } {

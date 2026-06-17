@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { storage } from "@/adapters/storage/indexedDB";
 import { newId } from "@/core/ids";
+import { setSheetSize } from "@/core/layout";
 import { shapeSegments } from "@/core/shapes";
 import type {
   HistoryEntry,
@@ -180,6 +181,10 @@ export const useEditorStore = defineStore("editor", {
         this.pages = [page];
       }
       this.currentPageId = this.pages[0].id;
+      // Notebook sheets use the project's paper size; free pages are 0×0 (no-op).
+      setSheetSize(this.pages[0].width, this.pages[0].height);
+      // Always open on the pen, not whatever tool was last active in another project.
+      this.tool = "pen";
       // Notebook mode renders the whole stack at once, so load every sheet's
       // strokes/shapes/images; Free mode keeps only the current page in memory.
       if (this.notebookMode !== "off") {
@@ -199,6 +204,8 @@ export const useEditorStore = defineStore("editor", {
       this.project = project;
       this.pages = [page];
       this.currentPageId = page.id;
+      setSheetSize(page.width, page.height);
+      this.tool = "pen";
       this.strokes = [];
       this.shapes = [];
       this.images = [];

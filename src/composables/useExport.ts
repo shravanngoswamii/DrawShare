@@ -3,7 +3,7 @@ import { splitImageLayers } from "@/core/images";
 import type { ImageItem, Page, Shape, Stroke, TextItem } from "@/core/types";
 
 const PADDING = 32;
-// A4 at 96 DPI — matches CanvasStage PAGE_W / PAGE_H constants.
+// A4 fallback for sheets with no stored size; real sheets use page.width/height.
 const A4_W = 794;
 const A4_H = 1123;
 
@@ -296,16 +296,19 @@ async function renderSheet(
   images: ImageItem[],
 ): Promise<string> {
   const scale = 2;
-  const canvas = new OffscreenCanvas(A4_W * scale, A4_H * scale);
+  // Sheets are the project's paper size; strokes are page-local in that space.
+  const w = page.width || A4_W;
+  const h = page.height || A4_H;
+  const canvas = new OffscreenCanvas(w * scale, h * scale);
   const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D;
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, A4_W * scale, A4_H * scale);
+  ctx.fillRect(0, 0, w * scale, h * scale);
   ctx.save();
   ctx.scale(scale, scale);
   ctx.beginPath();
-  ctx.rect(0, 0, A4_W, A4_H);
+  ctx.rect(0, 0, w, h);
   ctx.clip();
-  drawBackground(ctx, { ...page, width: A4_W, height: A4_H });
+  drawBackground(ctx, { ...page, width: w, height: h });
   // Images split into behind/front bands, matching the canvas layer order.
   const { behind, front } = splitImageLayers(images.filter((i) => i.pageId === page.id));
   for (const img of behind) await drawImageToCtx(ctx, img);
@@ -337,6 +340,12 @@ export async function exportNotebookPdf(
 ): Promise<void> {
   if (pages.length === 0) return;
   const sheetUrls = await Promise.all(pages.map((p) => renderSheet(p, strokes, shapes, images)));
+  // Printed page size: 210mm wide, height scaled to the sheet's aspect ratio, so
+  // A4/Letter/Legal/Square all keep their proportions (A4 lands back at 297mm).
+  const w0 = pages[0].width || A4_W;
+  const h0 = pages[0].height || A4_H;
+  const pwMm = 210;
+  const phMm = Math.round(((210 * h0) / w0) * 10) / 10;
 
   const win = window.open("", "_blank");
   if (!win) {
@@ -357,11 +366,11 @@ export async function exportNotebookPdf(
 <title>Notebook</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-@page { size: A4 portrait; margin: 0; }
+@page { size: ${pwMm}mm ${phMm}mm; margin: 0; }
 html, body { background: #fff; }
-.sheet { width: 210mm; height: 297mm; overflow: hidden; page-break-after: always; }
+.sheet { width: ${pwMm}mm; height: ${phMm}mm; overflow: hidden; page-break-after: always; }
 .sheet:last-child { page-break-after: auto; }
-img { width: 210mm; height: 297mm; display: block; }
+img { width: ${pwMm}mm; height: ${phMm}mm; display: block; }
 @media screen {
   body { background: #e5e7eb; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 12px; }
   .sheet { box-shadow: 0 4px 24px rgba(0,0,0,.18); }

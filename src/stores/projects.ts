@@ -46,11 +46,14 @@ export const useProjectsStore = defineStore("projects", {
       const now = Date.now();
       const pageId = newId();
       // Canvas type is fixed at creation. Free = infinite canvas (0x0, no
-      // boundary). Notebook = bounded pages of the chosen paper size; every page
-      // added later inherits that size (createPageInternal copies page 1).
+      // boundary, notebookMode off). Notebook = a continuous strict stack of
+      // sheets in the chosen paper size; every page added later inherits that
+      // size (createPageInternal copies page 1) and the sheet geometry comes
+      // from it via setSheetSize on open.
+      const notebook = opts?.mode === "notebook";
       let width = 0;
       let height = 0;
-      if (opts?.mode === "notebook") {
+      if (notebook) {
         const sz = PAPER_SIZES.find((s) => s.id === opts.size) ?? PAPER_SIZES[0];
         width = sz.width;
         height = sz.height;
@@ -61,7 +64,8 @@ export const useProjectsStore = defineStore("projects", {
         createdAt: now,
         updatedAt: now,
         pageOrder: [pageId],
-        notebookMode: "off",
+        notebookMode: notebook ? "strict" : "off",
+        notebookLayout: "vertical",
       };
       const page: Page = {
         id: pageId,
