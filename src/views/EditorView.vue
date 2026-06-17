@@ -152,7 +152,7 @@ onBeforeUnmount(() => removeProbe?.());
           <path d="M4 6h16M4 12h16M4 18h16" />
         </svg>
       </button>
-      <Toolbar :collapsed="toolbarCollapsed" @toggle="toolbarCollapsed = !toolbarCollapsed" @image-import="canvasStage?.triggerFileImport()" />
+      <Toolbar :collapsed="toolbarCollapsed" :panel-open="!pagesCollapsed" @toggle="toolbarCollapsed = !toolbarCollapsed" @image-import="canvasStage?.triggerFileImport()" />
       <main id="canvas-main" class="stage-wrap" aria-label="Drawing canvas" @pointerdown="helpOpen = false">
         <CanvasStage v-if="editor.currentPage" ref="canvasStage" :page="editor.currentPage" />
         <div v-else class="loading muted" aria-live="polite">Loading.</div>

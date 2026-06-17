@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
 import type { ShapeType, Tool } from "@/core/types";
 import { useEditorStore } from "@/stores/editor";
 
-defineProps<{ collapsed?: boolean }>();
+const props = defineProps<{ collapsed?: boolean; panelOpen?: boolean }>();
 const emit = defineEmits<{ toggle: []; "image-import": [] }>();
 
 const editor = useEditorStore();
@@ -111,6 +111,26 @@ interface DockPositions {
 // Default dock: top-centre (top + 0.5 fraction). A saved choice overrides on mount.
 const dock = ref<Dock>("top");
 const dockPositions = ref<DockPositions>({ left: 0.5, right: 0.5, top: 0.5, bottom: 0.5 });
+
+// Clearance reserved at each end of an edge so the bar never lands on the fixed
+// corner controls (back button, zoom pill, help/replay, mini-dock). The
+// bottom-left zoom pill is the widest, so its corners get extra room.
+const DOCK_CORNER = 64;
+const DOCK_ZOOM = 132;
+const dockMargins: Record<Dock, { start: number; end: number }> = {
+  left: { start: DOCK_CORNER, end: DOCK_CORNER }, // back (top) / zoom (bottom)
+  right: { start: DOCK_CORNER, end: DOCK_CORNER }, // mini-dock (top) / help+replay (bottom)
+  top: { start: DOCK_CORNER, end: DOCK_CORNER }, // back (left) / mini-dock (right)
+  bottom: { start: DOCK_ZOOM, end: DOCK_CORNER }, // zoom (left) / help+replay (right)
+};
+// Centre the bar within its edge but keep its whole length inside the safe band
+// [half+start, edgeLen-half-end]; if it's too long to fit, centre it.
+function clampDockFrac(localPos: number, edgeLen: number, half: number, dk: Dock): number {
+  const lo = half + dockMargins[dk].start;
+  const hi = edgeLen - half - dockMargins[dk].end;
+  const c = lo <= hi ? Math.max(lo, Math.min(hi, localPos)) : edgeLen / 2;
+  return c / edgeLen;
+}
 const dragging = ref(false);
 const noTransition = ref(false);
 const dragStyle = ref<Record<string, string>>({});
@@ -124,7 +144,12 @@ const dockStyle = computed(() => {
     case "left":
       return { left: "8px", top: `${frac * 100}%`, transform: "translateY(-50%)" };
     case "right":
-      return { right: "8px", top: `${frac * 100}%`, transform: "translateY(-50%)" };
+      // Sit left of the pages panel when it's open so the two never overlap.
+      return {
+        right: props.panelOpen ? "calc(var(--sidepanel-w) + 16px)" : "8px",
+        top: `${frac * 100}%`,
+        transform: "translateY(-50%)",
+      };
     case "top":
       return { top: "8px", left: `${frac * 100}%`, transform: "translateX(-50%)" };
     case "bottom":
@@ -183,7 +208,6 @@ function onGripDown(e: PointerEvent) {
     // Toolbar centre in viewport coords.
     const centerX = ev.clientX - offX + tbW / 2;
     const centerY = ev.clientY - offY + tbH / 2;
-    const PAD = 12;
 
     // Use the container's bounding rect so frac matches what `top/left: X%`
     // resolves to — percentage is relative to the containing block, not the
@@ -209,20 +233,16 @@ function onGripDown(e: PointerEvent) {
     let frac: number;
     if (min === dl) {
       newDock = "left";
-      const safe = Math.max(tbH / 2 + PAD, Math.min(cH - tbH / 2 - PAD, localY));
-      frac = safe / cH;
+      frac = clampDockFrac(localY, cH, tbH / 2, "left");
     } else if (min === dr) {
       newDock = "right";
-      const safe = Math.max(tbH / 2 + PAD, Math.min(cH - tbH / 2 - PAD, localY));
-      frac = safe / cH;
+      frac = clampDockFrac(localY, cH, tbH / 2, "right");
     } else if (min === dt) {
       newDock = "top";
-      const safe = Math.max(tbW / 2 + PAD, Math.min(cW - tbW / 2 - PAD, localX));
-      frac = safe / cW;
+      frac = clampDockFrac(localX, cW, tbW / 2, "top");
     } else {
       newDock = "bottom";
-      const safe = Math.max(tbW / 2 + PAD, Math.min(cW - tbW / 2 - PAD, localX));
-      frac = safe / cW;
+      frac = clampDockFrac(localX, cW, tbW / 2, "bottom");
     }
 
     // Snap to final position immediately (no spring from stale coords).
@@ -265,6 +285,28 @@ onMounted(() => {
     /* ignore */
   }
   hexInput.value = editor.color;
+  // Re-clamp a saved position once the bar has real dimensions, so a corner
+  // position stored before the corner-clearance rule still snaps clear.
+  nextTick(() => {
+    const el = document.querySelector(".toolbar") as HTMLElement | null;
+    const parent = el?.parentElement;
+    if (!el || !parent) return;
+    const r = el.getBoundingClientRect();
+    const c = parent.getBoundingClientRect();
+    const horiz = dock.value === "top" || dock.value === "bottom";
+    const edgeLen =
+      (horiz ? c.width : c.height) || (horiz ? window.innerWidth : window.innerHeight);
+    const half = (horiz ? r.width : r.height) / 2;
+    const clamped = clampDockFrac(
+      dockPositions.value[dock.value] * edgeLen,
+      edgeLen,
+      half,
+      dock.value,
+    );
+    if (Math.abs(clamped - dockPositions.value[dock.value]) > 0.001) {
+      dockPositions.value = { ...dockPositions.value, [dock.value]: clamped };
+    }
+  });
 });
 </script>
 
