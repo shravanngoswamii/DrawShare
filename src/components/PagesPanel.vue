@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
 import {
   exportNotebookPdf as exportNotebookPdfToPrint,
+  exportPageAsPdf,
   exportPageAsPng,
 } from "@/composables/useExport";
 import { encodeSnapshot } from "@/composables/useSnapshot";
@@ -19,7 +19,6 @@ const emit = defineEmits<{ close: []; toggle: []; share: [] }>();
 const editor = useEditorStore();
 const live = useLiveStore();
 const projects = useProjectsStore();
-const router = useRouter();
 const { isDark, toggleTheme } = useTheme();
 const { thumbnails, renderThumbnail, loadAndRenderThumbnail } = useThumbnails();
 
@@ -203,9 +202,16 @@ async function exportCurrentPage() {
   await exportPageAsPng(page, editor.strokes, editor.shapes, editor.images);
 }
 
-async function exportNotebookPdf() {
-  if (editor.pages.length === 0) return;
-  await exportNotebookPdfToPrint(editor.pages, editor.strokes, editor.shapes, editor.images);
+// Notebook: one PDF page per sheet. Free: the current drawing on a single page.
+async function exportPdf() {
+  if (editor.notebookMode !== "off") {
+    if (editor.pages.length === 0) return;
+    await exportNotebookPdfToPrint(editor.pages, editor.strokes, editor.shapes, editor.images);
+    return;
+  }
+  const page = editor.currentPage;
+  if (!page) return;
+  await exportPageAsPdf(page, editor.strokes, editor.shapes, editor.images);
 }
 
 const snapshotUrl = ref<string | null>(null);
@@ -321,12 +327,6 @@ function removeSnapshot() {
 
       <!-- ── Header ── -->
       <div class="panel-head">
-        <button class="head-icon" @click="router.push({ name: 'app' })" title="Back to projects" aria-label="Back to projects">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="m12 19-7-7 7-7" /><path d="M19 12H5" />
-          </svg>
-        </button>
         <input
           v-model="projectName"
           class="project-name"
@@ -597,7 +597,7 @@ function removeSnapshot() {
               </svg>
               <span>Export PNG</span>
             </button>
-            <button v-if="editor.notebookMode !== 'off'" class="tool-btn" @click="exportNotebookPdf" title="Export all pages as PDF" aria-label="Export notebook as PDF">
+            <button class="tool-btn" @click="exportPdf" :title="editor.notebookMode !== 'off' ? 'Export all pages as PDF' : 'Export as PDF'" aria-label="Export as PDF">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6M9 18h4"/>
               </svg>

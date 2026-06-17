@@ -158,6 +158,12 @@ onBeforeUnmount(() => removeProbe?.());
         <div v-else class="loading muted" aria-live="polite">Loading.</div>
       </main>
       <PagesPanel :open="panelOpen" :collapsed="pagesCollapsed" @close="panelOpen = false" @toggle="pagesCollapsed = !pagesCollapsed" @share="shareOpen = true" />
+      <!-- Back to projects (top-left) -->
+      <button class="back-fab" :class="{ quiet: editor.isDrawing }" @click="router.push({ name: 'app' })" title="Back to projects" aria-label="Back to projects">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m12 19-7-7 7-7" /><path d="M19 12H5" />
+        </svg>
+      </button>
       <!-- Sidebar re-open pills -->
       <button v-if="toolbarCollapsed" class="pencil-fab" :class="{ quiet: editor.isDrawing }" @click="toolbarCollapsed = false" title="Show tools" aria-label="Show tools">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -289,10 +295,10 @@ onBeforeUnmount(() => removeProbe?.());
 }
 
 
+.back-fab,
 .pencil-fab {
   position: absolute;
   top: 12px;
-  left: 12px;
   z-index: 20;
   display: flex;
   align-items: center;
@@ -305,13 +311,19 @@ onBeforeUnmount(() => removeProbe?.());
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--color-glass-border);
   box-shadow: 0 4px 14px var(--color-glass-shadow), 0 1px 2px var(--color-glass-shadow);
-  color: var(--color-accent);
   transition: transform 100ms ease, box-shadow 150ms ease, opacity 150ms ease;
 }
 
+.back-fab { left: 12px; color: var(--color-text); }
+/* Sits to the right of Back so the two never overlap when the toolbar is hidden. */
+.pencil-fab { left: 64px; color: var(--color-accent); }
+
+.back-fab:hover,
 .pencil-fab:hover { transform: scale(1.05); box-shadow: var(--shadow-md); }
+.back-fab:active,
 .pencil-fab:active { transform: scale(0.96); }
 
+.back-fab.quiet,
 .pencil-fab.quiet {
   opacity: 0.06;
   pointer-events: none;

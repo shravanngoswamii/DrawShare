@@ -224,12 +224,14 @@ async function drawImageToCtx(
   }
 }
 
-export async function exportPageAsPng(
+// Render a page's content (fit to its bounds + padding) to a PNG blob and report
+// the pixel size. Shared by the PNG and single-page PDF exports.
+async function renderPageBlob(
   page: Page,
   strokes: Stroke[],
-  shapes: Shape[] = [],
-  images: ImageItem[] = [],
-): Promise<void> {
+  shapes: Shape[],
+  images: ImageItem[],
+): Promise<{ blob: Blob; w: number; h: number }> {
   const pageStrokes = strokes.filter((s) => s.pageId === page.id);
   const pageShapes = shapes.filter((s) => s.pageId === page.id);
   const pageImages = images.filter((i) => i.pageId === page.id);
@@ -243,20 +245,15 @@ export async function exportPageAsPng(
     pageImages,
     page,
   );
-  const canvasW = Math.ceil(maxX - minX + 2 * PADDING);
-  const canvasH = Math.ceil(maxY - minY + 2 * PADDING);
+  const w = Math.ceil(maxX - minX + 2 * PADDING);
+  const h = Math.ceil(maxY - minY + 2 * PADDING);
 
   // World → canvas: world(minX, minY) → canvas(PADDING, PADDING).
-  const offsetX = -minX + PADDING;
-  const offsetY = -minY + PADDING;
-
-  const canvas = new OffscreenCanvas(canvasW, canvasH);
+  const canvas = new OffscreenCanvas(w, h);
   const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D;
-
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, canvasW, canvasH);
-
-  ctx.translate(offsetX, offsetY);
+  ctx.fillRect(0, 0, w, h);
+  ctx.translate(-minX + PADDING, -minY + PADDING);
   drawBackground(ctx, page);
   // Images split into behind/front bands, matching canvas layer order.
   const { behind, front } = splitImageLayers(pageImages);
@@ -267,6 +264,16 @@ export async function exportPageAsPng(
   for (const img of front) await drawImageToCtx(ctx, img);
 
   const blob = await canvas.convertToBlob({ type: "image/png" });
+  return { blob, w, h };
+}
+
+export async function exportPageAsPng(
+  page: Page,
+  strokes: Stroke[],
+  shapes: Shape[] = [],
+  images: ImageItem[] = [],
+): Promise<void> {
+  const { blob } = await renderPageBlob(page, strokes, shapes, images);
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -276,6 +283,52 @@ export async function exportPageAsPng(
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// Export the current page's drawing as a single-page PDF (free canvas). The page
+// is sized to the drawing's aspect ratio, longest side ~297mm, via the print
+// window — same dependency-free approach as the notebook PDF.
+export async function exportPageAsPdf(
+  page: Page,
+  strokes: Stroke[],
+  shapes: Shape[] = [],
+  images: ImageItem[] = [],
+): Promise<void> {
+  const { blob, w, h } = await renderPageBlob(page, strokes, shapes, images);
+  const dataUrl = await blobToDataUrl(blob);
+  const safeName = (page.name || "page").replace(/[^a-z0-9_-]/gi, "_");
+  const long = 297;
+  const wMm = w >= h ? long : Math.round(((long * w) / h) * 10) / 10;
+  const hMm = w >= h ? Math.round(((long * h) / w) * 10) / 10 : long;
+
+  const win = window.open("", "_blank");
+  if (!win) {
+    downloadDataUrl(dataUrl, `${safeName}.png`);
+    return;
+  }
+  win.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>${safeName}</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+@page { size: ${wMm}mm ${hMm}mm; margin: 0; }
+html, body { background: #fff; }
+.sheet { width: ${wMm}mm; height: ${hMm}mm; overflow: hidden; }
+img { width: ${wMm}mm; height: ${hMm}mm; display: block; }
+@media screen {
+  body { background: #e5e7eb; display: flex; justify-content: center; padding: 12px; }
+  .sheet { box-shadow: 0 4px 24px rgba(0,0,0,.18); }
+}
+</style>
+</head>
+<body><div class="sheet"><img src="${dataUrl}" alt=""></div></body>
+</html>`);
+  win.document.close();
+  win.addEventListener("load", () => {
+    setTimeout(() => win.print(), 300);
+  });
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
