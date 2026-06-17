@@ -685,9 +685,12 @@ onBeforeUnmount(() => {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-bg);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
+  /* Icon + title share row 1; description spans the full width below. */
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: var(--space-3);
+  row-gap: var(--space-3);
   transition: border-color 120ms, box-shadow 120ms;
 }
 
@@ -716,6 +719,7 @@ onBeforeUnmount(() => {
 }
 
 .feature-desc {
+  grid-column: 1 / -1;
   font-size: var(--text-sm);
   color: var(--color-text-muted);
   line-height: 1.55;
@@ -743,10 +747,12 @@ onBeforeUnmount(() => {
 }
 
 .step {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
+  /* Number + title share row 1; description spans the full width below. */
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: var(--space-3);
+  row-gap: var(--space-2);
 }
 
 .step-num {
@@ -760,7 +766,7 @@ onBeforeUnmount(() => {
   color: var(--color-accent-text);
   font-weight: 700;
   font-size: var(--text-md);
-  margin-bottom: var(--space-1);
+  flex-shrink: 0;
 }
 
 .step-title {
@@ -771,6 +777,7 @@ onBeforeUnmount(() => {
 }
 
 .step-desc {
+  grid-column: 1 / -1;
   font-size: var(--text-sm);
   color: var(--color-text-muted);
   line-height: 1.55;
