@@ -663,7 +663,9 @@ onBeforeUnmount(() => {
 .hero-copy {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  align-self: center;
+  text-align: center;
   gap: var(--space-5);
   max-width: 46rem;
 }
