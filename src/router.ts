@@ -30,6 +30,11 @@ const routes: RouteRecordRaw[] = [
     name: "snapshot",
     component: () => import("./views/SnapshotView.vue"),
   },
+  {
+    path: "/:pathMatch(.*)*",
+    name: "not-found",
+    component: () => import("./views/NotFoundView.vue"),
+  },
 ];
 
 export const router = createRouter({
