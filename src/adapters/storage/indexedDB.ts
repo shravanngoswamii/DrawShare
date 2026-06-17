@@ -1,12 +1,21 @@
 import { type IDBPDatabase, openDB } from "idb";
 import type { StorageAdapter } from "@/core/ports";
-import type { ID, ImageItem, Layer, Page, Project, ReplayEvent, Shape, Stroke } from "@/core/types";
+import type {
+  ID,
+  ImageItem,
+  Layer,
+  Narration,
+  Page,
+  Project,
+  ReplayEvent,
+  Shape,
+  Stroke,
+} from "@/core/types";
 
 const DB_NAME = "drawshare";
-// v2 added shapes; v3 added images; v4 added the replay events log; v5 adds layers.
-// The guarded upgrade below is idempotent, so any prior version migrates by creating
-// what's missing.
-const DB_VERSION = 5;
+// v2 added shapes; v3 added images; v4 added the replay events log; v5 adds layers;
+// v6 adds narrations (voice recordings). Guarded upgrade is idempotent.
+const DB_VERSION = 6;
 
 // Strip Vue reactive Proxies: structured clone (IndexedDB) throws on them.
 function toPlain<T>(value: T): T {
@@ -22,6 +31,8 @@ interface Schema {
   layers: { key: string; value: Layer; indexes: { byPage: string } };
   // Append-only recording log; autoincrement seq preserves order, byProject filters.
   events: { key: number; value: ReplayEvent; indexes: { byProject: string } };
+  // One voice narration Blob per project, keyed by projectId.
+  narrations: { key: string; value: Narration };
 }
 
 export class IndexedDBStorage implements StorageAdapter {
@@ -57,6 +68,9 @@ export class IndexedDBStorage implements StorageAdapter {
           const events = db.createObjectStore("events", { keyPath: "seq", autoIncrement: true });
           events.createIndex("byProject", "projectId");
         }
+        if (!db.objectStoreNames.contains("narrations")) {
+          db.createObjectStore("narrations", { keyPath: "projectId" });
+        }
       },
     });
   }
@@ -82,7 +96,7 @@ export class IndexedDBStorage implements StorageAdapter {
   async deleteProject(id: ID): Promise<void> {
     const db = this.require();
     const tx = db.transaction(
-      ["projects", "pages", "strokes", "shapes", "images", "layers", "events"],
+      ["projects", "pages", "strokes", "shapes", "images", "layers", "events", "narrations"],
       "readwrite",
     );
     const eventKeys = await tx.objectStore("events").index("byProject").getAllKeys(id);
@@ -98,6 +112,7 @@ export class IndexedDBStorage implements StorageAdapter {
       }
       await tx.objectStore("pages").delete(pageId);
     }
+    await tx.objectStore("narrations").delete(id);
     await tx.objectStore("projects").delete(id);
     await tx.done;
   }
@@ -225,6 +240,19 @@ export class IndexedDBStorage implements StorageAdapter {
     const keys = await tx.store.index("byProject").getAllKeys(projectId);
     for (const k of keys) await tx.store.delete(k);
     await tx.done;
+  }
+
+  async putNarration(n: Narration): Promise<void> {
+    // Store the Blob directly — toPlain() (JSON round-trip) would destroy binary data.
+    await this.require().put("narrations", n);
+  }
+
+  getNarration(projectId: ID): Promise<Narration | undefined> {
+    return this.require().get("narrations", projectId);
+  }
+
+  async deleteNarration(projectId: ID): Promise<void> {
+    await this.require().delete("narrations", projectId);
   }
 }
 

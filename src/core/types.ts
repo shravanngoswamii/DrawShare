@@ -182,3 +182,15 @@ export interface ReplayEvent {
   // Replay shows these instantly at t=0 instead of re-animating them.
   baseline?: boolean;
 }
+
+// ── Voice narration ─────────────────────────────────────────────────────────
+// One audio recording per project, stored as a Blob in IndexedDB. Plays back
+// in sync with stroke replay so the host's voice explanation accompanies the
+// drawing animation. Local-first: never leaves the device unless exported.
+export interface Narration {
+  projectId: ID;
+  blob: Blob;
+  mimeType: string;
+  durationMs: number;
+  createdAt: number;
+}
