@@ -1945,7 +1945,7 @@ onBeforeUnmount(() => {
       :style="{ '--sx': `${presenterPos.x}px`, '--sy': `${presenterPos.y}px` }"
       aria-hidden="true"
     ></div>
-    <div class="cam-controls">
+    <div class="cam-controls" :class="{ quiet: editor.isDrawing }">
       <button class="cam-btn" title="Zoom out" @click="zoomOut">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
           <path d="M5 12h14"/>
@@ -2155,6 +2155,12 @@ onBeforeUnmount(() => {
   box-shadow: 0 8px 24px var(--color-glass-shadow), 0 2px 6px var(--color-glass-shadow);
   z-index: 5;
   transition: opacity 150ms ease;
+}
+
+/* Fade out while drawing, matching the toolbar/panel/FABs so the whole UI recedes. */
+.cam-controls.quiet {
+  opacity: 0.06;
+  pointer-events: none;
 }
 
 .cam-btn {
