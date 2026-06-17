@@ -39,24 +39,41 @@ export const useProjectsStore = defineStore("projects", {
       this.projects = all.filter((p) => !(p.deletedAt && now - p.deletedAt > TRASH_RETENTION_MS));
       this.loaded = true;
     },
-    create(name: string): { project: Project; page: Page } {
+    create(
+      name: string,
+      opts?: { mode?: "free" | "notebook"; size?: PaperSizeId },
+    ): { project: Project; page: Page } {
       const now = Date.now();
       const pageId = newId();
+      // Canvas type is fixed at creation. Free = infinite canvas (0x0, no
+      // boundary, notebookMode off). Notebook = a continuous strict stack of
+      // sheets in the chosen paper size; every page added later inherits that
+      // size (createPageInternal copies page 1) and the sheet geometry comes
+      // from it via setSheetSize on open.
+      const notebook = opts?.mode === "notebook";
+      let width = 0;
+      let height = 0;
+      if (notebook) {
+        const sz = PAPER_SIZES.find((s) => s.id === opts.size) ?? PAPER_SIZES[0];
+        width = sz.width;
+        height = sz.height;
+      }
       const project: Project = {
         id: newId(),
         name: name.trim() || "Untitled",
         createdAt: now,
         updatedAt: now,
         pageOrder: [pageId],
-        notebookMode: "off",
+        notebookMode: notebook ? "strict" : "off",
+        notebookLayout: "vertical",
       };
       const page: Page = {
         id: pageId,
         projectId: project.id,
         index: 0,
         name: "Page 1",
-        width: A4_PORTRAIT.width,
-        height: A4_PORTRAIT.height,
+        width,
+        height,
         background: "blank",
         originX: 0,
         originY: 0,

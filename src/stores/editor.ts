@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { storage } from "@/adapters/storage/indexedDB";
 import { newId } from "@/core/ids";
+import { setSheetSize } from "@/core/layout";
 import { shapeSegments } from "@/core/shapes";
 import type {
   HistoryEntry,
@@ -20,7 +21,7 @@ import type {
 } from "@/core/types";
 import { dlog } from "@/debug";
 import { useLiveStore } from "./live";
-import { DEFAULT_PAGE_SIZE, useProjectsStore } from "./projects";
+import { useProjectsStore } from "./projects";
 
 // Sub-interval [t1, t2] of segment A→B that lies inside the eraser — a circle of
 // the given radius, or (square) a box of half-size radius — centred at (wx, wy);
@@ -113,6 +114,7 @@ export const useEditorStore = defineStore("editor", {
     penType: "ballpoint",
     color: "#0f172a",
     toolSizes: {
+      select: 4,
       pen: 4,
       highlighter: 20,
       eraser: 24,
@@ -179,6 +181,10 @@ export const useEditorStore = defineStore("editor", {
         this.pages = [page];
       }
       this.currentPageId = this.pages[0].id;
+      // Notebook sheets use the project's paper size; free pages are 0×0 (no-op).
+      setSheetSize(this.pages[0].width, this.pages[0].height);
+      // Always open on the pen, not whatever tool was last active in another project.
+      this.tool = "pen";
       // Notebook mode renders the whole stack at once, so load every sheet's
       // strokes/shapes/images; Free mode keeps only the current page in memory.
       if (this.notebookMode !== "off") {
@@ -198,6 +204,8 @@ export const useEditorStore = defineStore("editor", {
       this.project = project;
       this.pages = [page];
       this.currentPageId = page.id;
+      setSheetSize(page.width, page.height);
+      this.tool = "pen";
       this.strokes = [];
       this.shapes = [];
       this.images = [];
@@ -289,14 +297,18 @@ export const useEditorStore = defineStore("editor", {
     async createPageInternal(index: number): Promise<Page> {
       if (!this.project) throw new Error("No project");
       const now = Date.now();
+      // Inherit the canvas size from page 1 so a notebook stays uniform (every
+      // sheet the same paper size) and a free project stays infinite (0x0). The
+      // size is chosen once at project creation and never changes.
+      const ref = this.pages[0];
       const page: Page = {
         id: newId(),
         projectId: this.project.id,
         index,
         name: `Page ${index + 1}`,
-        width: DEFAULT_PAGE_SIZE.width,
-        height: DEFAULT_PAGE_SIZE.height,
-        background: "blank",
+        width: ref?.width ?? 0,
+        height: ref?.height ?? 0,
+        background: ref?.background ?? "blank",
         originX: 0,
         originY: 0,
         createdAt: now,
@@ -367,15 +379,6 @@ export const useEditorStore = defineStore("editor", {
       page.updatedAt = Date.now();
       await storage.putPage({ ...page });
       useLiveStore().broadcast({ t: "page-background", pageId, background });
-    },
-    async setPageSize(pageId: string, width: number, height: number) {
-      const page = this.pages.find((p) => p.id === pageId);
-      if (!page) return;
-      page.width = width;
-      page.height = height;
-      page.updatedAt = Date.now();
-      await storage.putPage({ ...page });
-      useLiveStore().broadcast({ t: "page-size", pageId, width, height });
     },
     // Append a forward content op to the recording log. No-op unless the project
     // has recordReplay on. Fire-and-forget so it never blocks drawing; events are
@@ -801,6 +804,23 @@ export const useEditorStore = defineStore("editor", {
       this._record({ op: "image-set", image: { ...image } });
       if (this.project) await useProjectsStore().touch(this.project.id);
     },
+    // Move a shape in place (Select tool). Persisted and replay-logged as a
+    // remove+re-add at the new position (there's no shape-set op); not pushed to
+    // undo, matching moveImage. Live viewers dedupe shape-commit by id, so — like
+    // image moves — a move isn't broadcast.
+    async moveShape(shapeId: string, x1: number, y1: number, x2: number, y2: number) {
+      const shape = this.shapes.find((s) => s.id === shapeId);
+      if (!shape) return;
+      shape.x1 = x1;
+      shape.y1 = y1;
+      shape.x2 = x2;
+      shape.y2 = y2;
+      this.redoStack = [];
+      await storage.putShape({ ...shape });
+      this._record({ op: "shape-remove", pageId: shape.pageId, id: shape.id });
+      this._record({ op: "shape-add", shape: { ...shape } });
+      if (this.project) await useProjectsStore().touch(this.project.id);
+    },
     // Stacking order vs the drawing. Front = above strokes/shapes/text and above
     // other front images; back = below the drawing and below other back images.
     async bringImageToFront(imageId: string) {
@@ -940,6 +960,9 @@ export const useEditorStore = defineStore("editor", {
     },
     setTool(t: Tool) {
       this.tool = t;
+      // Choosing a drawing tool exits laser/spotlight — otherwise the tool would
+      // quietly do nothing while presenter mode swallows the pointer.
+      if (this.presenterMode !== "off") this.setPresenterMode("off");
     },
     setPenType(pt: PenType) {
       this.penType = pt;
@@ -1155,32 +1178,6 @@ export const useEditorStore = defineStore("editor", {
       if (mode === "off") {
         useLiveStore().broadcast({ t: "presenter-off" });
       }
-    },
-    async setNotebookMode(mode: NotebookMode) {
-      if (!this.project || this.project.notebookMode === mode) return;
-      const wasOff = (this.project.notebookMode ?? "off") === "off";
-      this.project.notebookMode = mode;
-      this.project.updatedAt = Date.now();
-      await storage.putProject({ ...this.project });
-      // Entering the stack needs every sheet's strokes/shapes/images; leaving it
-      // restores the Free-mode single-page invariant.
-      if (wasOff && mode !== "off") {
-        await this.loadAllStrokes();
-        await this.loadAllShapes();
-        await this.loadAllImages();
-      } else if (!wasOff && mode === "off" && this.currentPageId) {
-        await this.loadStrokes(this.currentPageId);
-        await this.loadShapes(this.currentPageId);
-        await this.loadImages(this.currentPageId);
-      }
-      // Re-snapshot live viewers onto the new mode/stack (strokes sent chunked).
-      useLiveStore().broadcastNotebookSync(
-        mode,
-        this.notebookLayout,
-        [...this.pages],
-        [...this.strokes],
-        [...this.shapes],
-      );
     },
     async setNotebookLayout(layout: NotebookLayout) {
       if (!this.project || this.project.notebookLayout === layout) return;

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
 import type { ShapeType, Tool } from "@/core/types";
 import { useEditorStore } from "@/stores/editor";
 
-defineProps<{ collapsed?: boolean }>();
+const props = defineProps<{ collapsed?: boolean; panelOpen?: boolean }>();
 const emit = defineEmits<{ toggle: []; "image-import": [] }>();
 
 const editor = useEditorStore();
@@ -21,6 +21,8 @@ const shapeTools: { id: ShapeType; label: string }[] = [
   { id: "arrow", label: "Arrow" },
 ];
 
+const isShapeTool = computed(() => shapeTools.some((t) => t.id === editor.tool));
+
 const presetColors = [
   "#0f172a",
   "#1d4ed8",
@@ -32,10 +34,23 @@ const presetColors = [
   "#a16207",
 ];
 
-type Popover = "color" | "size" | "eraser" | null;
+type Popover = "color" | "size" | "eraser" | "shapes" | "present" | null;
 const popover = ref<Popover>(null);
 function toggle(p: Exclude<Popover, null>) {
   popover.value = popover.value === p ? null : p;
+}
+
+// Pick a shape from the shapes flyout, then close it.
+function pickShape(id: ShapeType) {
+  editor.setTool(id);
+  popover.value = null;
+}
+
+// Toggle a presenter mode from the Present flyout, then close it so it doesn't
+// sit over the canvas you're about to point at.
+function pickPresenter(mode: "laser" | "spotlight") {
+  editor.setPresenterMode(editor.presenterMode === mode ? "off" : mode);
+  popover.value = null;
 }
 
 function onEraserClick() {
@@ -93,8 +108,29 @@ interface DockPositions {
   bottom: number;
 }
 
-const dock = ref<Dock>("left");
+// Default dock: top-centre (top + 0.5 fraction). A saved choice overrides on mount.
+const dock = ref<Dock>("top");
 const dockPositions = ref<DockPositions>({ left: 0.5, right: 0.5, top: 0.5, bottom: 0.5 });
+
+// Clearance reserved at each end of an edge so the bar never lands on the fixed
+// corner controls (back button, zoom pill, help/replay, mini-dock). The
+// bottom-left zoom pill is the widest, so its corners get extra room.
+const DOCK_CORNER = 64;
+const DOCK_ZOOM = 132;
+const dockMargins: Record<Dock, { start: number; end: number }> = {
+  left: { start: DOCK_CORNER, end: DOCK_CORNER }, // back (top) / zoom (bottom)
+  right: { start: DOCK_CORNER, end: DOCK_CORNER }, // mini-dock (top) / help+replay (bottom)
+  top: { start: DOCK_CORNER, end: DOCK_CORNER }, // back (left) / mini-dock (right)
+  bottom: { start: DOCK_ZOOM, end: DOCK_CORNER }, // zoom (left) / help+replay (right)
+};
+// Centre the bar within its edge but keep its whole length inside the safe band
+// [half+start, edgeLen-half-end]; if it's too long to fit, centre it.
+function clampDockFrac(localPos: number, edgeLen: number, half: number, dk: Dock): number {
+  const lo = half + dockMargins[dk].start;
+  const hi = edgeLen - half - dockMargins[dk].end;
+  const c = lo <= hi ? Math.max(lo, Math.min(hi, localPos)) : edgeLen / 2;
+  return c / edgeLen;
+}
 const dragging = ref(false);
 const noTransition = ref(false);
 const dragStyle = ref<Record<string, string>>({});
@@ -108,7 +144,12 @@ const dockStyle = computed(() => {
     case "left":
       return { left: "8px", top: `${frac * 100}%`, transform: "translateY(-50%)" };
     case "right":
-      return { right: "8px", top: `${frac * 100}%`, transform: "translateY(-50%)" };
+      // Sit left of the pages panel when it's open so the two never overlap.
+      return {
+        right: props.panelOpen ? "calc(var(--sidepanel-w) + 16px)" : "8px",
+        top: `${frac * 100}%`,
+        transform: "translateY(-50%)",
+      };
     case "top":
       return { top: "8px", left: `${frac * 100}%`, transform: "translateX(-50%)" };
     case "bottom":
@@ -167,7 +208,6 @@ function onGripDown(e: PointerEvent) {
     // Toolbar centre in viewport coords.
     const centerX = ev.clientX - offX + tbW / 2;
     const centerY = ev.clientY - offY + tbH / 2;
-    const PAD = 12;
 
     // Use the container's bounding rect so frac matches what `top/left: X%`
     // resolves to — percentage is relative to the containing block, not the
@@ -193,20 +233,16 @@ function onGripDown(e: PointerEvent) {
     let frac: number;
     if (min === dl) {
       newDock = "left";
-      const safe = Math.max(tbH / 2 + PAD, Math.min(cH - tbH / 2 - PAD, localY));
-      frac = safe / cH;
+      frac = clampDockFrac(localY, cH, tbH / 2, "left");
     } else if (min === dr) {
       newDock = "right";
-      const safe = Math.max(tbH / 2 + PAD, Math.min(cH - tbH / 2 - PAD, localY));
-      frac = safe / cH;
+      frac = clampDockFrac(localY, cH, tbH / 2, "right");
     } else if (min === dt) {
       newDock = "top";
-      const safe = Math.max(tbW / 2 + PAD, Math.min(cW - tbW / 2 - PAD, localX));
-      frac = safe / cW;
+      frac = clampDockFrac(localX, cW, tbW / 2, "top");
     } else {
       newDock = "bottom";
-      const safe = Math.max(tbW / 2 + PAD, Math.min(cW - tbW / 2 - PAD, localX));
-      frac = safe / cW;
+      frac = clampDockFrac(localX, cW, tbW / 2, "bottom");
     }
 
     // Snap to final position immediately (no spring from stale coords).
@@ -249,6 +285,28 @@ onMounted(() => {
     /* ignore */
   }
   hexInput.value = editor.color;
+  // Re-clamp a saved position once the bar has real dimensions, so a corner
+  // position stored before the corner-clearance rule still snaps clear.
+  nextTick(() => {
+    const el = document.querySelector(".toolbar") as HTMLElement | null;
+    const parent = el?.parentElement;
+    if (!el || !parent) return;
+    const r = el.getBoundingClientRect();
+    const c = parent.getBoundingClientRect();
+    const horiz = dock.value === "top" || dock.value === "bottom";
+    const edgeLen =
+      (horiz ? c.width : c.height) || (horiz ? window.innerWidth : window.innerHeight);
+    const half = (horiz ? r.width : r.height) / 2;
+    const clamped = clampDockFrac(
+      dockPositions.value[dock.value] * edgeLen,
+      edgeLen,
+      half,
+      dock.value,
+    );
+    if (Math.abs(clamped - dockPositions.value[dock.value]) > 0.001) {
+      dockPositions.value = { ...dockPositions.value, [dock.value]: clamped };
+    }
+  });
 });
 </script>
 
@@ -270,6 +328,18 @@ onMounted(() => {
 
     <div class="toolbar-body">
       <div class="group">
+        <button
+          class="tool"
+          :class="{ active: editor.tool === 'select' }"
+          :aria-pressed="editor.tool === 'select'"
+          title="Select — move, resize or delete images, text and shapes"
+          aria-label="Select tool"
+          @click="editor.setTool('select')"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" />
+          </svg>
+        </button>
         <button
           v-for="t in penTools"
           :key="t.id"
@@ -317,49 +387,33 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- Pen type selector — visible only when pen tool is active -->
-      <template v-if="editor.tool === 'pen'">
-        <div class="divider"></div>
-        <div class="group pen-types">
-          <!-- Ballpoint: thin precise stroke -->
-          <button class="pen-type-btn" :class="{ active: editor.penType === 'ballpoint' }"
-                  title="Ballpoint" aria-label="Ballpoint"
-                  :aria-pressed="editor.penType === 'ballpoint'"
-                  @click="editor.setPenType('ballpoint')">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M4 20 C7 16 12 11 20 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-            </svg>
-          </button>
-          <!-- Brush: calligraphic variable-width (thick start → thin end) -->
-          <button class="pen-type-btn" :class="{ active: editor.penType === 'brush' }"
-                  title="Brush" aria-label="Brush"
-                  :aria-pressed="editor.penType === 'brush'"
-                  @click="editor.setPenType('brush')">
-            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M3 21 C6 17 10 13 14 9 C17 6 20 4 21 3 C20 5 17 8 14 11 C10 15 7 18 4 22 Z" fill="currentColor"/>
-            </svg>
-          </button>
-          <!-- Marker: thick uniform flat-capped stroke -->
-          <button class="pen-type-btn" :class="{ active: editor.penType === 'marker' }"
-                  title="Marker" aria-label="Marker"
-                  :aria-pressed="editor.penType === 'marker'"
-                  @click="editor.setPenType('marker')">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M4 20 L19 5" stroke="currentColor" stroke-width="7" stroke-linecap="square"/>
-            </svg>
-          </button>
-        </div>
-      </template>
-
       <div class="divider"></div>
 
-      <div class="group">
-        <button v-for="t in shapeTools" :key="t.id" class="tool" :class="{ active: editor.tool === t.id }" :aria-pressed="editor.tool === t.id" :title="t.label" @click="editor.setTool(t.id)">
-          <svg v-if="t.id === 'rect'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
-          <svg v-else-if="t.id === 'ellipse'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="10" ry="6"/></svg>
-          <svg v-else-if="t.id === 'line'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="20" x2="20" y2="4"/></svg>
-          <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19L19 5"/><path d="M9 5h10v10"/></svg>
+      <!-- Shapes: one button opens a flyout with the four shapes -->
+      <div class="pop-wrap group">
+        <button
+          class="tool"
+          :class="{ active: isShapeTool }"
+          :aria-pressed="isShapeTool"
+          :aria-expanded="popover === 'shapes'"
+          title="Shapes"
+          aria-label="Shapes"
+          @click="toggle('shapes')"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="13" height="13" rx="2" /><circle cx="16" cy="16" r="5" />
+          </svg>
         </button>
+        <div v-if="popover === 'shapes'" class="popover" :class="`pop-${dock}`" role="dialog" aria-label="Shapes">
+          <div class="flyout-row">
+            <button v-for="t in shapeTools" :key="t.id" class="tool" :class="{ active: editor.tool === t.id }" :aria-pressed="editor.tool === t.id" :title="t.label" :aria-label="t.label" @click="pickShape(t.id)">
+              <svg v-if="t.id === 'rect'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+              <svg v-else-if="t.id === 'ellipse'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="10" ry="6"/></svg>
+              <svg v-else-if="t.id === 'line'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="20" x2="20" y2="4"/></svg>
+              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19L19 5"/><path d="M9 5h10v10"/></svg>
+            </button>
+          </div>
+        </div>
       </div>
 
       <div class="divider"></div>
@@ -367,7 +421,9 @@ onMounted(() => {
       <!-- Stroke size (hidden for eraser, which has its own) -->
       <div v-if="editor.tool !== 'eraser'" class="pop-wrap group">
         <button class="tool" :class="{ active: popover === 'size' }" title="Stroke size" aria-label="Stroke size" :aria-expanded="popover === 'size'" @click="toggle('size')">
-          <span class="size-dot" :style="{ width: `${Math.min(editor.size, 18)}px`, height: `${Math.min(editor.size, 18)}px` }"></span>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r="2.75" /><circle cx="19.5" cy="12" r="4" />
+          </svg>
         </button>
         <div v-if="popover === 'size'" class="popover" :class="`pop-${dock}`">
           <div class="pop-title">Size</div>
@@ -375,6 +431,21 @@ onMounted(() => {
             <input class="range" type="range" min="1" max="40" :value="editor.size" aria-label="Stroke size slider" @input="setSize(Number(($event.target as HTMLInputElement).value))" />
             <input class="num" type="number" min="1" max="200" :value="editor.size" aria-label="Stroke size value" @input="setSize(Number(($event.target as HTMLInputElement).value))" />
           </div>
+          <!-- Pen nib lives with the pen's other properties -->
+          <template v-if="editor.tool === 'pen'">
+            <div class="pop-sub" id="pen-type-label">Pen</div>
+            <div class="flyout-row" role="group" aria-labelledby="pen-type-label">
+              <button class="pen-type-btn" :class="{ active: editor.penType === 'ballpoint' }" title="Ballpoint" aria-label="Ballpoint" :aria-pressed="editor.penType === 'ballpoint'" @click="editor.setPenType('ballpoint')">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20 C7 16 12 11 20 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              </button>
+              <button class="pen-type-btn" :class="{ active: editor.penType === 'brush' }" title="Brush" aria-label="Brush" :aria-pressed="editor.penType === 'brush'" @click="editor.setPenType('brush')">
+                <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21 C6 17 10 13 14 9 C17 6 20 4 21 3 C20 5 17 8 14 11 C10 15 7 18 4 22 Z" fill="currentColor"/></svg>
+              </button>
+              <button class="pen-type-btn" :class="{ active: editor.penType === 'marker' }" title="Marker" aria-label="Marker" :aria-pressed="editor.penType === 'marker'" @click="editor.setPenType('marker')">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20 L19 5" stroke="currentColor" stroke-width="7" stroke-linecap="square"/></svg>
+              </button>
+            </div>
+          </template>
         </div>
       </div>
 
@@ -431,39 +502,40 @@ onMounted(() => {
 
       <div class="divider"></div>
 
-      <!-- Presenter aids: laser pointer + spotlight -->
-      <div class="group">
+      <!-- Presenter aids: one button opens a flyout with laser + spotlight -->
+      <div class="pop-wrap group">
         <button
           class="tool"
-          :class="{ active: editor.presenterMode === 'laser' }"
-          :aria-pressed="editor.presenterMode === 'laser'"
-          title="Laser pointer"
-          aria-label="Laser pointer"
-          @click="editor.setPresenterMode(editor.presenterMode === 'laser' ? 'off' : 'laser')"
+          :class="{ active: editor.presenterMode !== 'off' }"
+          :aria-pressed="editor.presenterMode !== 'off'"
+          :aria-expanded="popover === 'present'"
+          title="Present"
+          aria-label="Presenter tools"
+          @click="toggle('present')"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="3" />
-            <line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/>
-            <line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/>
-            <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/>
-            <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/>
-            <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/>
-            <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>
+            <line x1="12" y1="3" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="21"/>
+            <line x1="3" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="21" y2="12"/>
           </svg>
         </button>
-        <button
-          class="tool"
-          :class="{ active: editor.presenterMode === 'spotlight' }"
-          :aria-pressed="editor.presenterMode === 'spotlight'"
-          title="Spotlight"
-          aria-label="Spotlight"
-          @click="editor.setPresenterMode(editor.presenterMode === 'spotlight' ? 'off' : 'spotlight')"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="4" />
-            <circle cx="12" cy="12" r="9" stroke-dasharray="3 3" stroke-opacity="0.5" />
-          </svg>
-        </button>
+        <div v-if="popover === 'present'" class="popover" :class="`pop-${dock}`" role="dialog" aria-label="Presenter tools">
+          <div class="pop-title">Present</div>
+          <div class="present-list">
+            <button class="present-item" :class="{ active: editor.presenterMode === 'laser' }" :aria-pressed="editor.presenterMode === 'laser'" @click="pickPresenter('laser')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="3" /><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>
+              </svg>
+              <span>Laser pointer</span>
+            </button>
+            <button class="present-item" :class="{ active: editor.presenterMode === 'spotlight' }" :aria-pressed="editor.presenterMode === 'spotlight'" @click="pickPresenter('spotlight')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="4" /><circle cx="12" cy="12" r="9" stroke-dasharray="3 3" stroke-opacity="0.5" />
+              </svg>
+              <span>Spotlight</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -559,8 +631,6 @@ onMounted(() => {
 .tool:disabled { opacity: 0.4; cursor: not-allowed; }
 .tool.active { background: var(--color-accent-soft); color: var(--color-accent); }
 
-.pen-types { gap: var(--space-1); }
-
 .pen-type-btn {
   width: 38px;
   height: 36px;
@@ -649,6 +719,25 @@ onMounted(() => {
 }
 .seg button.active { background: var(--color-accent-soft); color: var(--color-accent); }
 
+/* Row of icon buttons inside a flyout (shapes, pen nibs) */
+.flyout-row { display: flex; gap: 4px; }
+
+/* Present flyout: labelled rows */
+.present-list { display: flex; flex-direction: column; gap: 4px; }
+.present-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.present-item:hover { background: var(--color-surface-2); color: var(--color-text); }
+.present-item.active { background: var(--color-accent-soft); color: var(--color-accent); }
+
 .swatches { display: grid; grid-template-columns: repeat(8, 18px); gap: 6px; }
 .swatch {
   width: 18px;
@@ -678,6 +767,33 @@ onMounted(() => {
   border-radius: var(--radius-sm);
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-xs);
+}
+
+/* Short, wide viewports (e.g. iPad in landscape): the vertical toolbar grew tall
+   enough to run off-screen. Compact the buttons and gaps so every tool fits
+   without scrolling (scrolling would clip the side popovers). */
+@media (min-width: 768px) and (max-height: 860px) {
+  .toolbar:not(.horizontal) {
+    padding: 4px;
+  }
+  .toolbar:not(.horizontal) .toolbar-body {
+    gap: 3px;
+    padding: 0;
+  }
+  .toolbar:not(.horizontal) .group {
+    gap: 2px;
+  }
+  .toolbar:not(.horizontal) .tool,
+  .toolbar:not(.horizontal) .pen-type-btn {
+    width: 32px;
+    height: 32px;
+  }
+  .toolbar:not(.horizontal) .divider {
+    margin: 2px 0;
+  }
+  .toolbar:not(.horizontal) .grip {
+    height: 14px;
+  }
 }
 
 /* Mobile keeps the simple bottom bar regardless of dock */

@@ -152,12 +152,18 @@ onBeforeUnmount(() => removeProbe?.());
           <path d="M4 6h16M4 12h16M4 18h16" />
         </svg>
       </button>
-      <Toolbar :collapsed="toolbarCollapsed" @toggle="toolbarCollapsed = !toolbarCollapsed" @image-import="canvasStage?.triggerFileImport()" />
+      <Toolbar :collapsed="toolbarCollapsed" :panel-open="!pagesCollapsed" @toggle="toolbarCollapsed = !toolbarCollapsed" @image-import="canvasStage?.triggerFileImport()" />
       <main id="canvas-main" class="stage-wrap" aria-label="Drawing canvas" @pointerdown="helpOpen = false">
         <CanvasStage v-if="editor.currentPage" ref="canvasStage" :page="editor.currentPage" />
         <div v-else class="loading muted" aria-live="polite">Loading.</div>
       </main>
       <PagesPanel :open="panelOpen" :collapsed="pagesCollapsed" @close="panelOpen = false" @toggle="pagesCollapsed = !pagesCollapsed" @share="shareOpen = true" />
+      <!-- Back to projects (top-left) -->
+      <button class="back-fab" :class="{ quiet: editor.isDrawing }" @click="router.push({ name: 'app' })" title="Back to projects" aria-label="Back to projects">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m12 19-7-7 7-7" /><path d="M19 12H5" />
+        </svg>
+      </button>
       <!-- Sidebar re-open pills -->
       <button v-if="toolbarCollapsed" class="pencil-fab" :class="{ quiet: editor.isDrawing }" @click="toolbarCollapsed = false" title="Show tools" aria-label="Show tools">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -165,20 +171,13 @@ onBeforeUnmount(() => removeProbe?.());
           <path d="m15 5 4 4" />
         </svg>
       </button>
-      <button v-if="pagesCollapsed" class="sidebar-pill pill-right" :class="{ quiet: editor.isDrawing }" @click="pagesCollapsed = false" title="Show pages" :aria-label="`Show pages panel — ${editor.pages.length} page${editor.pages.length === 1 ? '' : 's'}`">
-        <span>{{ editor.currentPage?.name ?? 'Pages' }}</span>
-        <span class="pill-badge" aria-hidden="true">{{ editor.pages.length }}</span>
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-          <path fill="currentColor" fill-rule="evenodd" d="M10 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-8zM9 7H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3zM4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" clip-rule="evenodd"/>
-        </svg>
-      </button>
       <!-- Replay FAB: shown when the page has any content and replay isn't active -->
       <button
         v-if="hasContent && !replay.active"
         class="replay-fab"
-        :class="{ quiet: editor.isDrawing }"
-        title="Replay drawing"
-        aria-label="Replay drawing"
+        :class="{ quiet: editor.isDrawing, shifted: !pagesCollapsed }"
+        title="Replay how this page was drawn"
+        aria-label="Replay how this page was drawn"
         @click="startReplay()"
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -189,7 +188,7 @@ onBeforeUnmount(() => removeProbe?.());
       <ReplayControls v-if="replay.active" />
       <button
         class="help-fab"
-        :class="{ quiet: editor.isDrawing, active: helpOpen }"
+        :class="{ quiet: editor.isDrawing, active: helpOpen, shifted: !pagesCollapsed }"
         @click="helpOpen = !helpOpen"
         title="Help"
         aria-label="Help"
@@ -295,58 +294,11 @@ onBeforeUnmount(() => removeProbe?.());
   justify-content: center;
 }
 
-.sidebar-pill {
-  position: absolute;
-  top: 16px;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
-  border-radius: 8px;
-  background: var(--color-glass-bg-strong);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--color-glass-border);
-  box-shadow: 0 2px 8px var(--color-glass-shadow), 0 1px 2px var(--color-glass-shadow);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  transition: box-shadow 150ms, color 80ms, background 80ms, opacity 150ms;
-}
 
-.sidebar-pill:hover {
-  box-shadow: var(--shadow-md);
-  color: var(--color-text);
-  background: var(--color-glass-bg-strong);
-}
-
-.pill-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: var(--color-surface-2);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-text-muted);
-}
-
-.sidebar-pill.quiet {
-  opacity: 0.06;
-  pointer-events: none;
-}
-
-.pill-right { right: 8px; }
-
+.back-fab,
 .pencil-fab {
   position: absolute;
   top: 12px;
-  left: 12px;
   z-index: 20;
   display: flex;
   align-items: center;
@@ -359,13 +311,19 @@ onBeforeUnmount(() => removeProbe?.());
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--color-glass-border);
   box-shadow: 0 4px 14px var(--color-glass-shadow), 0 1px 2px var(--color-glass-shadow);
-  color: var(--color-accent);
   transition: transform 100ms ease, box-shadow 150ms ease, opacity 150ms ease;
 }
 
+.back-fab { left: 12px; color: var(--color-text); }
+/* Sits to the right of Back so the two never overlap when the toolbar is hidden. */
+.pencil-fab { left: 64px; color: var(--color-accent); }
+
+.back-fab:hover,
 .pencil-fab:hover { transform: scale(1.05); box-shadow: var(--shadow-md); }
+.back-fab:active,
 .pencil-fab:active { transform: scale(0.96); }
 
+.back-fab.quiet,
 .pencil-fab.quiet {
   opacity: 0.06;
   pointer-events: none;
@@ -373,8 +331,10 @@ onBeforeUnmount(() => removeProbe?.());
 
 .replay-fab {
   position: absolute;
-  bottom: 56px;
-  left: 12px;
+  /* Bottom-right, stacked above the help button — clear of the canvas, the
+     zoom controls (bottom-left) and the pages panel (top-right). */
+  bottom: 60px;
+  right: 12px;
   z-index: 20;
   display: flex;
   align-items: center;
@@ -388,7 +348,7 @@ onBeforeUnmount(() => removeProbe?.());
   border: 1px solid var(--color-glass-border);
   box-shadow: 0 4px 14px var(--color-glass-shadow), 0 1px 2px var(--color-glass-shadow);
   color: var(--color-accent);
-  transition: transform 100ms ease, box-shadow 150ms ease, opacity 150ms ease;
+  transition: transform 100ms ease, box-shadow 150ms ease, opacity 150ms ease, right 200ms ease;
 }
 
 .replay-fab:hover {
@@ -424,11 +384,18 @@ onBeforeUnmount(() => removeProbe?.());
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: box-shadow 150ms, color 80ms, background 80ms, opacity 150ms;
+  transition: box-shadow 150ms, color 80ms, background 80ms, opacity 150ms, right 200ms ease;
 }
 .help-fab:hover { box-shadow: var(--shadow-md); color: var(--color-text); }
 .help-fab.active { background: var(--color-accent-soft); color: var(--color-accent); border-color: var(--color-accent); }
 .help-fab.quiet { opacity: 0.06; pointer-events: none; }
+
+/* When the pages panel is open on desktop it owns the right edge, so slide the
+   corner FABs left to sit just clear of it. (Mobile panel is a drawer — no shift.) */
+@media (min-width: 768px) {
+  .help-fab.shifted { right: calc(var(--sidepanel-w) + 20px); }
+  .replay-fab.shifted { right: calc(var(--sidepanel-w) + 16px); }
+}
 
 .hub-btn {
   position: absolute;
@@ -456,7 +423,6 @@ onBeforeUnmount(() => removeProbe?.());
 }
 
 @media (max-width: 767px) {
-  .sidebar-pill { display: none; }
   .hub-btn { display: flex; }
 }
 

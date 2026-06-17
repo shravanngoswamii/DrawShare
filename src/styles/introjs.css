@@ -32,9 +32,11 @@
 }
 
 /* Hide the connector arrow for a cleaner look — the highlight ring already
-   shows which element a step refers to. */
+   shows which element a step refers to. !important is required because intro.js
+   sets the arrow's display inline when positioning, which would otherwise win
+   (and show its default white wedge, wrong in dark mode). */
 .ds-introjs .introjs-arrow {
-  display: none;
+  display: none !important;
 }
 
 .ds-introjs .introjs-bullets {

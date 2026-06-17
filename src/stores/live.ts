@@ -370,30 +370,6 @@ export const useLiveStore = defineStore("live", {
       session?.send(msg);
     },
 
-    // Re-snapshot the notebook to viewers (mode/layout/pages), then stream the
-    // strokes in chunks. Used when the host toggles canvas mode mid-session.
-    broadcastNotebookSync(
-      notebookMode: NotebookMode,
-      notebookLayout: NotebookLayout,
-      pages: Page[],
-      allStrokes: Stroke[],
-      allShapes: Shape[],
-    ) {
-      if (this.mode !== "host") return;
-      session?.send({
-        t: "notebook-sync",
-        notebookMode,
-        notebookLayout,
-        pages,
-        allStrokes: [],
-        allShapes: [],
-      });
-      if (notebookMode !== "off") {
-        sendStrokesChunked(allStrokes);
-        sendShapesChunked(allShapes);
-      }
-    },
-
     applyMessage(msg: SyncMessage) {
       switch (msg.t) {
         case "hello": {

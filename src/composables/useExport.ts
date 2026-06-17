@@ -3,7 +3,7 @@ import { splitImageLayers } from "@/core/images";
 import type { ImageItem, Page, Shape, Stroke, TextItem } from "@/core/types";
 
 const PADDING = 32;
-// A4 at 96 DPI — matches CanvasStage PAGE_W / PAGE_H constants.
+// A4 fallback for sheets with no stored size; real sheets use page.width/height.
 const A4_W = 794;
 const A4_H = 1123;
 
@@ -224,12 +224,14 @@ async function drawImageToCtx(
   }
 }
 
-export async function exportPageAsPng(
+// Render a page's content (fit to its bounds + padding) to a PNG blob and report
+// the pixel size. Shared by the PNG and single-page PDF exports.
+async function renderPageBlob(
   page: Page,
   strokes: Stroke[],
-  shapes: Shape[] = [],
-  images: ImageItem[] = [],
-): Promise<void> {
+  shapes: Shape[],
+  images: ImageItem[],
+): Promise<{ blob: Blob; w: number; h: number }> {
   const pageStrokes = strokes.filter((s) => s.pageId === page.id);
   const pageShapes = shapes.filter((s) => s.pageId === page.id);
   const pageImages = images.filter((i) => i.pageId === page.id);
@@ -243,20 +245,15 @@ export async function exportPageAsPng(
     pageImages,
     page,
   );
-  const canvasW = Math.ceil(maxX - minX + 2 * PADDING);
-  const canvasH = Math.ceil(maxY - minY + 2 * PADDING);
+  const w = Math.ceil(maxX - minX + 2 * PADDING);
+  const h = Math.ceil(maxY - minY + 2 * PADDING);
 
   // World → canvas: world(minX, minY) → canvas(PADDING, PADDING).
-  const offsetX = -minX + PADDING;
-  const offsetY = -minY + PADDING;
-
-  const canvas = new OffscreenCanvas(canvasW, canvasH);
+  const canvas = new OffscreenCanvas(w, h);
   const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D;
-
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, canvasW, canvasH);
-
-  ctx.translate(offsetX, offsetY);
+  ctx.fillRect(0, 0, w, h);
+  ctx.translate(-minX + PADDING, -minY + PADDING);
   drawBackground(ctx, page);
   // Images split into behind/front bands, matching canvas layer order.
   const { behind, front } = splitImageLayers(pageImages);
@@ -267,6 +264,16 @@ export async function exportPageAsPng(
   for (const img of front) await drawImageToCtx(ctx, img);
 
   const blob = await canvas.convertToBlob({ type: "image/png" });
+  return { blob, w, h };
+}
+
+export async function exportPageAsPng(
+  page: Page,
+  strokes: Stroke[],
+  shapes: Shape[] = [],
+  images: ImageItem[] = [],
+): Promise<void> {
+  const { blob } = await renderPageBlob(page, strokes, shapes, images);
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -276,6 +283,52 @@ export async function exportPageAsPng(
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// Export the current page's drawing as a single-page PDF (free canvas). The page
+// is sized to the drawing's aspect ratio, longest side ~297mm, via the print
+// window — same dependency-free approach as the notebook PDF.
+export async function exportPageAsPdf(
+  page: Page,
+  strokes: Stroke[],
+  shapes: Shape[] = [],
+  images: ImageItem[] = [],
+): Promise<void> {
+  const { blob, w, h } = await renderPageBlob(page, strokes, shapes, images);
+  const dataUrl = await blobToDataUrl(blob);
+  const safeName = (page.name || "page").replace(/[^a-z0-9_-]/gi, "_");
+  const long = 297;
+  const wMm = w >= h ? long : Math.round(((long * w) / h) * 10) / 10;
+  const hMm = w >= h ? Math.round(((long * h) / w) * 10) / 10 : long;
+
+  const win = window.open("", "_blank");
+  if (!win) {
+    downloadDataUrl(dataUrl, `${safeName}.png`);
+    return;
+  }
+  win.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>${safeName}</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+@page { size: ${wMm}mm ${hMm}mm; margin: 0; }
+html, body { background: #fff; }
+.sheet { width: ${wMm}mm; height: ${hMm}mm; overflow: hidden; }
+img { width: ${wMm}mm; height: ${hMm}mm; display: block; }
+@media screen {
+  body { background: #e5e7eb; display: flex; justify-content: center; padding: 12px; }
+  .sheet { box-shadow: 0 4px 24px rgba(0,0,0,.18); }
+}
+</style>
+</head>
+<body><div class="sheet"><img src="${dataUrl}" alt=""></div></body>
+</html>`);
+  win.document.close();
+  win.addEventListener("load", () => {
+    setTimeout(() => win.print(), 300);
+  });
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -296,16 +349,19 @@ async function renderSheet(
   images: ImageItem[],
 ): Promise<string> {
   const scale = 2;
-  const canvas = new OffscreenCanvas(A4_W * scale, A4_H * scale);
+  // Sheets are the project's paper size; strokes are page-local in that space.
+  const w = page.width || A4_W;
+  const h = page.height || A4_H;
+  const canvas = new OffscreenCanvas(w * scale, h * scale);
   const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D;
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, A4_W * scale, A4_H * scale);
+  ctx.fillRect(0, 0, w * scale, h * scale);
   ctx.save();
   ctx.scale(scale, scale);
   ctx.beginPath();
-  ctx.rect(0, 0, A4_W, A4_H);
+  ctx.rect(0, 0, w, h);
   ctx.clip();
-  drawBackground(ctx, { ...page, width: A4_W, height: A4_H });
+  drawBackground(ctx, { ...page, width: w, height: h });
   // Images split into behind/front bands, matching the canvas layer order.
   const { behind, front } = splitImageLayers(images.filter((i) => i.pageId === page.id));
   for (const img of behind) await drawImageToCtx(ctx, img);
@@ -337,6 +393,12 @@ export async function exportNotebookPdf(
 ): Promise<void> {
   if (pages.length === 0) return;
   const sheetUrls = await Promise.all(pages.map((p) => renderSheet(p, strokes, shapes, images)));
+  // Printed page size: 210mm wide, height scaled to the sheet's aspect ratio, so
+  // A4/Letter/Legal/Square all keep their proportions (A4 lands back at 297mm).
+  const w0 = pages[0].width || A4_W;
+  const h0 = pages[0].height || A4_H;
+  const pwMm = 210;
+  const phMm = Math.round(((210 * h0) / w0) * 10) / 10;
 
   const win = window.open("", "_blank");
   if (!win) {
@@ -357,11 +419,11 @@ export async function exportNotebookPdf(
 <title>Notebook</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-@page { size: A4 portrait; margin: 0; }
+@page { size: ${pwMm}mm ${phMm}mm; margin: 0; }
 html, body { background: #fff; }
-.sheet { width: 210mm; height: 297mm; overflow: hidden; page-break-after: always; }
+.sheet { width: ${pwMm}mm; height: ${phMm}mm; overflow: hidden; page-break-after: always; }
 .sheet:last-child { page-break-after: auto; }
-img { width: 210mm; height: 297mm; display: block; }
+img { width: ${pwMm}mm; height: ${phMm}mm; display: block; }
 @media screen {
   body { background: #e5e7eb; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 12px; }
   .sheet { box-shadow: 0 4px 24px rgba(0,0,0,.18); }
