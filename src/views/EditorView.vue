@@ -100,6 +100,17 @@ watch(
   },
 );
 
+watch(
+  () => live.pendingViewerStrokes.length,
+  async (len) => {
+    if (len === 0) return;
+    const strokes = live.clearPendingViewerStrokes();
+    for (const stroke of strokes) {
+      await editor.commitStroke(stroke);
+    }
+  },
+);
+
 onBeforeUnmount(() => {
   live.stop();
   window.removeEventListener("keydown", onKey);

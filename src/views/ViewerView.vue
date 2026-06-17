@@ -13,6 +13,11 @@ const showThumbs = ref(false);
 const fullscreen = ref(false);
 const copied = ref(false);
 
+// Viewer drawing tools (active only when the host has granted edit permission).
+const viewerTool = ref<"pen">("pen");
+const viewerColor = ref("#0f172a");
+const viewerSize = ref(4);
+
 const offerToken = computed(() => {
   const token = route.query.offer;
   return typeof token === "string" ? token : "";
@@ -131,7 +136,11 @@ async function copyResponse() {
       <ViewerStage
         v-if="live.viewerCurrentPage || (live.viewerIsNotebook && live.viewerPages.length)"
         :page="live.viewerCurrentPage ?? live.viewerPages[0]"
+        :tool="viewerTool"
+        :color="viewerColor"
+        :size="viewerSize"
       />
+
       <div v-else class="state">
         <div v-if="live.status === 'error'" class="error-state">
           <div class="state-title">Couldn't connect</div>
@@ -171,6 +180,50 @@ async function copyResponse() {
             <div class="muted url-hint">Share this token back with the host to finish pairing.</div>
           </div>
         </div>
+      </div>
+
+      <!-- Viewer drawing toolbar — shown only when the host has granted edit -->
+      <div
+        v-if="live.viewerCanEdit && live.status === 'connected'"
+        class="viewer-toolbar"
+        role="toolbar"
+        aria-label="Drawing tools"
+      >
+        <button
+          class="vtool-btn"
+          :class="{ active: viewerTool === 'pen' }"
+          @click="viewerTool = 'pen'"
+          aria-label="Pen tool"
+          title="Pen"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+            <path d="m15 5 4 4" />
+          </svg>
+        </button>
+        <div class="vtool-sep" aria-hidden="true"></div>
+        <button
+          v-for="c in ['#0f172a', '#ef4444', '#3b82f6', '#22c55e', '#eab308']"
+          :key="c"
+          class="vswatch"
+          :class="{ active: viewerColor === c }"
+          :style="{ background: c }"
+          :aria-label="`Colour ${c}`"
+          :title="c"
+          @click="viewerColor = c"
+        ></button>
+        <div class="vtool-sep" aria-hidden="true"></div>
+        <input
+          class="vsize-slider"
+          type="range"
+          min="2"
+          max="30"
+          :value="viewerSize"
+          @input="viewerSize = Number(($event.target as HTMLInputElement).value)"
+          aria-label="Brush size"
+          title="Size"
+        />
       </div>
 
       <div v-if="showThumbs && !live.viewerIsNotebook && live.viewerPages.length > 1" class="page-strip" role="tablist">
@@ -439,6 +492,69 @@ async function copyResponse() {
   position: absolute;
   top: calc(var(--space-3) + var(--safe-top));
   right: calc(var(--space-3) + var(--safe-right));
+}
+
+/* ── Viewer drawing toolbar ── */
+.viewer-toolbar {
+  position: absolute;
+  bottom: calc(var(--space-5) + var(--safe-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-glass-bg-strong, var(--color-surface));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--color-glass-border, var(--color-border));
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-md);
+  z-index: 20;
+}
+.vtool-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  transition: background 80ms ease, color 80ms ease;
+}
+.vtool-btn:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+.vtool-btn.active {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+.vtool-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--color-border);
+  flex-shrink: 0;
+}
+.vswatch {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  flex-shrink: 0;
+  transition: border-color 80ms ease, transform 80ms ease;
+}
+.vswatch:hover {
+  transform: scale(1.15);
+}
+.vswatch.active {
+  border-color: var(--color-text);
+  transform: scale(1.15);
+}
+.vsize-slider {
+  width: 72px;
+  accent-color: var(--color-accent);
+  cursor: pointer;
 }
 
 @media (max-width: 767px) {

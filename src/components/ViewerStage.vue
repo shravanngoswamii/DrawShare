@@ -3,12 +3,18 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Canvas2DRenderer } from "@/adapters/render/canvas2d";
 import { drawStack, resolveSheetColors, type SheetColors } from "@/composables/useStackRenderer";
 import { useTheme } from "@/composables/useTheme";
+import { newId } from "@/core/ids";
 import { adaptInk } from "@/core/ink";
 import { PAGE_H, PAGE_W, sheetWorldPos } from "@/core/layout";
-import type { Page } from "@/core/types";
+import type { Page, Stroke, StrokePoint } from "@/core/types";
 import { useLiveStore } from "@/stores/live";
 
-const props = defineProps<{ page: Page }>();
+const props = defineProps<{
+  page: Page;
+  tool?: "pen";
+  color?: string;
+  size?: number;
+}>();
 const live = useLiveStore();
 const { isDark } = useTheme();
 
@@ -111,6 +117,91 @@ function schedule() {
   requestAnimationFrame(render);
 }
 
+// ── Viewer editing (only when the host has granted permission) ──
+// screenCam is the reconstructed world camera (also used by the presenter overlay).
+function screenToWorld(sx: number, sy: number): { x: number; y: number } {
+  const { x, y, zoom } = screenCam.value;
+  return { x: sx / zoom + x, y: sy / zoom + y };
+}
+
+let drawingStroke: Stroke | undefined;
+let activePointerId: number | undefined;
+
+function onPointerDown(ev: PointerEvent) {
+  if (!live.viewerCanEdit) return;
+  if (activePointerId !== undefined || !wrap.value) return;
+  ev.preventDefault();
+  wrap.value.setPointerCapture(ev.pointerId);
+  activePointerId = ev.pointerId;
+  const rect = wrap.value.getBoundingClientRect();
+  const wp = screenToWorld(ev.clientX - rect.left, ev.clientY - rect.top);
+  const now = Date.now();
+  const stroke: Stroke = {
+    id: newId(),
+    pageId: props.page.id,
+    tool: "pen",
+    penType: "ballpoint",
+    color: props.color ?? "#0f172a",
+    size: props.size ?? 4,
+    opacity: 1,
+    points: [{ x: wp.x, y: wp.y, p: ev.pressure || 0.5, t: now }],
+    createdAt: now,
+  };
+  drawingStroke = stroke;
+  live.setViewerOwnLive({ ...stroke });
+  live.sendViewerStroke({ t: "viewer-stroke-begin", stroke: { ...stroke } });
+  schedule();
+}
+
+function onPointerMove(ev: PointerEvent) {
+  if (activePointerId !== ev.pointerId || !drawingStroke || !wrap.value) return;
+  ev.preventDefault();
+  const rect = wrap.value.getBoundingClientRect();
+  const wp = screenToWorld(ev.clientX - rect.left, ev.clientY - rect.top);
+  const point: StrokePoint = { x: wp.x, y: wp.y, p: ev.pressure || 0.5, t: Date.now() };
+  const from = drawingStroke.points.length;
+  drawingStroke.points = [...drawingStroke.points, point];
+  live.setViewerOwnLive({ ...drawingStroke });
+  live.sendViewerStroke({
+    t: "viewer-stroke-points",
+    pageId: drawingStroke.pageId,
+    strokeId: drawingStroke.id,
+    points: [point],
+    from,
+  });
+  schedule();
+}
+
+function onPointerUp(ev: PointerEvent) {
+  if (activePointerId !== ev.pointerId) return;
+  activePointerId = undefined;
+  if (!drawingStroke) return;
+  const finalized = { ...drawingStroke };
+  drawingStroke = undefined;
+  // Optimistic local commit; the host echoes a stroke-commit which the existing
+  // dedupe drops, so it isn't drawn twice.
+  live.viewerStrokes = [...live.viewerStrokes, finalized];
+  dirtyBase = true;
+  live.setViewerOwnLive(undefined);
+  live.sendViewerStroke({ t: "viewer-stroke-commit", stroke: finalized });
+  schedule();
+}
+
+function onPointerCancel(ev: PointerEvent) {
+  if (activePointerId !== ev.pointerId) return;
+  if (drawingStroke) {
+    live.sendViewerStroke({
+      t: "viewer-stroke-cancel",
+      pageId: drawingStroke.pageId,
+      strokeId: drawingStroke.id,
+    });
+  }
+  drawingStroke = undefined;
+  activePointerId = undefined;
+  live.setViewerOwnLive(undefined);
+  schedule();
+}
+
 function render() {
   frameQueued = false;
   if (dirtyBase) {
@@ -161,6 +252,13 @@ function render() {
       liveRenderer.endFrame();
     }
   }
+  // The viewer's own in-progress stroke (already in world coords from screenToWorld).
+  if (live.viewerOwnLive && live.viewerOwnLive.points.length > 0) {
+    liveRenderer.setCamera({ x: cam.x, y: cam.y, zoom: cam.zoom });
+    liveRenderer.beginFrame();
+    liveRenderer.drawLive(live.viewerOwnLive);
+    liveRenderer.endFrame();
+  }
 }
 
 watch(
@@ -195,6 +293,12 @@ watch(
 
 watch(
   () => live.viewerLive,
+  () => schedule(),
+  { deep: true },
+);
+
+watch(
+  () => live.viewerOwnLive,
   () => schedule(),
   { deep: true },
 );
@@ -298,10 +402,18 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="stage" ref="wrap" :class="{ 'is-notebook': live.viewerIsNotebook }">
+  <div
+    class="stage"
+    ref="wrap"
+    :class="{ 'is-notebook': live.viewerIsNotebook }"
+    @pointerdown="onPointerDown"
+    @pointermove="onPointerMove"
+    @pointerup="onPointerUp"
+    @pointercancel="onPointerCancel"
+  >
     <div v-if="!live.viewerIsNotebook" class="page-bg" :class="`bg-${props.page.background}`" :style="pageBgStyle" aria-hidden="true"></div>
     <canvas ref="baseEl" class="layer"></canvas>
-    <canvas ref="liveEl" class="layer"></canvas>
+    <canvas ref="liveEl" class="layer" :class="{ 'layer-interactive': live.viewerCanEdit }"></canvas>
     <svg
       v-if="presenterScreen && presenterScreen.mode === 'laser' && viewerLaserTrail.length > 1"
       class="laser-trail"
@@ -422,5 +534,11 @@ onBeforeUnmount(() => {
     transparent 85px,
     rgba(0, 0, 0, 0.72) 130px
   );
+}
+
+/* When the host grants edit, the live layer takes pointer input for drawing. */
+.layer-interactive {
+  pointer-events: auto;
+  cursor: crosshair;
 }
 </style>

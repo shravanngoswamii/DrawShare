@@ -48,6 +48,11 @@ interface LiveState {
   viewerNotebookLayout: NotebookLayout;
   viewerAllStrokes: Stroke[];
   viewerAllShapes: Shape[];
+  // Collaborative editing
+  viewerCanEdit: boolean; // viewer: granted permission to draw
+  viewerOwnLive: Stroke | undefined; // viewer: own in-progress stroke (local preview)
+  hostGrantedEdit: boolean; // host: whether permission is currently granted
+  pendingViewerStrokes: Stroke[]; // host: viewer-committed strokes awaiting persist
 }
 
 let session: WebRTCSession | undefined;
@@ -98,6 +103,10 @@ export const useLiveStore = defineStore("live", {
     viewerNotebookLayout: "vertical",
     viewerAllStrokes: [],
     viewerAllShapes: [],
+    viewerCanEdit: false,
+    viewerOwnLive: undefined,
+    hostGrantedEdit: false,
+    pendingViewerStrokes: [],
   }),
   getters: {
     viewerCurrentPage(state): Page | undefined {
@@ -168,6 +177,14 @@ export const useLiveStore = defineStore("live", {
             if (session !== activeSession) return;
             this.viewerCount = Math.max(0, this.viewerCount - 1);
           },
+          onViewerMessage: (msg) => {
+            if (session !== activeSession) return;
+            // A permitted viewer committed a stroke — queue it for the editor to
+            // persist + broadcast back (completing the round-trip).
+            if (msg.t === "viewer-stroke-commit") {
+              this.pendingViewerStrokes = [...this.pendingViewerStrokes, msg.stroke];
+            }
+          },
           onError: (err) => {
             if (session !== activeSession) return;
             this.error = err.message;
@@ -231,6 +248,10 @@ export const useLiveStore = defineStore("live", {
       this.viewerNotebookLayout = "vertical";
       this.viewerAllStrokes = [];
       this.viewerAllShapes = [];
+      this.viewerCanEdit = false;
+      this.viewerOwnLive = undefined;
+      this.hostGrantedEdit = false;
+      this.pendingViewerStrokes = [];
       this.offerToken = "";
       this.viewerResponseToken = "";
     },
@@ -368,6 +389,30 @@ export const useLiveStore = defineStore("live", {
     broadcast(msg: SyncMessage) {
       if (this.mode !== "host") return;
       session?.send(msg);
+    },
+
+    // ── Collaborative editing ──
+    grantEdit() {
+      if (this.mode !== "host") return;
+      this.hostGrantedEdit = true;
+      session?.send({ t: "grant-edit" });
+    },
+    revokeEdit() {
+      if (this.mode !== "host") return;
+      this.hostGrantedEdit = false;
+      session?.send({ t: "revoke-edit" });
+    },
+    setViewerOwnLive(stroke: Stroke | undefined) {
+      this.viewerOwnLive = stroke;
+    },
+    sendViewerStroke(msg: SyncMessage) {
+      if (this.mode !== "viewer") return;
+      session?.send(msg);
+    },
+    clearPendingViewerStrokes(): Stroke[] {
+      const pending = [...this.pendingViewerStrokes];
+      this.pendingViewerStrokes = [];
+      return pending;
     },
 
     // Re-snapshot the notebook to viewers (mode/layout/pages), then stream the
@@ -579,6 +624,20 @@ export const useLiveStore = defineStore("live", {
           this.viewerPresenter = null;
           break;
         }
+        case "grant-edit":
+          this.viewerCanEdit = true;
+          break;
+        case "revoke-edit":
+          this.viewerCanEdit = false;
+          this.viewerOwnLive = undefined;
+          break;
+        // Viewer-origin stroke messages are consumed by the host via
+        // onViewerMessage; they never reach a viewer's applyMessage.
+        case "viewer-stroke-begin":
+        case "viewer-stroke-points":
+        case "viewer-stroke-commit":
+        case "viewer-stroke-cancel":
+          break;
         case "viewer-ready":
           break;
       }

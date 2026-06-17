@@ -85,11 +85,27 @@ export type SyncMessage =
   | { t: "presenter-off" }
   | { t: "layer-add"; layer: Layer }
   | { t: "layer-delete"; layerId: ID }
-  | { t: "layer-update"; layer: Layer };
+  | { t: "layer-update"; layer: Layer }
+  // Collaborative editing: host grants/revokes a viewer's draw permission, and a
+  // permitted viewer streams its own strokes back to the host (same shape as the
+  // host stroke messages).
+  | { t: "grant-edit" }
+  | { t: "revoke-edit" }
+  | { t: "viewer-stroke-begin"; stroke: Stroke }
+  | {
+      t: "viewer-stroke-points";
+      pageId: string;
+      strokeId: string;
+      points: StrokePoint[];
+      from: number;
+    }
+  | { t: "viewer-stroke-commit"; stroke: Stroke }
+  | { t: "viewer-stroke-cancel"; pageId: string; strokeId: string };
 
 export interface SessionHostHandlers {
   onViewerJoin(viewerId: string): void;
   onViewerLeave(viewerId: string): void;
+  onViewerMessage?(msg: SyncMessage): void;
   onError(err: Error): void;
 }
 
