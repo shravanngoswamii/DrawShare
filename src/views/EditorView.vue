@@ -176,7 +176,7 @@ onBeforeUnmount(() => removeProbe?.());
       <button
         v-if="hasContent && !replay.active"
         class="replay-fab"
-        :class="{ quiet: editor.isDrawing }"
+        :class="{ quiet: editor.isDrawing, shifted: !pagesCollapsed }"
         title="Replay how this page was drawn"
         aria-label="Replay how this page was drawn"
         @click="startReplay()"
@@ -189,7 +189,7 @@ onBeforeUnmount(() => removeProbe?.());
       <ReplayControls v-if="replay.active" />
       <button
         class="help-fab"
-        :class="{ quiet: editor.isDrawing, active: helpOpen }"
+        :class="{ quiet: editor.isDrawing, active: helpOpen, shifted: !pagesCollapsed }"
         @click="helpOpen = !helpOpen"
         title="Help"
         aria-label="Help"
@@ -390,7 +390,7 @@ onBeforeUnmount(() => removeProbe?.());
   border: 1px solid var(--color-glass-border);
   box-shadow: 0 4px 14px var(--color-glass-shadow), 0 1px 2px var(--color-glass-shadow);
   color: var(--color-accent);
-  transition: transform 100ms ease, box-shadow 150ms ease, opacity 150ms ease;
+  transition: transform 100ms ease, box-shadow 150ms ease, opacity 150ms ease, right 200ms ease;
 }
 
 .replay-fab:hover {
@@ -426,11 +426,18 @@ onBeforeUnmount(() => removeProbe?.());
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: box-shadow 150ms, color 80ms, background 80ms, opacity 150ms;
+  transition: box-shadow 150ms, color 80ms, background 80ms, opacity 150ms, right 200ms ease;
 }
 .help-fab:hover { box-shadow: var(--shadow-md); color: var(--color-text); }
 .help-fab.active { background: var(--color-accent-soft); color: var(--color-accent); border-color: var(--color-accent); }
 .help-fab.quiet { opacity: 0.06; pointer-events: none; }
+
+/* When the pages panel is open on desktop it owns the right edge, so slide the
+   corner FABs left to sit just clear of it. (Mobile panel is a drawer — no shift.) */
+@media (min-width: 768px) {
+  .help-fab.shifted { right: calc(var(--sidepanel-w) + 20px); }
+  .replay-fab.shifted { right: calc(var(--sidepanel-w) + 16px); }
+}
 
 .hub-btn {
   position: absolute;
