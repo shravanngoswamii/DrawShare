@@ -20,7 +20,7 @@ import type {
 } from "@/core/types";
 import { dlog } from "@/debug";
 import { useLiveStore } from "./live";
-import { DEFAULT_PAGE_SIZE, useProjectsStore } from "./projects";
+import { useProjectsStore } from "./projects";
 
 // Sub-interval [t1, t2] of segment A→B that lies inside the eraser — a circle of
 // the given radius, or (square) a box of half-size radius — centred at (wx, wy);
@@ -294,8 +294,9 @@ export const useEditorStore = defineStore("editor", {
         projectId: this.project.id,
         index,
         name: `Page ${index + 1}`,
-        width: DEFAULT_PAGE_SIZE.width,
-        height: DEFAULT_PAGE_SIZE.height,
+        // Default to no fixed boundary (infinite canvas); 0×0 means "None".
+        width: 0,
+        height: 0,
         background: "blank",
         originX: 0,
         originY: 0,

@@ -55,8 +55,9 @@ export const useProjectsStore = defineStore("projects", {
         projectId: project.id,
         index: 0,
         name: "Page 1",
-        width: A4_PORTRAIT.width,
-        height: A4_PORTRAIT.height,
+        // New projects start as an infinite canvas (no page boundary); 0×0 = "None".
+        width: 0,
+        height: 0,
         background: "blank",
         originX: 0,
         originY: 0,
