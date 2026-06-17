@@ -319,7 +319,50 @@ function removeSnapshot() {
 <template>
   <div class="wrap" :class="{ 'is-open': open }">
     <div class="backdrop" @click="emit('close')"></div>
-    <aside class="panel" :class="{ 'is-collapsed': collapsed, quiet: editor.isDrawing }" aria-label="Pages and settings">
+
+    <!-- Collapsed (desktop): a slim vertical dock with just the essentials —
+         expand, theme, live session. The full title shows on hover. -->
+    <div v-if="collapsed" class="mini-dock" :class="{ quiet: editor.isDrawing }" aria-label="Pages, collapsed">
+      <button
+        class="dock-btn dock-expand"
+        @click="emit('toggle')"
+        :title="`Open ${editor.project?.name ?? 'panel'} · ${editor.pages.length} page${editor.pages.length === 1 ? '' : 's'}`"
+        aria-label="Expand pages panel"
+      >
+        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="currentColor" fill-rule="evenodd" d="M10 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-8zM9 7H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3zM4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" clip-rule="evenodd"/>
+        </svg>
+        <span class="dock-count" aria-hidden="true">{{ editor.pages.length }}</span>
+      </button>
+      <span class="dock-divider" aria-hidden="true"></span>
+      <button
+        class="dock-btn"
+        @click="toggleTheme()"
+        :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
+        :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
+      >
+        <svg v-if="isDark" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+        </svg>
+        <svg v-else width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+        </svg>
+      </button>
+      <button
+        class="dock-btn dock-live"
+        :class="{ live: live.isHosting }"
+        @click="emit('share')"
+        :title="live.isHosting ? `Live session · ${live.code}` : 'Start a live session'"
+        :aria-label="live.isHosting ? `Live session active, code ${live.code}` : 'Start a live session'"
+      >
+        <span v-if="live.isHosting" class="live-dot" aria-hidden="true"></span>
+        <svg v-else width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9" /><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5" /><circle cx="12" cy="12" r="2" /><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5" /><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1" />
+        </svg>
+      </button>
+    </div>
+
+    <aside v-else class="panel" :class="{ quiet: editor.isDrawing }" aria-label="Pages and settings">
 
       <!-- ── Header ── -->
       <div class="panel-head">
@@ -766,7 +809,7 @@ function removeSnapshot() {
 }
 .page-rail {
   flex-shrink: 0;
-  width: 78px;
+  width: 68px;
   overflow-y: auto;
   scrollbar-width: thin;
   border-right: 1px solid var(--color-border);
@@ -872,16 +915,77 @@ function removeSnapshot() {
   background: var(--color-surface-2);
 }
 
-.panel.is-collapsed {
-  transform: scale(0);
-  opacity: 0;
-  pointer-events: none;
-}
-
 .panel.quiet {
   opacity: 0.12;
   pointer-events: none;
   transition: opacity 150ms ease;
+}
+
+/* ── Collapsed: slim vertical dock ── */
+.mini-dock {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  background: var(--color-glass-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--color-glass-border);
+  border-radius: 14px;
+  box-shadow: 0 8px 24px var(--color-glass-shadow), 0 2px 6px var(--color-glass-shadow);
+  transition: opacity 150ms ease;
+}
+.mini-dock.quiet {
+  opacity: 0.12;
+  pointer-events: none;
+}
+.dock-btn {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  color: var(--color-text-muted);
+  transition: background 80ms ease, color 80ms ease;
+}
+.dock-btn:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+.dock-expand {
+  color: var(--color-text);
+}
+.dock-count {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 7px;
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+}
+.dock-divider {
+  width: 22px;
+  height: 1px;
+  background: var(--color-border);
+}
+.dock-live.live {
+  color: var(--color-accent);
 }
 
 /* ── Header ── */
@@ -897,7 +1001,9 @@ function removeSnapshot() {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   border-radius: 12px 12px 0 0;
-  z-index: 1;
+  /* Above .menu-backdrop (z-index 15) so the overflow dropdown — which lives in
+     this header's stacking context — stays clickable rather than being covered. */
+  z-index: 20;
 }
 
 .head-icon {
@@ -1550,8 +1656,30 @@ function removeSnapshot() {
   line-height: 1.4;
 }
 
+/* ── Touch devices (iPad, tablets): bigger tap targets so the dense controls —
+   especially the per-layer visibility/lock/reorder/delete row — are reliably
+   hittable with a finger rather than a mouse. ── */
+@media (pointer: coarse) {
+  .layer-icon-btn { width: 30px; height: 30px; }
+  .layer-reorder .layer-icon-btn { height: 24px; }
+  .layer-row { gap: 6px; padding: 6px var(--space-2); min-height: 44px; }
+  .head-icon { width: 36px; height: 36px; }
+  .btn-icon { width: 30px; height: 30px; }
+  .head-menu-item { padding: 11px 12px; }
+  .rail-add { aspect-ratio: 1 / 1; }
+}
+
+/* On a roomy touch screen (iPad and up) widen the panel so the page rail and
+   the detail column both breathe; the var also shifts the canvas FABs clear. */
+@media (pointer: coarse) and (min-width: 768px) {
+  :root { --sidepanel-w: 300px; }
+  .page-rail { width: 76px; }
+}
+
 /* ── Mobile — slide-in drawer ── */
 @media (max-width: 767px) {
+  /* Collapse is a desktop affordance; on mobile the panel is a drawer. */
+  .mini-dock { display: none; }
   .wrap {
     display: block;
     position: fixed;
