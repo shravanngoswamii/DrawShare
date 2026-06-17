@@ -21,6 +21,8 @@ const shapeTools: { id: ShapeType; label: string }[] = [
   { id: "arrow", label: "Arrow" },
 ];
 
+const isShapeTool = computed(() => shapeTools.some((t) => t.id === editor.tool));
+
 const presetColors = [
   "#0f172a",
   "#1d4ed8",
@@ -32,10 +34,23 @@ const presetColors = [
   "#a16207",
 ];
 
-type Popover = "color" | "size" | "eraser" | null;
+type Popover = "color" | "size" | "eraser" | "shapes" | "present" | null;
 const popover = ref<Popover>(null);
 function toggle(p: Exclude<Popover, null>) {
   popover.value = popover.value === p ? null : p;
+}
+
+// Pick a shape from the shapes flyout, then close it.
+function pickShape(id: ShapeType) {
+  editor.setTool(id);
+  popover.value = null;
+}
+
+// Toggle a presenter mode from the Present flyout, then close it so it doesn't
+// sit over the canvas you're about to point at.
+function pickPresenter(mode: "laser" | "spotlight") {
+  editor.setPresenterMode(editor.presenterMode === mode ? "off" : mode);
+  popover.value = null;
 }
 
 function onEraserClick() {
@@ -317,49 +332,33 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- Pen type selector — visible only when pen tool is active -->
-      <template v-if="editor.tool === 'pen'">
-        <div class="divider"></div>
-        <div class="group pen-types">
-          <!-- Ballpoint: thin precise stroke -->
-          <button class="pen-type-btn" :class="{ active: editor.penType === 'ballpoint' }"
-                  title="Ballpoint" aria-label="Ballpoint"
-                  :aria-pressed="editor.penType === 'ballpoint'"
-                  @click="editor.setPenType('ballpoint')">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M4 20 C7 16 12 11 20 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-            </svg>
-          </button>
-          <!-- Brush: calligraphic variable-width (thick start → thin end) -->
-          <button class="pen-type-btn" :class="{ active: editor.penType === 'brush' }"
-                  title="Brush" aria-label="Brush"
-                  :aria-pressed="editor.penType === 'brush'"
-                  @click="editor.setPenType('brush')">
-            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M3 21 C6 17 10 13 14 9 C17 6 20 4 21 3 C20 5 17 8 14 11 C10 15 7 18 4 22 Z" fill="currentColor"/>
-            </svg>
-          </button>
-          <!-- Marker: thick uniform flat-capped stroke -->
-          <button class="pen-type-btn" :class="{ active: editor.penType === 'marker' }"
-                  title="Marker" aria-label="Marker"
-                  :aria-pressed="editor.penType === 'marker'"
-                  @click="editor.setPenType('marker')">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M4 20 L19 5" stroke="currentColor" stroke-width="7" stroke-linecap="square"/>
-            </svg>
-          </button>
-        </div>
-      </template>
-
       <div class="divider"></div>
 
-      <div class="group">
-        <button v-for="t in shapeTools" :key="t.id" class="tool" :class="{ active: editor.tool === t.id }" :aria-pressed="editor.tool === t.id" :title="t.label" @click="editor.setTool(t.id)">
-          <svg v-if="t.id === 'rect'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
-          <svg v-else-if="t.id === 'ellipse'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="10" ry="6"/></svg>
-          <svg v-else-if="t.id === 'line'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="20" x2="20" y2="4"/></svg>
-          <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19L19 5"/><path d="M9 5h10v10"/></svg>
+      <!-- Shapes: one button opens a flyout with the four shapes -->
+      <div class="pop-wrap group">
+        <button
+          class="tool"
+          :class="{ active: isShapeTool }"
+          :aria-pressed="isShapeTool"
+          :aria-expanded="popover === 'shapes'"
+          title="Shapes"
+          aria-label="Shapes"
+          @click="toggle('shapes')"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="13" height="13" rx="2" /><circle cx="16" cy="16" r="5" />
+          </svg>
         </button>
+        <div v-if="popover === 'shapes'" class="popover" :class="`pop-${dock}`" role="dialog" aria-label="Shapes">
+          <div class="flyout-row">
+            <button v-for="t in shapeTools" :key="t.id" class="tool" :class="{ active: editor.tool === t.id }" :aria-pressed="editor.tool === t.id" :title="t.label" :aria-label="t.label" @click="pickShape(t.id)">
+              <svg v-if="t.id === 'rect'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+              <svg v-else-if="t.id === 'ellipse'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="10" ry="6"/></svg>
+              <svg v-else-if="t.id === 'line'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="20" x2="20" y2="4"/></svg>
+              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19L19 5"/><path d="M9 5h10v10"/></svg>
+            </button>
+          </div>
+        </div>
       </div>
 
       <div class="divider"></div>
@@ -375,6 +374,21 @@ onMounted(() => {
             <input class="range" type="range" min="1" max="40" :value="editor.size" aria-label="Stroke size slider" @input="setSize(Number(($event.target as HTMLInputElement).value))" />
             <input class="num" type="number" min="1" max="200" :value="editor.size" aria-label="Stroke size value" @input="setSize(Number(($event.target as HTMLInputElement).value))" />
           </div>
+          <!-- Pen nib lives with the pen's other properties -->
+          <template v-if="editor.tool === 'pen'">
+            <div class="pop-sub" id="pen-type-label">Pen</div>
+            <div class="flyout-row" role="group" aria-labelledby="pen-type-label">
+              <button class="pen-type-btn" :class="{ active: editor.penType === 'ballpoint' }" title="Ballpoint" aria-label="Ballpoint" :aria-pressed="editor.penType === 'ballpoint'" @click="editor.setPenType('ballpoint')">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20 C7 16 12 11 20 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              </button>
+              <button class="pen-type-btn" :class="{ active: editor.penType === 'brush' }" title="Brush" aria-label="Brush" :aria-pressed="editor.penType === 'brush'" @click="editor.setPenType('brush')">
+                <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21 C6 17 10 13 14 9 C17 6 20 4 21 3 C20 5 17 8 14 11 C10 15 7 18 4 22 Z" fill="currentColor"/></svg>
+              </button>
+              <button class="pen-type-btn" :class="{ active: editor.penType === 'marker' }" title="Marker" aria-label="Marker" :aria-pressed="editor.penType === 'marker'" @click="editor.setPenType('marker')">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20 L19 5" stroke="currentColor" stroke-width="7" stroke-linecap="square"/></svg>
+              </button>
+            </div>
+          </template>
         </div>
       </div>
 
@@ -431,39 +445,40 @@ onMounted(() => {
 
       <div class="divider"></div>
 
-      <!-- Presenter aids: laser pointer + spotlight -->
-      <div class="group">
+      <!-- Presenter aids: one button opens a flyout with laser + spotlight -->
+      <div class="pop-wrap group">
         <button
           class="tool"
-          :class="{ active: editor.presenterMode === 'laser' }"
-          :aria-pressed="editor.presenterMode === 'laser'"
-          title="Laser pointer"
-          aria-label="Laser pointer"
-          @click="editor.setPresenterMode(editor.presenterMode === 'laser' ? 'off' : 'laser')"
+          :class="{ active: editor.presenterMode !== 'off' }"
+          :aria-pressed="editor.presenterMode !== 'off'"
+          :aria-expanded="popover === 'present'"
+          title="Present"
+          aria-label="Presenter tools"
+          @click="toggle('present')"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="3" />
-            <line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/>
-            <line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/>
-            <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/>
-            <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/>
-            <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/>
-            <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>
+            <line x1="12" y1="3" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="21"/>
+            <line x1="3" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="21" y2="12"/>
           </svg>
         </button>
-        <button
-          class="tool"
-          :class="{ active: editor.presenterMode === 'spotlight' }"
-          :aria-pressed="editor.presenterMode === 'spotlight'"
-          title="Spotlight"
-          aria-label="Spotlight"
-          @click="editor.setPresenterMode(editor.presenterMode === 'spotlight' ? 'off' : 'spotlight')"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="4" />
-            <circle cx="12" cy="12" r="9" stroke-dasharray="3 3" stroke-opacity="0.5" />
-          </svg>
-        </button>
+        <div v-if="popover === 'present'" class="popover" :class="`pop-${dock}`" role="dialog" aria-label="Presenter tools">
+          <div class="pop-title">Present</div>
+          <div class="present-list">
+            <button class="present-item" :class="{ active: editor.presenterMode === 'laser' }" :aria-pressed="editor.presenterMode === 'laser'" @click="pickPresenter('laser')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="3" /><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>
+              </svg>
+              <span>Laser pointer</span>
+            </button>
+            <button class="present-item" :class="{ active: editor.presenterMode === 'spotlight' }" :aria-pressed="editor.presenterMode === 'spotlight'" @click="pickPresenter('spotlight')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="4" /><circle cx="12" cy="12" r="9" stroke-dasharray="3 3" stroke-opacity="0.5" />
+              </svg>
+              <span>Spotlight</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -559,8 +574,6 @@ onMounted(() => {
 .tool:disabled { opacity: 0.4; cursor: not-allowed; }
 .tool.active { background: var(--color-accent-soft); color: var(--color-accent); }
 
-.pen-types { gap: var(--space-1); }
-
 .pen-type-btn {
   width: 38px;
   height: 36px;
@@ -648,6 +661,25 @@ onMounted(() => {
   background: var(--color-surface-2);
 }
 .seg button.active { background: var(--color-accent-soft); color: var(--color-accent); }
+
+/* Row of icon buttons inside a flyout (shapes, pen nibs) */
+.flyout-row { display: flex; gap: 4px; }
+
+/* Present flyout: labelled rows */
+.present-list { display: flex; flex-direction: column; gap: 4px; }
+.present-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.present-item:hover { background: var(--color-surface-2); color: var(--color-text); }
+.present-item.active { background: var(--color-accent-soft); color: var(--color-accent); }
 
 .swatches { display: grid; grid-template-columns: repeat(8, 18px); gap: 6px; }
 .swatch {
