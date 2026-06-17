@@ -11,7 +11,7 @@ import { useThumbnails } from "@/composables/useThumbnails";
 import { devMode, setDevMode } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
-import { PAPER_SIZES, useProjectsStore } from "@/stores/projects";
+import { useProjectsStore } from "@/stores/projects";
 
 const props = defineProps<{ open?: boolean; collapsed?: boolean }>();
 const emit = defineEmits<{ close: []; toggle: []; share: [] }>();
@@ -206,52 +206,6 @@ async function exportCurrentPage() {
 async function exportNotebookPdf() {
   if (editor.pages.length === 0) return;
   await exportNotebookPdfToPrint(editor.pages, editor.strokes, editor.shapes, editor.images);
-}
-
-const paperSizes = PAPER_SIZES;
-
-const isLandscape = computed(() => {
-  const p = editor.currentPage;
-  return p ? p.width > p.height : false;
-});
-
-function isActivePaperSize(sz: (typeof PAPER_SIZES)[number]) {
-  const p = editor.currentPage;
-  if (!p) return false;
-  const pw = Math.min(p.width, p.height);
-  const ph = Math.max(p.width, p.height);
-  const sw = Math.min(sz.width, sz.height);
-  const sh = Math.max(sz.width, sz.height);
-  return pw === sw && ph === sh;
-}
-
-async function setPaperSize(sz: (typeof PAPER_SIZES)[number]) {
-  const page = editor.currentPage;
-  if (!page) return;
-  const landscape = isLandscape.value;
-  const w = landscape ? sz.height : sz.width;
-  const h = landscape ? sz.width : sz.height;
-  await editor.setPageSize(page.id, w, h);
-}
-
-async function setOrientation(orient: "portrait" | "landscape") {
-  const page = editor.currentPage;
-  if (!page) return;
-  const needsSwap = orient === "landscape" ? page.width < page.height : page.width > page.height;
-  if (needsSwap) await editor.setPageSize(page.id, page.height, page.width);
-}
-
-// "None": no fixed page boundary (true infinite canvas — no frame, export fits
-// the drawing). Stored as 0×0 dimensions.
-const isNoPageSize = computed(() => {
-  const p = editor.currentPage;
-  return p ? !p.width || !p.height : false;
-});
-
-async function setNoPageSize() {
-  const page = editor.currentPage;
-  if (!page) return;
-  await editor.setPageSize(page.id, 0, 0);
 }
 
 const snapshotUrl = ref<string | null>(null);
@@ -585,16 +539,14 @@ function removeSnapshot() {
         </div>
       </div>
 
-      <!-- ── Page setup (collapsible: background, size, canvas mode) ── -->
+      <!-- ── Background (collapsible) ── -->
       <div class="section group-section">
         <button class="group-toggle" :aria-expanded="showSetup" @click="showSetup = !showSetup">
-          <span class="section-title">Page setup</span>
+          <span class="section-title">Background</span>
           <svg class="chev" :class="{ open: showSetup }" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
         </button>
         <div v-if="showSetup" class="group-body">
-      <!-- Background -->
       <div class="subsection">
-        <div class="sub-title">Background</div>
         <div class="bg-grid">
           <button
             v-for="b in backgrounds"
@@ -610,83 +562,6 @@ function removeSnapshot() {
         </div>
       </div>
 
-      <!-- Page size (Free mode only; notebook mode uses fixed A4 sheets) -->
-      <div v-if="editor.notebookMode === 'off'" class="subsection">
-        <div class="sub-title">Page size</div>
-        <div class="bg-grid">
-          <button
-            v-for="sz in paperSizes"
-            :key="sz.id"
-            class="bg-btn"
-            :class="{ active: isActivePaperSize(sz) }"
-            :aria-pressed="isActivePaperSize(sz)"
-            :aria-label="`${sz.label} page size`"
-            @click="setPaperSize(sz)"
-          >
-            {{ sz.label }}
-          </button>
-        </div>
-        <button
-          class="bg-btn none-btn"
-          :class="{ active: isNoPageSize }"
-          :aria-pressed="isNoPageSize"
-          @click="setNoPageSize"
-          title="No page boundary — infinite canvas"
-          aria-label="No page boundary — infinite canvas"
-        >
-          None (infinite canvas)
-        </button>
-        <div v-if="!isNoPageSize" class="orient-row">
-          <button
-            class="orient-btn"
-            :class="{ active: !isLandscape }"
-            :aria-pressed="!isLandscape"
-            @click="setOrientation('portrait')"
-            title="Portrait"
-            aria-label="Portrait orientation"
-          >
-            <svg width="11" height="15" viewBox="0 0 11 15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-              <rect x="0.75" y="0.75" width="9.5" height="13.5" rx="1.25"/>
-            </svg>
-            Portrait
-          </button>
-          <button
-            class="orient-btn"
-            :class="{ active: isLandscape }"
-            :aria-pressed="isLandscape"
-            @click="setOrientation('landscape')"
-            title="Landscape"
-            aria-label="Landscape orientation"
-          >
-            <svg width="15" height="11" viewBox="0 0 15 11" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-              <rect x="0.75" y="0.75" width="13.5" height="9.5" rx="1.25"/>
-            </svg>
-            Landscape
-          </button>
-        </div>
-      </div>
-
-      <!-- Canvas mode -->
-      <div class="subsection">
-        <div class="sub-title">Canvas mode</div>
-        <div class="mode-btns" role="group" aria-label="Canvas mode">
-          <button class="mode-btn" :class="{ active: editor.notebookMode === 'off' }" :aria-pressed="editor.notebookMode === 'off'" @click="editor.setNotebookMode('off')">Free</button>
-          <button class="mode-btn" :class="{ active: editor.notebookMode === 'notebook' }" :aria-pressed="editor.notebookMode === 'notebook'" @click="editor.setNotebookMode('notebook')">Notebook</button>
-          <button class="mode-btn mode-btn-strict" :class="{ active: editor.notebookMode === 'strict' }" :aria-pressed="editor.notebookMode === 'strict'" @click="editor.setNotebookMode('strict')">Strict</button>
-        </div>
-        <p class="mode-hint">
-          <template v-if="editor.notebookMode === 'off'">Infinite canvas — draw anywhere.</template>
-          <template v-else-if="editor.notebookMode === 'notebook'">A4 sheets as a guide; draw anywhere, only the sheets export.</template>
-          <template v-else>A4 sheets; drawing is locked to the sheet.</template>
-        </p>
-        <div v-if="editor.notebookMode !== 'off'" class="layout-row">
-          <span class="layout-label" id="scroll-layout-label">Scroll</span>
-          <div class="mode-btns layout-btns" role="group" aria-labelledby="scroll-layout-label">
-            <button class="mode-btn" :class="{ active: editor.notebookLayout === 'vertical' }" :aria-pressed="editor.notebookLayout === 'vertical'" @click="editor.setNotebookLayout('vertical')">Vertical</button>
-            <button class="mode-btn" :class="{ active: editor.notebookLayout === 'horizontal' }" :aria-pressed="editor.notebookLayout === 'horizontal'" @click="editor.setNotebookLayout('horizontal')">Horizontal</button>
-          </div>
-        </div>
-      </div>
         </div>
       </div>
 

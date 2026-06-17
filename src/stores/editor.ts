@@ -290,15 +290,18 @@ export const useEditorStore = defineStore("editor", {
     async createPageInternal(index: number): Promise<Page> {
       if (!this.project) throw new Error("No project");
       const now = Date.now();
+      // Inherit the canvas size from page 1 so a notebook stays uniform (every
+      // sheet the same paper size) and a free project stays infinite (0x0). The
+      // size is chosen once at project creation and never changes.
+      const ref = this.pages[0];
       const page: Page = {
         id: newId(),
         projectId: this.project.id,
         index,
         name: `Page ${index + 1}`,
-        // Default to no fixed boundary (infinite canvas); 0×0 means "None".
-        width: 0,
-        height: 0,
-        background: "blank",
+        width: ref?.width ?? 0,
+        height: ref?.height ?? 0,
+        background: ref?.background ?? "blank",
         originX: 0,
         originY: 0,
         createdAt: now,

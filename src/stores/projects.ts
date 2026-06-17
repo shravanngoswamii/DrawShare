@@ -39,9 +39,22 @@ export const useProjectsStore = defineStore("projects", {
       this.projects = all.filter((p) => !(p.deletedAt && now - p.deletedAt > TRASH_RETENTION_MS));
       this.loaded = true;
     },
-    create(name: string): { project: Project; page: Page } {
+    create(
+      name: string,
+      opts?: { mode?: "free" | "notebook"; size?: PaperSizeId },
+    ): { project: Project; page: Page } {
       const now = Date.now();
       const pageId = newId();
+      // Canvas type is fixed at creation. Free = infinite canvas (0x0, no
+      // boundary). Notebook = bounded pages of the chosen paper size; every page
+      // added later inherits that size (createPageInternal copies page 1).
+      let width = 0;
+      let height = 0;
+      if (opts?.mode === "notebook") {
+        const sz = PAPER_SIZES.find((s) => s.id === opts.size) ?? PAPER_SIZES[0];
+        width = sz.width;
+        height = sz.height;
+      }
       const project: Project = {
         id: newId(),
         name: name.trim() || "Untitled",
@@ -55,9 +68,8 @@ export const useProjectsStore = defineStore("projects", {
         projectId: project.id,
         index: 0,
         name: "Page 1",
-        // New projects start as an infinite canvas (no page boundary); 0×0 = "None".
-        width: 0,
-        height: 0,
+        width,
+        height,
         background: "blank",
         originX: 0,
         originY: 0,
