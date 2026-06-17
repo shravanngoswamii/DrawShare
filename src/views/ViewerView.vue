@@ -4,10 +4,6 @@ import { useRoute, useRouter } from "vue-router";
 import ViewerStage from "@/components/ViewerStage.vue";
 import { useLiveStore } from "@/stores/live";
 
-const viewerTool = ref<"pen">("pen");
-const viewerColor = ref("#0f172a");
-const viewerSize = ref(4);
-
 const props = defineProps<{ code: string }>();
 const live = useLiveStore();
 const route = useRoute();
@@ -16,6 +12,11 @@ const router = useRouter();
 const showThumbs = ref(false);
 const fullscreen = ref(false);
 const copied = ref(false);
+
+// Viewer drawing tools (active only when the host has granted edit permission).
+const viewerTool = ref<"pen">("pen");
+const viewerColor = ref("#0f172a");
+const viewerSize = ref(4);
 
 const offerToken = computed(() => {
   const token = route.query.offer;
@@ -61,7 +62,7 @@ async function reconnect() {
 
 function leave() {
   live.stop();
-  router.replace({ name: "projects" });
+  router.replace({ name: "app" });
 }
 
 async function toggleFullscreen() {
@@ -133,56 +134,13 @@ async function copyResponse() {
 
     <main class="stage-wrap">
       <ViewerStage
-        v-if="live.viewerCurrentPage"
-        :page="live.viewerCurrentPage"
+        v-if="live.viewerCurrentPage || (live.viewerIsNotebook && live.viewerPages.length)"
+        :page="live.viewerCurrentPage ?? live.viewerPages[0]"
         :tool="viewerTool"
         :color="viewerColor"
         :size="viewerSize"
       />
 
-      <!-- Viewer drawing toolbar -->
-      <div
-        v-if="live.viewerCanEdit && live.status === 'connected'"
-        class="viewer-toolbar"
-        role="toolbar"
-        aria-label="Drawing tools"
-      >
-        <button
-          class="vtool-btn"
-          :class="{ active: viewerTool === 'pen' }"
-          @click="viewerTool = 'pen'"
-          aria-label="Pen tool"
-          title="Pen"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
-            <path d="m15 5 4 4" />
-          </svg>
-        </button>
-        <div class="vtool-sep" aria-hidden="true"></div>
-        <button
-          v-for="c in ['#0f172a', '#ef4444', '#3b82f6', '#22c55e', '#eab308']"
-          :key="c"
-          class="vswatch"
-          :class="{ active: viewerColor === c }"
-          :style="{ background: c }"
-          :aria-label="`Color ${c}`"
-          :title="c"
-          @click="viewerColor = c"
-        ></button>
-        <div class="vtool-sep" aria-hidden="true"></div>
-        <input
-          class="vsize-slider"
-          type="range"
-          min="2"
-          max="30"
-          :value="viewerSize"
-          @input="viewerSize = Number(($event.target as HTMLInputElement).value)"
-          aria-label="Brush size"
-          title="Size"
-        />
-      </div>
       <div v-else class="state">
         <div v-if="live.status === 'error'" class="error-state">
           <div class="state-title">Couldn't connect</div>
@@ -224,7 +182,51 @@ async function copyResponse() {
         </div>
       </div>
 
-      <div v-if="showThumbs && live.viewerPages.length > 1" class="page-strip" role="tablist">
+      <!-- Viewer drawing toolbar — shown only when the host has granted edit -->
+      <div
+        v-if="live.viewerCanEdit && live.status === 'connected'"
+        class="viewer-toolbar"
+        role="toolbar"
+        aria-label="Drawing tools"
+      >
+        <button
+          class="vtool-btn"
+          :class="{ active: viewerTool === 'pen' }"
+          @click="viewerTool = 'pen'"
+          aria-label="Pen tool"
+          title="Pen"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+            <path d="m15 5 4 4" />
+          </svg>
+        </button>
+        <div class="vtool-sep" aria-hidden="true"></div>
+        <button
+          v-for="c in ['#0f172a', '#ef4444', '#3b82f6', '#22c55e', '#eab308']"
+          :key="c"
+          class="vswatch"
+          :class="{ active: viewerColor === c }"
+          :style="{ background: c }"
+          :aria-label="`Colour ${c}`"
+          :title="c"
+          @click="viewerColor = c"
+        ></button>
+        <div class="vtool-sep" aria-hidden="true"></div>
+        <input
+          class="vsize-slider"
+          type="range"
+          min="2"
+          max="30"
+          :value="viewerSize"
+          @input="viewerSize = Number(($event.target as HTMLInputElement).value)"
+          aria-label="Brush size"
+          title="Size"
+        />
+      </div>
+
+      <div v-if="showThumbs && !live.viewerIsNotebook && live.viewerPages.length > 1" class="page-strip" role="tablist">
         <button
           v-for="p in live.viewerPages"
           :key="p.id"
@@ -509,9 +511,7 @@ async function copyResponse() {
   border-radius: var(--radius-pill);
   box-shadow: var(--shadow-md);
   z-index: 20;
-  pointer-events: auto;
 }
-
 .vtool-btn {
   display: flex;
   align-items: center;
@@ -522,24 +522,20 @@ async function copyResponse() {
   color: var(--color-text-muted);
   transition: background 80ms ease, color 80ms ease;
 }
-
 .vtool-btn:hover {
   background: var(--color-surface-2);
   color: var(--color-text);
 }
-
 .vtool-btn.active {
   background: var(--color-accent-soft);
   color: var(--color-accent);
 }
-
 .vtool-sep {
   width: 1px;
   height: 20px;
   background: var(--color-border);
   flex-shrink: 0;
 }
-
 .vswatch {
   width: 22px;
   height: 22px;
@@ -548,16 +544,13 @@ async function copyResponse() {
   flex-shrink: 0;
   transition: border-color 80ms ease, transform 80ms ease;
 }
-
 .vswatch:hover {
   transform: scale(1.15);
 }
-
 .vswatch.active {
   border-color: var(--color-text);
   transform: scale(1.15);
 }
-
 .vsize-slider {
   width: 72px;
   accent-color: var(--color-accent);

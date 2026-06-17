@@ -1,11 +1,13 @@
 import { storage } from "@/adapters/storage/indexedDB";
-import type { Page, Project, Stroke } from "@/core/types";
+import type { ImageItem, Page, Project, Shape, Stroke } from "@/core/types";
 
-const FORMAT_VERSION = 1;
+// v2 adds shapes + images per page. Older (v1, strokes-only) backups still import
+// — the missing arrays just default to empty.
+const FORMAT_VERSION = 2;
 
 interface BackupEntry {
   project: Project;
-  pages: Array<{ page: Page; strokes: Stroke[] }>;
+  pages: Array<{ page: Page; strokes: Stroke[]; shapes?: Shape[]; images?: ImageItem[] }>;
 }
 
 interface BackupFile {
@@ -27,13 +29,15 @@ function triggerDownload(blob: Blob, filename: string): void {
 
 async function buildEntry(project: Project): Promise<BackupEntry> {
   const pages = await storage.listPages(project.id);
-  const pagesWithStrokes = await Promise.all(
+  const pagesWithContent = await Promise.all(
     pages.map(async (page) => ({
       page,
       strokes: await storage.listStrokes(page.id),
+      shapes: await storage.listShapes(page.id),
+      images: await storage.listImages(page.id),
     })),
   );
-  return { project, pages: pagesWithStrokes };
+  return { project, pages: pagesWithContent };
 }
 
 export function useProjectBackup() {
@@ -69,10 +73,16 @@ export function useProjectBackup() {
     let count = 0;
     for (const entry of data.projects) {
       await storage.putProject(entry.project);
-      for (const { page, strokes } of entry.pages) {
+      for (const { page, strokes, shapes, images } of entry.pages) {
         await storage.putPage(page);
         for (const stroke of strokes) {
           await storage.putStroke(stroke);
+        }
+        for (const shape of shapes ?? []) {
+          await storage.putShape(shape);
+        }
+        for (const image of images ?? []) {
+          await storage.putImage(image);
         }
       }
       count++;

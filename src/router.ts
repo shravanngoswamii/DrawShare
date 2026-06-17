@@ -3,8 +3,18 @@ import { createRouter, createWebHashHistory, type RouteRecordRaw } from "vue-rou
 const routes: RouteRecordRaw[] = [
   {
     path: "/",
-    name: "projects",
+    name: "landing",
+    component: () => import("./views/LandingView.vue"),
+  },
+  {
+    path: "/app",
+    name: "app",
     component: () => import("./views/ProjectsView.vue"),
+  },
+  {
+    // Keep the old root path as a redirect for any bookmarks / deep links
+    path: "/projects",
+    redirect: { name: "app" },
   },
   {
     path: "/p/:id",
@@ -17,6 +27,11 @@ const routes: RouteRecordRaw[] = [
     name: "viewer",
     component: () => import("./views/ViewerView.vue"),
     props: true,
+  },
+  {
+    path: "/s",
+    name: "snapshot",
+    component: () => import("./views/SnapshotView.vue"),
   },
 ];
 
