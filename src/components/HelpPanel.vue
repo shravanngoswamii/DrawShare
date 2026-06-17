@@ -158,7 +158,10 @@ const faqs = [
   box-shadow: 0 12px 36px var(--color-glass-shadow), 0 2px 8px var(--color-glass-shadow);
   display: flex;
   flex-direction: column;
-  clip-path: inset(0 round 14px);
+  /* overflow:hidden (not clip-path) clips children to the rounded corners:
+     clip-path + backdrop-filter together drop the blur in Chrome, especially on
+     mobile, leaving the panel flat instead of frosted. */
+  overflow: hidden;
   animation: help-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
   transform-origin: bottom left;
 }

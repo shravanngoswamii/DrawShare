@@ -16,10 +16,20 @@
 /* On a phone, intro.js's element-anchored positioning pushed the tooltip
    off-screen or crushed it into a narrow column at the edge. Pin it to a
    full-width card near the top instead (the highlight ring still shows which
-   element a step refers to). !important overrides intro.js's inline styles. */
+   element a step refers to). !important overrides intro.js's inline styles.
+   The reference layer that wraps the tooltip is positioned with an inline
+   transform at the target; that transform makes a fixed tooltip resolve against
+   the layer, so flatten the layer to the full viewport first. */
 @media (max-width: 767px) {
-  .introjs-tooltip.ds-introjs {
+  .introjs-tooltipReferenceLayer {
     position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    transform: none !important;
+  }
+  .introjs-tooltip.ds-introjs {
+    position: absolute !important;
     left: 12px !important;
     right: 12px !important;
     top: calc(env(safe-area-inset-top, 0px) + 64px) !important;
