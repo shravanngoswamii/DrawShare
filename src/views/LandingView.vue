@@ -46,6 +46,12 @@ function openAllBoards() {
   router.push({ name: "projects" });
 }
 
+// The logo links to the top of the page. Under hash routing a bare href="#top"
+// would rewrite the route hash (to /top, a dead route), so scroll by hand.
+function scrollTop() {
+  window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
+}
+
 function openProject(id: string) {
   router.push({ name: "editor", params: { id } });
 }
@@ -360,7 +366,7 @@ onBeforeUnmount(() => {
     <!-- Nav -->
     <nav class="nav">
       <div class="nav-inner">
-        <a class="brand" href="#top" aria-label="DrawShare home">
+        <a class="brand" href="#top" aria-label="DrawShare home" @click.prevent="scrollTop">
           <svg class="brand-mark" width="26" height="26" viewBox="0 0 1024 1024" aria-hidden="true">
             <path d="M916.668 273.393l-66.711 66.711-168.533-168.532 66.712-66.712c52.639-52.639 132.855-57.328 179.24-10.942 23.311 23.309 33.783 55.149 31.698 87.511-1.802 32.647-16.207 65.765-42.406 91.964z" fill="#FF3B30"/>
             <path d="M143.188 708.155L697.96 155.654l168.981 168.981L304.964 883.58M161.098 920.034l-97.765 38.158 34.206-101.717z" fill="#152B3C"/>
@@ -642,7 +648,7 @@ onBeforeUnmount(() => {
     <!-- Footer -->
     <footer class="footer">
       <div class="shell footer-inner">
-        <a class="footer-brand" href="#top" aria-label="Back to top">
+        <a class="footer-brand" href="#top" aria-label="Back to top" @click.prevent="scrollTop">
           <svg class="footer-mark" width="30" height="30" viewBox="0 0 1024 1024" aria-hidden="true">
             <path d="M916.668 273.393l-66.711 66.711-168.533-168.532 66.712-66.712c52.639-52.639 132.855-57.328 179.24-10.942 23.311 23.309 33.783 55.149 31.698 87.511-1.802 32.647-16.207 65.765-42.406 91.964z" fill="#FF3B30"/>
             <path d="M143.188 708.155L697.96 155.654l168.981 168.981L304.964 883.58M161.098 920.034l-97.765 38.158 34.206-101.717z" fill="#152B3C"/>
