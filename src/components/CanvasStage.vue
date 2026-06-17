@@ -71,23 +71,6 @@ const bgStyle = ref({ backgroundSize: "32px 32px", backgroundPosition: "0px 0px"
 const panCursor = ref(false);
 // Resize cursor shown while hovering a selected image's corner (Select tool).
 const hoverCursor = ref<string | null>(null);
-const pageFrameStyle = ref<Record<string, string> | null>(null);
-
-function updatePageFrame() {
-  const { width, height } = props.page;
-  // The page-boundary frame is a Free-mode affordance; notebook mode draws its
-  // own fixed A4 sheet frames instead, so hide it there.
-  if (!width || !height || editor.notebookMode !== "off") {
-    pageFrameStyle.value = null;
-    return;
-  }
-  pageFrameStyle.value = {
-    left: `${(0 - cam.x) * cam.zoom}px`,
-    top: `${(0 - cam.y) * cam.zoom}px`,
-    width: `${width * cam.zoom}px`,
-    height: `${height * cam.zoom}px`,
-  };
-}
 
 // ── Notebook stack (continuous A4 sheets) ───────────────────────────────────
 const isNotebook = () => editor.notebookMode !== "off";
@@ -636,7 +619,6 @@ function syncCamera() {
   updateActiveSheet();
   updateEditStyle();
   updateSelectionOverlays();
-  updatePageFrame();
   live.setHostCamera(cam.x, cam.y, cam.zoom);
   dirtyBase = true;
   schedule();
@@ -661,7 +643,6 @@ function fitCanvas() {
   live.setHostViewport(viewW, viewH);
   updateBg();
   updatePageOverlay();
-  updatePageFrame();
   dirtyBase = true;
   schedule();
 }
@@ -1972,14 +1953,6 @@ watch(
   },
   { deep: true },
 );
-watch(
-  () => [props.page.width, props.page.height] as const,
-  () => {
-    updatePageFrame();
-    dirtyBase = true;
-    schedule();
-  },
-);
 // Entering/leaving notebook mode re-centres and re-frames the stack.
 watch(
   () => editor.notebookMode,
@@ -1988,7 +1961,6 @@ watch(
       centerOnSheet(editor.currentPageId);
     }
     updatePageOverlay();
-    updatePageFrame();
     dirtyBase = true;
     schedule();
   },
@@ -2120,7 +2092,7 @@ onBeforeUnmount(() => {
         v-for="f in sheetFrames"
         :key="f.id"
         class="page-frame"
-        :class="{ 'is-strict': editor.notebookMode === 'strict', 'is-active': f.active }"
+        :class="{ 'is-active': f.active }"
         :style="{ left: `${f.left}px`, top: `${f.top}px`, width: `${f.width}px`, height: `${f.height}px` }"
         aria-hidden="true"
       ></div>
@@ -2152,12 +2124,6 @@ onBeforeUnmount(() => {
       class="eraser-cursor"
       :class="editor.eraserShape"
       :style="{ left: `${eraseCursor.x}px`, top: `${eraseCursor.y}px`, width: `${editor.size * 2}px`, height: `${editor.size * 2}px` }"
-    ></div>
-    <div
-      v-if="pageFrameStyle"
-      class="page-size-frame"
-      :style="pageFrameStyle"
-      aria-hidden="true"
     ></div>
     <svg
       v-if="editor.presenterMode === 'laser' && laserTrail.length > 1"
@@ -2335,11 +2301,6 @@ onBeforeUnmount(() => {
   box-shadow: 0 3px 16px rgba(15, 23, 42, 0.16);
 }
 
-.page-frame.is-strict {
-  border-style: solid;
-  border-color: color-mix(in srgb, #f59e0b 70%, transparent);
-}
-
 .eraser-cursor {
   position: absolute;
   z-index: 6;
@@ -2350,16 +2311,6 @@ onBeforeUnmount(() => {
 }
 .eraser-cursor.circle { border-radius: 50%; }
 .eraser-cursor.square { border-radius: 3px; }
-
-/* Free-mode page-size boundary (distinct from the notebook .page-frame sheets). */
-.page-size-frame {
-  position: absolute;
-  z-index: 2;
-  pointer-events: none;
-  border: 1px dashed var(--color-accent, #3b82f6);
-  opacity: 0.3;
-  border-radius: 1px;
-}
 
 .text-edit {
   position: absolute;

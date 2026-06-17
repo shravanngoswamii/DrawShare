@@ -921,12 +921,6 @@ function removeSnapshot() {
 
 .close-btn { display: none; }
 
-/* ── Share ── */
-.share-section {
-  padding: var(--space-3) var(--space-3) var(--space-2);
-  border-bottom: 1px solid var(--color-border);
-}
-
 .share-btn {
   display: flex;
   align-items: center;
@@ -1082,123 +1076,7 @@ function removeSnapshot() {
   color: var(--color-accent);
 }
 
-/* ── Pages ── */
-.pages-section {
-  padding: var(--space-2) var(--space-2) var(--space-3);
-}
-
-.pages-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-1) var(--space-2);
-  margin-bottom: var(--space-1);
-}
-.pages-head > span {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--color-text-muted);
-}
-
-.add-page {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px var(--space-2);
-  border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--color-accent);
-}
-.add-page:hover { background: var(--color-accent-soft); }
-
-.pages {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.page {
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  padding: var(--space-2);
-  transition: background 80ms ease, border-color 80ms ease;
-}
-.page:hover { background: var(--color-surface-2); }
-.page.active {
-  background: var(--color-accent-soft);
-  border-color: var(--color-border-strong);
-}
-
-.page-main {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  text-align: left;
-}
-
-.page-thumb {
-  width: 32px;
-  height: 45px;
-  background: var(--color-canvas-surface);
-  border: 1px solid var(--color-border-strong);
-  border-radius: 4px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--color-text-muted);
-  overflow: hidden;
-}
-
-.thumb-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  border-radius: 3px;
-}
-
-.thumb-num {
-  line-height: 1;
-}
-
-.page-meta {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-}
-
-.page-name {
-  font-size: var(--text-sm);
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.page-rename {
-  height: 26px;
-  padding: 0 var(--space-2);
-  font-size: var(--text-sm);
-}
-
-.page-actions {
-  display: flex;
-  gap: var(--space-1);
-  margin-top: var(--space-2);
-  margin-left: 44px;
-}
-
+/* Snapshot "Remove link" button. */
 .page-action {
   font-size: var(--text-xs);
   padding: 4px var(--space-2);
@@ -1268,12 +1146,6 @@ function removeSnapshot() {
   border-color: var(--color-accent);
   color: var(--color-accent-text);
 }
-.mode-btn-strict.active {
-  background: #f59e0b;
-  border-color: #f59e0b;
-  color: #fff;
-}
-
 .mode-hint {
   margin: var(--space-2) 0 0;
   font-size: var(--text-xs);
@@ -1443,40 +1315,6 @@ function removeSnapshot() {
 }
 .bg-btn:hover { background: var(--color-surface-2); color: var(--color-text); }
 .bg-btn.active {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  color: var(--color-accent-text);
-}
-
-.none-btn {
-  width: 100%;
-  margin-top: var(--space-2);
-}
-
-/* ── Orientation ── */
-.orient-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-
-.orient-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-md);
-  background: var(--color-glass-bg);
-  padding: var(--space-2) var(--space-2);
-  font-size: var(--text-xs);
-  font-weight: 500;
-  color: var(--color-text-muted);
-  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
-}
-.orient-btn:hover { background: var(--color-surface-2); color: var(--color-text); }
-.orient-btn.active {
   background: var(--color-accent);
   border-color: var(--color-accent);
   color: var(--color-accent-text);

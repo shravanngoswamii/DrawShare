@@ -380,15 +380,6 @@ export const useEditorStore = defineStore("editor", {
       await storage.putPage({ ...page });
       useLiveStore().broadcast({ t: "page-background", pageId, background });
     },
-    async setPageSize(pageId: string, width: number, height: number) {
-      const page = this.pages.find((p) => p.id === pageId);
-      if (!page) return;
-      page.width = width;
-      page.height = height;
-      page.updatedAt = Date.now();
-      await storage.putPage({ ...page });
-      useLiveStore().broadcast({ t: "page-size", pageId, width, height });
-    },
     // Append a forward content op to the recording log. No-op unless the project
     // has recordReplay on. Fire-and-forget so it never blocks drawing; events are
     // appended in call order (seq autoincrements).
@@ -1187,32 +1178,6 @@ export const useEditorStore = defineStore("editor", {
       if (mode === "off") {
         useLiveStore().broadcast({ t: "presenter-off" });
       }
-    },
-    async setNotebookMode(mode: NotebookMode) {
-      if (!this.project || this.project.notebookMode === mode) return;
-      const wasOff = (this.project.notebookMode ?? "off") === "off";
-      this.project.notebookMode = mode;
-      this.project.updatedAt = Date.now();
-      await storage.putProject({ ...this.project });
-      // Entering the stack needs every sheet's strokes/shapes/images; leaving it
-      // restores the Free-mode single-page invariant.
-      if (wasOff && mode !== "off") {
-        await this.loadAllStrokes();
-        await this.loadAllShapes();
-        await this.loadAllImages();
-      } else if (!wasOff && mode === "off" && this.currentPageId) {
-        await this.loadStrokes(this.currentPageId);
-        await this.loadShapes(this.currentPageId);
-        await this.loadImages(this.currentPageId);
-      }
-      // Re-snapshot live viewers onto the new mode/stack (strokes sent chunked).
-      useLiveStore().broadcastNotebookSync(
-        mode,
-        this.notebookLayout,
-        [...this.pages],
-        [...this.strokes],
-        [...this.shapes],
-      );
     },
     async setNotebookLayout(layout: NotebookLayout) {
       if (!this.project || this.project.notebookLayout === layout) return;
