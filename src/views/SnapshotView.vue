@@ -6,6 +6,7 @@ import { decodeSnapshot, type SnapshotData } from "@/composables/useSnapshot";
 import { useTheme } from "@/composables/useTheme";
 import { splitImageLayers } from "@/core/images";
 import { adaptInk } from "@/core/ink";
+import { readFragmentParam } from "@/core/shareLinks";
 
 const route = useRoute();
 const router = useRouter();
@@ -155,8 +156,9 @@ function fitCanvas() {
 let resizeObserver: ResizeObserver | undefined;
 
 onMounted(async () => {
-  const encoded = route.query.d;
-  if (typeof encoded !== "string" || !encoded) {
+  // Snapshot data rides in the URL fragment (kept off the server), not the query.
+  const encoded = readFragmentParam(route.hash, "d");
+  if (!encoded) {
     state.value = "error";
     errorMsg.value = "No snapshot data in URL.";
     return;

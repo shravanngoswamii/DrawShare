@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import ViewerStage from "@/components/ViewerStage.vue";
+import { readFragmentParam } from "@/core/shareLinks";
 import { useLiveStore } from "@/stores/live";
 
 const props = defineProps<{ code: string }>();
@@ -13,10 +14,8 @@ const showThumbs = ref(false);
 const fullscreen = ref(false);
 const copied = ref(false);
 
-const offerToken = computed(() => {
-  const token = route.query.offer;
-  return typeof token === "string" ? token : "";
-});
+// The host can embed its WebRTC offer in the link's fragment (offline fallback).
+const offerToken = computed(() => readFragmentParam(route.hash, "offer"));
 
 const statusLabel = computed(() => {
   switch (live.status) {
