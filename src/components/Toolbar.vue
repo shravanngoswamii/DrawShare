@@ -680,6 +680,33 @@ onMounted(() => {
   font-size: var(--text-xs);
 }
 
+/* Short, wide viewports (e.g. iPad in landscape): the vertical toolbar grew tall
+   enough to run off-screen. Compact the buttons and gaps so every tool fits
+   without scrolling (scrolling would clip the side popovers). */
+@media (min-width: 768px) and (max-height: 860px) {
+  .toolbar:not(.horizontal) {
+    padding: 4px;
+  }
+  .toolbar:not(.horizontal) .toolbar-body {
+    gap: 3px;
+    padding: 0;
+  }
+  .toolbar:not(.horizontal) .group {
+    gap: 2px;
+  }
+  .toolbar:not(.horizontal) .tool,
+  .toolbar:not(.horizontal) .pen-type-btn {
+    width: 32px;
+    height: 32px;
+  }
+  .toolbar:not(.horizontal) .divider {
+    margin: 2px 0;
+  }
+  .toolbar:not(.horizontal) .grip {
+    height: 14px;
+  }
+}
+
 /* Mobile keeps the simple bottom bar regardless of dock */
 @media (max-width: 767px) {
   .toolbar,
