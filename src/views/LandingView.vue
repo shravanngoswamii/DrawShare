@@ -973,7 +973,7 @@ onBeforeUnmount(() => {
 .draw-fab-active {
   background: var(--color-accent);
   border-color: var(--color-accent);
-  color: #fff;
+  color: var(--color-accent-text);
 }
 
 /* Doodle-mode hint — sits above the drawing layer and exits on tap */
