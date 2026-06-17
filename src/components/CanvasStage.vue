@@ -118,34 +118,86 @@ const editing = ref<{
 const editStyle = ref<Record<string, string>>({});
 
 // Image selection ring + floating action bar (screen coords, kept in sync by
-// updateImageSelStyle). The ring carries resize handles; the bar carries the
+// updateSelectionOverlays). The ring carries resize handles; the bar carries the
 // stacking + delete actions.
 const imageSelStyle = ref<Record<string, string> | null>(null);
 const imageBarStyle = ref<Record<string, string> | null>(null);
+// Outline + delete bar for a selected text or shape (no resize handles).
+const objSelStyle = ref<Record<string, string> | null>(null);
+const objBarStyle = ref<Record<string, string> | null>(null);
 
 // Hit radius (screen px) for grabbing a resize handle near an image corner.
 const RESIZE_HANDLE_PX = 14;
 
-function updateImageSelStyle() {
-  const id = selectedImageId.value;
-  const img = id ? editor.images.find((i) => i.id === id) : undefined;
-  if (!img) {
+// World-space bounding box of a text item (mirrors hitText's sizing).
+function textBounds(t: TextItem) {
+  const off = pageOffset(t.pageId);
+  const lines = t.text.split("\n");
+  const longest = lines.reduce((m, l) => Math.max(m, l.length), 1);
+  return {
+    x: t.x + off.x,
+    y: t.y + off.y,
+    w: longest * t.size * 0.6,
+    h: lines.length * t.size * 1.3,
+  };
+}
+
+// World-space bounding box of a shape.
+function shapeBounds(s: Shape) {
+  const off = pageOffset(s.pageId);
+  return {
+    x: Math.min(s.x1, s.x2) + off.x,
+    y: Math.min(s.y1, s.y2) + off.y,
+    w: Math.abs(s.x2 - s.x1),
+    h: Math.abs(s.y2 - s.y1),
+  };
+}
+
+// Keep all selection overlays (image ring + bar, text/shape outline + bar) in sync
+// with the current camera. Called on selection change, camera move, and live drag.
+function updateSelectionOverlays() {
+  const imgId = selectedImageId.value;
+  const img = imgId ? editor.images.find((i) => i.id === imgId) : undefined;
+  if (img) {
+    const off = pageOffset(img.pageId);
+    const left = (img.x + off.x - cam.x) * cam.zoom;
+    const top = (img.y + off.y - cam.y) * cam.zoom;
+    imageSelStyle.value = {
+      left: `${left}px`,
+      top: `${top}px`,
+      width: `${img.width * cam.zoom}px`,
+      height: `${img.height * cam.zoom}px`,
+    };
+    imageBarStyle.value = { left: `${left}px`, top: `${top - 40}px` };
+  } else {
     imageSelStyle.value = null;
     imageBarStyle.value = null;
-    return;
   }
-  // Shift page-local coords to world by the sheet origin (0,0 in Free mode).
-  const off = pageOffset(img.pageId);
-  const left = (img.x + off.x - cam.x) * cam.zoom;
-  const top = (img.y + off.y - cam.y) * cam.zoom;
-  imageSelStyle.value = {
-    left: `${left}px`,
-    top: `${top}px`,
-    width: `${img.width * cam.zoom}px`,
-    height: `${img.height * cam.zoom}px`,
-  };
-  // Action bar floats just above the top-left of the selection.
-  imageBarStyle.value = { left: `${left}px`, top: `${top - 40}px` };
+
+  // Text or shape: a plain outline + a Delete bar (no resize).
+  const txt = selectedTextId.value
+    ? (editor.currentPage?.texts?.find((t) => t.id === selectedTextId.value) ??
+      editor.pages.flatMap((p) => p.texts ?? []).find((t) => t.id === selectedTextId.value))
+    : undefined;
+  const shp = selectedShapeId.value
+    ? editor.shapes.find((s) => s.id === selectedShapeId.value)
+    : undefined;
+  const b = txt ? textBounds(txt) : shp ? shapeBounds(shp) : null;
+  if (b) {
+    const pad = 4 / cam.zoom;
+    const left = (b.x - pad - cam.x) * cam.zoom;
+    const top = (b.y - pad - cam.y) * cam.zoom;
+    objSelStyle.value = {
+      left: `${left}px`,
+      top: `${top}px`,
+      width: `${(b.w + pad * 2) * cam.zoom}px`,
+      height: `${(b.h + pad * 2) * cam.zoom}px`,
+    };
+    objBarStyle.value = { left: `${left}px`, top: `${top - 40}px` };
+  } else {
+    objSelStyle.value = null;
+    objBarStyle.value = null;
+  }
 }
 
 // If the world point sits on a resize handle of the given image, return which
@@ -192,6 +244,21 @@ function deleteSelectedImage() {
   schedule();
 }
 
+// Delete the selected text or shape (the image has its own path above).
+function deleteSelectedObject() {
+  if (selectedTextId.value) {
+    const t = editor.pages.flatMap((p) => p.texts ?? []).find((x) => x.id === selectedTextId.value);
+    selectedTextId.value = null;
+    if (t) editor.deleteText(t.pageId, t.id);
+  } else if (selectedShapeId.value) {
+    const id = selectedShapeId.value;
+    selectedShapeId.value = null;
+    editor.deleteShape(id);
+  }
+  dirtyBase = true;
+  schedule();
+}
+
 // Eraser cursor overlay (screen coords relative to the stage)
 const eraseCursor = ref<{ x: number; y: number } | null>(null);
 
@@ -216,6 +283,8 @@ let textDrag: {
   origX: number;
   origY: number;
   moved: boolean;
+  // Under the Select tool a tap just selects; under the Text tool it opens the editor.
+  select?: boolean;
 } | null = null;
 let imageDrag: {
   item: ImageItem;
@@ -235,7 +304,35 @@ let imageResize: {
   origW: number;
   origH: number;
 } | null = null;
+let shapeDrag: {
+  item: Shape;
+  downX: number;
+  downY: number;
+  o: { x1: number; y1: number; x2: number; y2: number };
+  moved: boolean;
+} | null = null;
+// At most one object is selected at a time (image, text or shape); selecting one
+// clears the others. Selection + move/resize/delete all live under the Select tool.
 const selectedImageId = ref<string | null>(null);
+const selectedTextId = ref<string | null>(null);
+const selectedShapeId = ref<string | null>(null);
+function clearSelection() {
+  selectedImageId.value = null;
+  selectedTextId.value = null;
+  selectedShapeId.value = null;
+}
+function selectImage(id: string) {
+  clearSelection();
+  selectedImageId.value = id;
+}
+function selectText(id: string) {
+  clearSelection();
+  selectedTextId.value = id;
+}
+function selectShape(id: string) {
+  clearSelection();
+  selectedShapeId.value = id;
+}
 let predictedPoints: StrokePoint[] = [];
 let liveSendCursor = 0;
 let frameQueued = false;
@@ -374,6 +471,12 @@ async function placeImageFile(file: File, worldX?: number, worldY?: number): Pro
 
   await baseRenderer.loadImage(imageItem);
   await editor.commitImage(imageItem);
+  // Drop straight into Select with the new image grabbed, so it's ready to move
+  // or resize without hunting for the right tool.
+  editor.setTool("select");
+  selectImage(imageItem.id);
+  dirtyBase = true;
+  schedule();
 }
 
 function triggerFileImport(): void {
@@ -530,7 +633,7 @@ function syncCamera() {
   updatePageOverlay();
   updateActiveSheet();
   updateEditStyle();
-  updateImageSelStyle();
+  updateSelectionOverlays();
   updatePageFrame();
   live.setHostCamera(cam.x, cam.y, cam.zoom);
   dirtyBase = true;
@@ -922,6 +1025,27 @@ function hitText(t: TextItem, wx: number, wy: number): boolean {
   return wx >= tx && wx <= tx + w && wy >= ty && wy <= ty + h;
 }
 
+// Hit-test a tap against a shape: near its outline, or inside the box for the
+// closed shapes (rect/ellipse). Coords are converted to the shape's page-local
+// space (sheet-offset-aware) to match shapeSegments.
+function hitShape(s: Shape, wx: number, wy: number): boolean {
+  const off = pageOffset(s.pageId);
+  const lx = wx - off.x;
+  const ly = wy - off.y;
+  const tol = 10 / cam.zoom;
+  for (const [ax, ay, bx, by] of shapeSegments(s)) {
+    if (distToSegment(lx, ly, ax, ay, bx, by) < tol) return true;
+  }
+  if (s.type === "rect" || s.type === "ellipse") {
+    const x0 = Math.min(s.x1, s.x2);
+    const x1 = Math.max(s.x1, s.x2);
+    const y0 = Math.min(s.y1, s.y2);
+    const y1 = Math.max(s.y1, s.y2);
+    return lx >= x0 && lx <= x1 && ly >= y0 && ly <= y1;
+  }
+  return false;
+}
+
 // The editing overlay works in WORLD coords (so it positions correctly); stored
 // text is page-local, so convert on the way in (existing) and out (commit).
 function beginTextAt(wx: number, wy: number, existing?: TextItem, pageId?: string) {
@@ -979,10 +1103,16 @@ function handleDown(s: InputSample) {
     laserStart(s.x, s.y);
     return;
   }
-  // Can't create content on a locked or hidden layer; the eraser stays free so it
-  // can still clean up other (unlocked) layers.
+  // Can't create content on a locked or hidden layer; the eraser and the select
+  // tool stay free (erase/select existing content on other layers).
   const layer = editor.currentLayer;
-  if (layer && (layer.locked || !layer.visible) && editor.tool !== "eraser") return;
+  if (
+    layer &&
+    (layer.locked || !layer.visible) &&
+    editor.tool !== "eraser" &&
+    editor.tool !== "select"
+  )
+    return;
   // Commit a focused field (e.g. the project name) when drawing starts; the
   // canvas swallows the focus change otherwise so its blur never fires.
   const active = document.activeElement as HTMLElement | null;
@@ -1024,7 +1154,7 @@ function handleDown(s: InputSample) {
       drawOffsetY = o.y;
     }
   }
-  if (editor.tool === "text") {
+  if (editor.tool === "select") {
     if (editing.value) commitEditing();
     // Grabbing a corner handle of the already-selected image starts a resize.
     if (selectedImageId.value) {
@@ -1042,11 +1172,52 @@ function handleDown(s: InputSample) {
         return;
       }
     }
+    // Pick the topmost object under the pointer: text, then image, then shape.
+    // (editor.images/shapes are the current page's in Free mode and all sheets'
+    // in notebook mode; texts live on the page record, so scope them by mode.)
+    const texts = isNotebook()
+      ? editor.pages.flatMap((p) => p.texts ?? [])
+      : (props.page.texts ?? []);
+    const text = texts.find((t) => hitText(t, w.x, w.y));
+    if (text) {
+      selectText(text.id);
+      textDrag = {
+        item: text,
+        downX: w.x,
+        downY: w.y,
+        origX: text.x,
+        origY: text.y,
+        moved: false,
+        select: true,
+      };
+      return;
+    }
+    const img = editor.images.find((i) => hitImage(i, w.x, w.y));
+    if (img) {
+      selectImage(img.id);
+      imageDrag = { item: img, downX: w.x, downY: w.y, origX: img.x, origY: img.y, moved: false };
+      return;
+    }
+    const shp = editor.shapes.find((sh) => hitShape(sh, w.x, w.y));
+    if (shp) {
+      selectShape(shp.id);
+      shapeDrag = {
+        item: shp,
+        downX: w.x,
+        downY: w.y,
+        o: { x1: shp.x1, y1: shp.y1, x2: shp.x2, y2: shp.y2 },
+        moved: false,
+      };
+      return;
+    }
+    clearSelection();
+    return;
+  }
+  if (editor.tool === "text") {
+    if (editing.value) commitEditing();
     const page = editor.pages.find((p) => p.id === targetPageId) ?? props.page;
     const existing = (page.texts ?? []).find((t) => hitText(t, w.x, w.y));
     if (existing) {
-      // Grabbing a text supersedes any image selection.
-      selectedImageId.value = null;
       // Drag to move, or tap (no move) to edit — decided in move/up.
       textDrag = {
         item: existing,
@@ -1058,22 +1229,6 @@ function handleDown(s: InputSample) {
       };
       return;
     }
-    // No text hit — an image (below text in z-order) is selectable/draggable in
-    // the text tool. hitImage is sheet-offset-aware, so it works across sheets.
-    const hitImg = editor.images.find((img) => hitImage(img, w.x, w.y));
-    if (hitImg) {
-      selectedImageId.value = hitImg.id;
-      imageDrag = {
-        item: hitImg,
-        downX: w.x,
-        downY: w.y,
-        origX: hitImg.x,
-        origY: hitImg.y,
-        moved: false,
-      };
-      return;
-    }
-    selectedImageId.value = null;
     beginTextAt(w.x, w.y, undefined, targetPageId);
     return;
   }
@@ -1158,7 +1313,7 @@ function handleMove(samples: InputSample[]) {
     imageResize.item.y = bottom ? anchorY : anchorY - newH;
     imageResize.item.width = newW;
     imageResize.item.height = newH;
-    updateImageSelStyle();
+    updateSelectionOverlays();
     dirtyBase = true;
     schedule();
     return;
@@ -1172,7 +1327,7 @@ function handleMove(samples: InputSample[]) {
     if (imageDrag.moved) {
       imageDrag.item.x = imageDrag.origX + dx;
       imageDrag.item.y = imageDrag.origY + dy;
-      updateImageSelStyle();
+      updateSelectionOverlays();
       dirtyBase = true;
       schedule();
     }
@@ -1211,6 +1366,24 @@ function handleMove(samples: InputSample[]) {
     if (textDrag.moved) {
       textDrag.item.x = textDrag.origX + dx;
       textDrag.item.y = textDrag.origY + dy;
+      updateSelectionOverlays();
+      dirtyBase = true;
+      schedule();
+    }
+    return;
+  }
+  if (shapeDrag) {
+    const s = samples[samples.length - 1];
+    const w = toWorld(s.x, s.y);
+    const dx = w.x - shapeDrag.downX;
+    const dy = w.y - shapeDrag.downY;
+    if (!shapeDrag.moved && Math.hypot(dx, dy) * cam.zoom > 4) shapeDrag.moved = true;
+    if (shapeDrag.moved) {
+      shapeDrag.item.x1 = shapeDrag.o.x1 + dx;
+      shapeDrag.item.y1 = shapeDrag.o.y1 + dy;
+      shapeDrag.item.x2 = shapeDrag.o.x2 + dx;
+      shapeDrag.item.y2 = shapeDrag.o.y2 + dy;
+      updateSelectionOverlays();
       dirtyBase = true;
       schedule();
     }
@@ -1340,8 +1513,19 @@ async function handleUp(sample?: InputSample) {
       editor.commitText({ ...d.item });
       dirtyBase = true;
       schedule();
-    } else {
+    } else if (!d.select) {
+      // Text tool: a tap (no drag) opens the editor. Select tool: tap just selects.
       beginTextAt(d.item.x, d.item.y, d.item);
+    }
+    return;
+  }
+  if (shapeDrag) {
+    const d = shapeDrag;
+    shapeDrag = null;
+    if (d.moved) {
+      await editor.moveShape(d.item.id, d.item.x1, d.item.y1, d.item.x2, d.item.y2);
+      dirtyBase = true;
+      schedule();
     }
     return;
   }
@@ -1401,7 +1585,7 @@ async function handleCancel(sample?: InputSample) {
     imageResize.item.width = imageResize.origW;
     imageResize.item.height = imageResize.origH;
     imageResize = null;
-    updateImageSelStyle();
+    updateSelectionOverlays();
     dirtyBase = true;
     schedule();
     return;
@@ -1422,6 +1606,20 @@ async function handleCancel(sample?: InputSample) {
     textDrag = null;
     dirtyBase = true;
     schedule();
+    return;
+  }
+  if (shapeDrag) {
+    // Revert to the rect captured at grab time.
+    if (shapeDrag.moved) {
+      shapeDrag.item.x1 = shapeDrag.o.x1;
+      shapeDrag.item.y1 = shapeDrag.o.y1;
+      shapeDrag.item.x2 = shapeDrag.o.x2;
+      shapeDrag.item.y2 = shapeDrag.o.y2;
+      updateSelectionOverlays();
+      dirtyBase = true;
+      schedule();
+    }
+    shapeDrag = null;
     return;
   }
   editor.setDrawing(false);
@@ -1639,18 +1837,18 @@ function onKeyDown(e: KeyboardEvent) {
     spaceHeld = true;
     panCursor.value = true;
   }
-  if (
-    (e.key === "Delete" || e.key === "Backspace") &&
-    selectedImageId.value &&
-    editor.tool === "text"
-  ) {
-    e.preventDefault();
-    const id = selectedImageId.value;
-    selectedImageId.value = null;
-    baseRenderer.releaseImage(id);
-    editor.deleteImage(id);
-    dirtyBase = true;
-    schedule();
+  if (e.key === "Escape") {
+    clearSelection();
+    return;
+  }
+  if (e.key === "Delete" || e.key === "Backspace") {
+    if (selectedImageId.value) {
+      e.preventDefault();
+      deleteSelectedImage();
+    } else if (selectedTextId.value || selectedShapeId.value) {
+      e.preventDefault();
+      deleteSelectedObject();
+    }
   }
 }
 
@@ -1694,21 +1892,21 @@ watch(
     // all sheets' images; in Free mode it's just the current page's.
     baseRenderer.retainImages(new Set(imgs.map((i) => i.id)));
     await Promise.all(imgs.map((i) => baseRenderer.loadImage(i)));
-    updateImageSelStyle();
+    updateSelectionOverlays();
     dirtyBase = true;
     schedule();
   },
   { deep: false },
 );
 
-watch(selectedImageId, () => updateImageSelStyle());
+watch([selectedImageId, selectedTextId, selectedShapeId], () => updateSelectionOverlays());
 
-// Images are only selectable in the text tool; drop the selection (and its ring +
-// Delete target) the moment the user switches to any other tool.
+// Selection lives under the Select tool; drop it (ring/outline + Delete target)
+// the moment the user switches to any other tool.
 watch(
   () => editor.tool,
   (t) => {
-    if (t !== "text") selectedImageId.value = null;
+    if (t !== "select") clearSelection();
   },
 );
 
@@ -1726,7 +1924,7 @@ watch(
     // scroll — that's not a page switch, so don't disturb the camera or editor.
     if (isNotebook()) return;
     commitEditing();
-    selectedImageId.value = null;
+    clearSelection();
     baseRenderer.clearBboxCache();
     updatePageOverlay();
     dirtyBase = true;
@@ -1914,6 +2112,10 @@ onBeforeUnmount(() => {
         Delete
       </button>
     </div>
+    <div v-if="objSelStyle" class="obj-sel" :style="objSelStyle" aria-hidden="true"></div>
+    <div v-if="objBarStyle" class="image-bar" :style="objBarStyle" @pointerdown.stop>
+      <button type="button" class="danger" title="Delete" @click="deleteSelectedObject">Delete</button>
+    </div>
     <div
       v-if="eraseCursor"
       class="eraser-cursor"
@@ -2034,6 +2236,15 @@ onBeforeUnmount(() => {
   border: 2px solid var(--color-accent, #3b82f6);
   border-radius: 3px;
   box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.25);
+  pointer-events: none;
+}
+
+/* Selection outline for a text or shape (no resize handles). */
+.obj-sel {
+  position: absolute;
+  z-index: 5;
+  border: 1.5px dashed var(--color-accent, #3b82f6);
+  border-radius: 3px;
   pointer-events: none;
 }
 

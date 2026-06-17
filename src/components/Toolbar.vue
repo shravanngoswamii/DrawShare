@@ -287,6 +287,18 @@ onMounted(() => {
     <div class="toolbar-body">
       <div class="group">
         <button
+          class="tool"
+          :class="{ active: editor.tool === 'select' }"
+          :aria-pressed="editor.tool === 'select'"
+          title="Select — move, resize or delete images, text and shapes"
+          aria-label="Select tool"
+          @click="editor.setTool('select')"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" />
+          </svg>
+        </button>
+        <button
           v-for="t in penTools"
           :key="t.id"
           class="tool"

@@ -113,6 +113,7 @@ export const useEditorStore = defineStore("editor", {
     penType: "ballpoint",
     color: "#0f172a",
     toolSizes: {
+      select: 4,
       pen: 4,
       highlighter: 20,
       eraser: 24,
@@ -800,6 +801,23 @@ export const useEditorStore = defineStore("editor", {
       this.redoStack = [];
       await storage.putImage({ ...image });
       this._record({ op: "image-set", image: { ...image } });
+      if (this.project) await useProjectsStore().touch(this.project.id);
+    },
+    // Move a shape in place (Select tool). Persisted and replay-logged as a
+    // remove+re-add at the new position (there's no shape-set op); not pushed to
+    // undo, matching moveImage. Live viewers dedupe shape-commit by id, so — like
+    // image moves — a move isn't broadcast.
+    async moveShape(shapeId: string, x1: number, y1: number, x2: number, y2: number) {
+      const shape = this.shapes.find((s) => s.id === shapeId);
+      if (!shape) return;
+      shape.x1 = x1;
+      shape.y1 = y1;
+      shape.x2 = x2;
+      shape.y2 = y2;
+      this.redoStack = [];
+      await storage.putShape({ ...shape });
+      this._record({ op: "shape-remove", pageId: shape.pageId, id: shape.id });
+      this._record({ op: "shape-add", shape: { ...shape } });
       if (this.project) await useProjectsStore().touch(this.project.id);
     },
     // Stacking order vs the drawing. Front = above strokes/shapes/text and above
