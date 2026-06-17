@@ -177,8 +177,8 @@ onBeforeUnmount(() => removeProbe?.());
         v-if="hasContent && !replay.active"
         class="replay-fab"
         :class="{ quiet: editor.isDrawing }"
-        title="Replay drawing"
-        aria-label="Replay drawing"
+        title="Replay how this page was drawn"
+        aria-label="Replay how this page was drawn"
         @click="startReplay()"
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -373,8 +373,10 @@ onBeforeUnmount(() => removeProbe?.());
 
 .replay-fab {
   position: absolute;
-  bottom: 56px;
-  left: 12px;
+  /* Bottom-right, stacked above the help button — clear of the canvas, the
+     zoom controls (bottom-left) and the pages panel (top-right). */
+  bottom: 60px;
+  right: 12px;
   z-index: 20;
   display: flex;
   align-items: center;
