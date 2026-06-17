@@ -941,6 +941,9 @@ export const useEditorStore = defineStore("editor", {
     },
     setTool(t: Tool) {
       this.tool = t;
+      // Choosing a drawing tool exits laser/spotlight — otherwise the tool would
+      // quietly do nothing while presenter mode swallows the pointer.
+      if (this.presenterMode !== "off") this.setPresenterMode("off");
     },
     setPenType(pt: PenType) {
       this.penType = pt;

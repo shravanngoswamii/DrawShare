@@ -367,7 +367,9 @@ onMounted(() => {
       <!-- Stroke size (hidden for eraser, which has its own) -->
       <div v-if="editor.tool !== 'eraser'" class="pop-wrap group">
         <button class="tool" :class="{ active: popover === 'size' }" title="Stroke size" aria-label="Stroke size" :aria-expanded="popover === 'size'" @click="toggle('size')">
-          <span class="size-dot" :style="{ width: `${Math.min(editor.size, 18)}px`, height: `${Math.min(editor.size, 18)}px` }"></span>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r="2.75" /><circle cx="19.5" cy="12" r="4" />
+          </svg>
         </button>
         <div v-if="popover === 'size'" class="popover" :class="`pop-${dock}`">
           <div class="pop-title">Size</div>
