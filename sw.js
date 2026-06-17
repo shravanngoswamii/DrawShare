@@ -2,8 +2,8 @@
 // vite.config.ts: CACHE gets a per-build id (so every deploy installs a fresh
 // worker and purges old caches) and PRECACHE is filled with the build's real
 // asset URLs. The defaults below are only used by the dev server.
-const CACHE = "drawshare-537d50cf";
-const PRECACHE = ["/DrawShare/","/DrawShare/apple-touch-icon.png","/DrawShare/assets/EditorView-XOv2JcdZ.js","/DrawShare/assets/LandingView-D1jT8UWb.js","/DrawShare/assets/ProjectsView-DnCD5DTc.js","/DrawShare/assets/SnapshotView-DUKtuJvf.js","/DrawShare/assets/ViewerView-BKUiGjG8.js","/DrawShare/assets/_plugin-vue_export-helper-CetqXm1e.js","/DrawShare/assets/images-CjNWycI3.js","/DrawShare/assets/index-HF2ViTBT.js","/DrawShare/assets/ink-B51EUamc.js","/DrawShare/assets/live-BU53FFEd.js","/DrawShare/assets/style-DXprNyPv.css","/DrawShare/assets/useSnapshot-igPqZI0q.js","/DrawShare/assets/useStackRenderer-CJatySET.js","/DrawShare/assets/useThumbnails-F8lWr2aD.js","/DrawShare/favicon.svg","/DrawShare/icon-192.png","/DrawShare/icon-512.png","/DrawShare/index.html","/DrawShare/manifest.webmanifest"];
+const CACHE = "drawshare-3b66d76a";
+const PRECACHE = ["/DrawShare/","/DrawShare/apple-touch-icon.png","/DrawShare/assets/EditorView-uOllP2Qy.js","/DrawShare/assets/LandingView-BTJJwPAW.js","/DrawShare/assets/ProjectsView-Ca891F6v.js","/DrawShare/assets/SnapshotView-C0s3wZKB.js","/DrawShare/assets/ViewerView-Dr-zv5P_.js","/DrawShare/assets/_plugin-vue_export-helper-BhWgmAex.js","/DrawShare/assets/images-CjNWycI3.js","/DrawShare/assets/index-LOX4wCQi.js","/DrawShare/assets/ink-B2_bmRZ0.js","/DrawShare/assets/live-6Dnxv6-d.js","/DrawShare/assets/style-D0C9Bj2W.css","/DrawShare/assets/useSnapshot-igPqZI0q.js","/DrawShare/assets/useStackRenderer-CJatySET.js","/DrawShare/assets/useThumbnails-DYO4J-pM.js","/DrawShare/favicon.svg","/DrawShare/icon-192.png","/DrawShare/icon-512.png","/DrawShare/index.html","/DrawShare/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   // Precache the whole current build — app shell + every hashed JS/CSS chunk
