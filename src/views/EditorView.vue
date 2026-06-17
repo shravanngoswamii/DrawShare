@@ -438,5 +438,18 @@ onBeforeUnmount(() => removeProbe?.());
     min-height: 0;
     inset: auto;
   }
+
+  /* The toolbar is an in-flow wrapping bar at the bottom (~2 rows on a phone).
+     Lift the corner FABs above it so they don't sit on the tools. */
+  .help-fab {
+    bottom: calc(var(--safe-bottom, 0px) + 104px);
+  }
+  .replay-fab {
+    bottom: calc(var(--safe-bottom, 0px) + 148px);
+  }
+  .help-fab.shifted,
+  .replay-fab.shifted {
+    right: 12px;
+  }
 }
 </style>

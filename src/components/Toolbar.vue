@@ -805,8 +805,15 @@ onMounted(() => {
   .toolbar.dock-bottom {
     position: static;
     width: 100%;
-    height: var(--toolbar-h);
+    height: auto;
     flex-direction: row;
+    /* Wrap every tool into rows that fit the phone width instead of overflowing
+       off-screen. No overflow clip, so the tool popovers can open above the bar. */
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    row-gap: var(--space-1);
+    column-gap: var(--space-1);
     transform: none;
     background: var(--color-surface);
     backdrop-filter: none;
@@ -815,20 +822,18 @@ onMounted(() => {
     border: none;
     border-top: 1px solid var(--color-border);
     box-shadow: none;
-    padding: 0 var(--space-3);
-    padding-bottom: var(--safe-bottom);
-    gap: var(--space-2);
-    overflow-x: auto;
-    overflow-y: visible;
-    justify-content: flex-start;
+    padding: var(--space-2) var(--space-3);
+    padding-bottom: calc(var(--safe-bottom) + var(--space-2));
+    overflow: visible;
     opacity: 1 !important;
     pointer-events: auto !important;
   }
   .grip, .toggle-btn { display: none; }
   .toolbar-body { display: contents; }
   .group { flex-direction: row; gap: var(--space-1); flex-shrink: 0; }
-  .divider { width: 1px; height: 24px; margin: 0 var(--space-1); }
+  /* Dividers waste horizontal room and look odd across wrapped rows. */
+  .divider { display: none; }
   .tool { width: 40px; height: 40px; }
-  .popover { left: auto; right: 0; top: auto; bottom: calc(100% + 10px); transform: none; }
+  .popover { left: 50%; right: auto; top: auto; bottom: calc(100% + 10px); transform: translateX(-50%); }
 }
 </style>

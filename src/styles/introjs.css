@@ -13,6 +13,15 @@
   max-width: 340px;
 }
 
+/* On a phone the 280px min-width plus intro.js's edge positioning pushed the
+   tooltip off-screen. Let it shrink and never exceed the viewport width. */
+@media (max-width: 767px) {
+  .introjs-tooltip.ds-introjs {
+    min-width: 0;
+    max-width: calc(100vw - 24px);
+  }
+}
+
 .ds-introjs .introjs-tooltip-header {
   padding: var(--space-4) var(--space-4) 0;
 }
