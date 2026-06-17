@@ -23,8 +23,15 @@ const router = useRouter();
 const { isDark, toggleTheme } = useTheme();
 const { thumbnails, renderThumbnail, loadAndRenderThumbnail } = useThumbnails();
 
-const renamingId = ref<string | null>(null);
-const renameValue = ref("");
+// Current page name, edited inline in the detail header (master-detail layout).
+const pageName = ref("");
+watch(
+  () => editor.currentPage?.name,
+  (n) => {
+    pageName.value = n ?? "";
+  },
+  { immediate: true },
+);
 
 // Progressive disclosure: occasional settings/actions stay collapsed by default
 // so the panel opens on just Pages + Layers. Header overflow menu holds the rest.
@@ -113,22 +120,26 @@ function onNameEnter(e: KeyboardEvent) {
   (e.target as HTMLInputElement).blur();
 }
 
-function startRename(id: string, current: string) {
-  renamingId.value = id;
-  renameValue.value = current;
-}
-
-async function commitRename() {
-  if (renamingId.value) {
-    await editor.renamePage(renamingId.value, renameValue.value);
+async function commitPageName() {
+  const page = editor.currentPage;
+  if (!page) return;
+  const trimmed = pageName.value.trim();
+  if (!trimmed) {
+    pageName.value = page.name;
+    return;
   }
-  renamingId.value = null;
+  if (trimmed !== page.name) await editor.renamePage(page.id, trimmed);
 }
 
 async function remove(id: string, name: string) {
   if (editor.pages.length <= 1) return;
   if (!confirm(`Delete "${name}"?`)) return;
   await editor.deletePage(id);
+}
+
+async function removeCurrentPage() {
+  const page = editor.currentPage;
+  if (page) await remove(page.id, page.name);
 }
 
 // Layers — inline rename and delete.
@@ -359,74 +370,50 @@ function removeSnapshot() {
       </div>
       <div v-if="menuOpen" class="menu-backdrop" @click="menuOpen = false"></div>
 
-      <!-- ── Share ── -->
-      <div class="share-section">
-        <button class="share-btn" data-tour="share" :class="{ live: live.isHosting }" @click="emit('share')" :title="live.isHosting ? `Live session: ${live.code}` : 'Start a live session'" :aria-label="live.isHosting ? `Live session active, code: ${live.code}` : 'Start a live session'">
-          <span v-if="live.isHosting" class="live-dot" aria-hidden="true"></span>
-          <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><path d="M16 6l-4-4-4 4" /><path d="M12 2v13" />
-          </svg>
-          <span class="share-label">{{ live.isHosting ? `Live · ${live.code}` : 'Share live session' }}</span>
-        </button>
-      </div>
-
-      <!-- ── Pages ── -->
-      <div class="section pages-section" data-tour="pages">
-        <div class="section-title pages-head">
-          <span>Pages</span>
-          <button class="add-page" @click="editor.addPage()" title="Add page" aria-label="Add new page">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M5 12h14" /><path d="M12 5v14" />
-            </svg>
-            Add
-          </button>
-        </div>
-        <ul class="pages">
-          <li
-            v-for="page in editor.pages"
-            :key="page.id"
-            class="page"
-            :class="{ active: editor.currentPageId === page.id }"
-          >
-            <button class="page-main" @click="select(page.id)" :aria-label="`Go to ${page.name}`" :aria-current="editor.currentPageId === page.id ? 'page' : undefined">
-              <div class="page-thumb">
-                <img
-                  v-if="thumbnails[page.id]"
-                  :src="thumbnails[page.id]"
-                  class="thumb-img"
-                  :alt="`Preview of ${page.name}`"
-                  aria-hidden="true"
-                />
-                <span v-else class="thumb-num">{{ page.index + 1 }}</span>
-              </div>
-              <div class="page-meta">
-                <input
-                  v-if="renamingId === page.id"
-                  v-model="renameValue"
-                  class="input page-rename"
-                  :aria-label="`Rename page: ${page.name}`"
-                  @blur="commitRename"
-                  @keydown.enter="commitRename"
-                  @keydown.esc="renamingId = null"
-                  @click.stop
-                />
-                <span v-else class="page-name">{{ page.name }}</span>
-              </div>
-            </button>
-            <div class="page-actions">
-              <button class="page-action" :aria-label="`Rename ${page.name}`" @click="startRename(page.id, page.name)">Rename</button>
+      <!-- ── Master–detail body ── -->
+      <div class="md-body">
+        <!-- Master: page rail -->
+        <nav class="page-rail" aria-label="Pages" data-tour="pages">
+          <ul class="rail-list">
+            <li v-for="page in editor.pages" :key="page.id">
               <button
-                v-if="editor.pages.length > 1"
-                class="page-action danger"
-                :aria-label="`Delete ${page.name}`"
-                @click="remove(page.id, page.name)"
-              >Delete</button>
-            </div>
-          </li>
-        </ul>
-      </div>
+                class="rail-thumb"
+                :class="{ active: editor.currentPageId === page.id }"
+                @click="select(page.id)"
+                :title="page.name"
+                :aria-label="`Go to ${page.name}`"
+                :aria-current="editor.currentPageId === page.id ? 'page' : undefined"
+              >
+                <img v-if="thumbnails[page.id]" :src="thumbnails[page.id]" class="rail-img" :alt="`Preview of ${page.name}`" aria-hidden="true" />
+                <span v-else class="rail-ph">{{ page.index + 1 }}</span>
+                <span class="rail-badge">{{ page.index + 1 }}</span>
+              </button>
+            </li>
+            <li>
+              <button class="rail-add" @click="editor.addPage()" title="Add page" aria-label="Add new page">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+              </button>
+            </li>
+          </ul>
+        </nav>
+
+        <!-- Detail: the selected page's name, layers, setup and actions -->
+        <div class="detail">
+          <div class="detail-head">
+            <input
+              v-model="pageName"
+              class="page-name-input"
+              aria-label="Page name"
+              @blur="commitPageName"
+              @keydown.enter="($event.target as HTMLInputElement).blur()"
+              :placeholder="editor.currentPage?.name ?? 'Page'"
+            />
+            <button v-if="editor.pages.length > 1" class="head-icon" @click="removeCurrentPage" title="Delete page" aria-label="Delete this page">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+              </svg>
+            </button>
+          </div>
 
       <!-- ── Layers ── -->
       <div class="section layers-section">
@@ -652,6 +639,15 @@ function removeSnapshot() {
           <svg class="chev" :class="{ open: showActions }" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
         </button>
         <div v-if="showActions" class="group-body">
+          <!-- Live session -->
+          <button class="share-btn" data-tour="share" :class="{ live: live.isHosting }" @click="emit('share')" :title="live.isHosting ? `Live session: ${live.code}` : 'Start a live session'" :aria-label="live.isHosting ? `Live session active, code: ${live.code}` : 'Start a live session'">
+            <span v-if="live.isHosting" class="live-dot" aria-hidden="true"></span>
+            <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><path d="M16 6l-4-4-4 4" /><path d="M12 2v13" />
+            </svg>
+            <span class="share-label">{{ live.isHosting ? `Live · ${live.code}` : 'Share live session' }}</span>
+          </button>
+
           <!-- Export / clear -->
           <div class="page-tools">
             <button class="tool-btn" @click="exportCurrentPage" title="Export page as PNG" aria-label="Export page as PNG">
@@ -712,6 +708,8 @@ function removeSnapshot() {
           </div>
         </div>
       </div>
+        </div>
+      </div>
 
     </aside>
   </div>
@@ -731,8 +729,8 @@ function removeSnapshot() {
   position: absolute;
   right: 8px;
   top: 8px;
+  bottom: 8px;
   width: var(--sidepanel-w);
-  max-height: calc(100% - 16px);
   z-index: 10;
   background: var(--color-glass-bg);
   backdrop-filter: blur(14px);
@@ -742,11 +740,124 @@ function removeSnapshot() {
   box-shadow: 0 8px 24px var(--color-glass-shadow), 0 2px 6px var(--color-glass-shadow);
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   scrollbar-width: thin;
   transform-origin: top right;
   transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1), opacity 180ms ease;
+}
+
+/* ── Master–detail body ── */
+.md-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.page-rail {
+  flex-shrink: 0;
+  width: 78px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  border-right: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-bg) 40%, transparent);
+}
+.rail-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.rail-thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1.3;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-bg);
+  overflow: hidden;
+  transition: border-color 80ms ease, box-shadow 80ms ease;
+}
+.rail-thumb.active {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-accent-soft);
+}
+.rail-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.rail-ph {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.rail-badge {
+  position: absolute;
+  left: 4px;
+  bottom: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-bg) 70%, transparent);
+  color: var(--color-text-muted);
+}
+.rail-thumb.active .rail-badge {
+  color: var(--color-accent);
+}
+.rail-add {
+  width: 100%;
+  aspect-ratio: 1 / 1.3;
+  display: grid;
+  place-items: center;
+  border: 1.5px dashed var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  transition: border-color 80ms ease, color 80ms ease;
+}
+.rail-add:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.detail {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  display: flex;
+  flex-direction: column;
+}
+.detail-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+.page-name-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: 650;
+  padding: 6px 4px;
+  border-radius: var(--radius-sm);
+}
+.page-name-input:hover {
+  background: var(--color-surface-2);
+}
+.page-name-input:focus {
+  outline: none;
+  background: var(--color-surface-2);
 }
 
 .panel.is-collapsed {
