@@ -441,10 +441,10 @@ onBeforeUnmount(() => removeProbe?.());
 
   /* The toolbar is a floating pill at the bottom; lift the corner FABs above it. */
   .help-fab {
-    bottom: calc(var(--safe-bottom, 0px) + 68px);
+    bottom: calc(var(--safe-bottom, 0px) + 72px);
   }
   .replay-fab {
-    bottom: calc(var(--safe-bottom, 0px) + 112px);
+    bottom: calc(var(--safe-bottom, 0px) + 118px);
   }
   .help-fab.shifted,
   .replay-fab.shifted {

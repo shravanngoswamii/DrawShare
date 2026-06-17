@@ -427,9 +427,14 @@ details[open] .faq-q::before { transform: rotate(90deg); }
 @media (max-width: 767px) {
   .help-panel {
     right: 8px;
-    bottom: 72px;
+    bottom: calc(var(--safe-bottom, 0px) + 72px);
     width: calc(100vw - 16px);
     max-width: 340px;
+    /* Mobile Chrome often skips a 40px backdrop blur over the canvas layer,
+       leaving the panel flat. A smaller radius renders far more reliably; a
+       lighter, more translucent fill makes the frost read as frost. */
+    backdrop-filter: blur(18px) saturate(160%);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
   }
 }
 </style>
