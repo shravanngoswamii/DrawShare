@@ -425,50 +425,52 @@ function removeSnapshot() {
       </div>
       <div v-if="menuOpen" class="menu-backdrop" @click="menuOpen = false"></div>
 
-      <!-- ── Master–detail body ── -->
-      <div class="md-body">
-        <!-- Master: page rail -->
-        <nav class="page-rail" aria-label="Pages" data-tour="pages">
-          <ul class="rail-list">
+      <!-- ── Body: single scrolling column ── -->
+      <div class="panel-body">
+
+        <!-- Pages: a horizontal filmstrip so it stays one row tall and every
+             section below gets the panel's full width. -->
+        <section class="film-section" data-tour="pages">
+          <div class="section-head">
+            <span class="section-title">Pages</span>
+            <button class="btn-icon" @click="editor.addPage()" title="Add page" aria-label="Add new page">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+            </button>
+          </div>
+          <ul class="film">
             <li v-for="page in editor.pages" :key="page.id">
               <button
-                class="rail-thumb"
+                class="film-thumb"
                 :class="{ active: editor.currentPageId === page.id }"
                 @click="select(page.id)"
                 :title="page.name"
                 :aria-label="`Go to ${page.name}`"
                 :aria-current="editor.currentPageId === page.id ? 'page' : undefined"
               >
-                <img v-if="thumbnails[page.id]" :src="thumbnails[page.id]" class="rail-img" :alt="`Preview of ${page.name}`" aria-hidden="true" />
-                <span v-else class="rail-ph">{{ page.index + 1 }}</span>
-                <span class="rail-badge">{{ page.index + 1 }}</span>
-              </button>
-            </li>
-            <li>
-              <button class="rail-add" @click="editor.addPage()" title="Add page" aria-label="Add new page">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+                <img v-if="thumbnails[page.id]" :src="thumbnails[page.id]" class="film-img" :alt="`Preview of ${page.name}`" aria-hidden="true" />
+                <span v-else class="film-ph">{{ page.index + 1 }}</span>
+                <span class="film-badge">{{ page.index + 1 }}</span>
               </button>
             </li>
           </ul>
-        </nav>
+        </section>
 
-        <!-- Detail: the selected page's name, layers, setup and actions -->
-        <div class="detail">
-          <div class="detail-head">
-            <input
-              v-model="pageName"
-              class="page-name-input"
-              aria-label="Page name"
-              @blur="commitPageName"
-              @keydown.enter="($event.target as HTMLInputElement).blur()"
-              :placeholder="editor.currentPage?.name ?? 'Page'"
-            />
-            <button v-if="editor.pages.length > 1" class="head-icon" @click="removeCurrentPage" title="Delete page" aria-label="Delete this page">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-              </svg>
-            </button>
-          </div>
+        <!-- Current page: rename + delete -->
+        <div class="page-name-row">
+          <input
+            v-model="pageName"
+            class="page-name-input"
+            aria-label="Page name"
+            @blur="commitPageName"
+            @keydown.enter="($event.target as HTMLInputElement).blur()"
+            :placeholder="editor.currentPage?.name ?? 'Page'"
+          />
+          <button v-if="editor.pages.length > 1" class="head-icon" @click="removeCurrentPage" title="Delete page" aria-label="Delete this page">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+            </svg>
+          </button>
+        </div>
 
       <!-- ── Layers ── -->
       <div class="section layers-section">
@@ -763,7 +765,6 @@ function removeSnapshot() {
           </div>
         </div>
       </div>
-        </div>
       </div>
 
     </aside>
@@ -801,32 +802,35 @@ function removeSnapshot() {
   transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1), opacity 180ms ease;
 }
 
-/* ── Master–detail body ── */
-.md-body {
+/* ── Body: one scrolling column, every section full width ── */
+.panel-body {
   flex: 1;
   min-height: 0;
-  display: flex;
-}
-.page-rail {
-  flex-shrink: 0;
-  width: 68px;
   overflow-y: auto;
+  overflow-x: hidden;
   scrollbar-width: thin;
-  border-right: 1px solid var(--color-border);
-  background: color-mix(in srgb, var(--color-bg) 40%, transparent);
 }
-.rail-list {
+
+/* Pages as a horizontal filmstrip — stays one row tall so it never steals
+   width from the layers/setup sections below. */
+.film-section {
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+.film {
   list-style: none;
-  margin: 0;
-  padding: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: 0 0 4px;
   display: flex;
-  flex-direction: column;
   gap: var(--space-2);
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
-.rail-thumb {
+.film > li { flex: 0 0 auto; }
+.film-thumb {
   position: relative;
   display: block;
-  width: 100%;
+  width: 48px;
   aspect-ratio: 1 / 1.3;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border-strong);
@@ -834,16 +838,16 @@ function removeSnapshot() {
   overflow: hidden;
   transition: border-color 80ms ease, box-shadow 80ms ease;
 }
-.rail-thumb.active {
+.film-thumb.active {
   border-color: var(--color-accent);
   box-shadow: 0 0 0 2px var(--color-accent-soft);
 }
-.rail-img {
+.film-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
-.rail-ph {
+.film-ph {
   position: absolute;
   inset: 0;
   display: grid;
@@ -852,44 +856,21 @@ function removeSnapshot() {
   font-weight: 600;
   color: var(--color-text-muted);
 }
-.rail-badge {
+.film-badge {
   position: absolute;
-  left: 4px;
-  bottom: 3px;
+  left: 3px;
+  bottom: 2px;
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
-  padding: 2px 4px;
+  padding: 1px 4px;
   border-radius: 4px;
   background: color-mix(in srgb, var(--color-bg) 70%, transparent);
   color: var(--color-text-muted);
 }
-.rail-thumb.active .rail-badge {
-  color: var(--color-accent);
-}
-.rail-add {
-  width: 100%;
-  aspect-ratio: 1 / 1.3;
-  display: grid;
-  place-items: center;
-  border: 1.5px dashed var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  color: var(--color-text-muted);
-  transition: border-color 80ms ease, color 80ms ease;
-}
-.rail-add:hover {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-}
-.detail {
-  flex: 1;
-  min-width: 0;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  display: flex;
-  flex-direction: column;
-}
-.detail-head {
+.film-thumb.active .film-badge { color: var(--color-accent); }
+
+.page-name-row {
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -1666,14 +1647,6 @@ function removeSnapshot() {
   .head-icon { width: 36px; height: 36px; }
   .btn-icon { width: 30px; height: 30px; }
   .head-menu-item { padding: 11px 12px; }
-  .rail-add { aspect-ratio: 1 / 1; }
-}
-
-/* On a roomy touch screen (iPad and up) widen the panel so the page rail and
-   the detail column both breathe; the var also shifts the canvas FABs clear. */
-@media (pointer: coarse) and (min-width: 768px) {
-  :root { --sidepanel-w: 300px; }
-  .page-rail { width: 76px; }
 }
 
 /* ── Mobile — slide-in drawer ── */

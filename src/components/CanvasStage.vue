@@ -7,6 +7,7 @@ import { useTheme } from "@/composables/useTheme";
 import { newId } from "@/core/ids";
 import { splitImageLayers } from "@/core/images";
 import { adaptInk } from "@/core/ink";
+import { orderByLayer } from "@/core/layers";
 import {
   nearestSheetIndex,
   PAGE_H,
@@ -663,17 +664,21 @@ function render() {
       );
     } else {
       baseRenderer.beginFrame();
-      // Images split into a behind band (below the drawing) and a front band (above).
+      // Draw in layer order (bottom→top) so reordering layers actually restacks
+      // the ink; within a layer images split into a behind/front band as before.
       const pageImgs = editor.images.filter((img) => img.pageId === props.page.id);
-      const { behind, front } = splitImageLayers(pageImgs);
-      for (const img of behind) baseRenderer.drawImageItem(img);
-      for (const s of editor.strokes) baseRenderer.drawStroke(s);
-      for (const sh of editor.shapes) baseRenderer.drawShape(sh);
-      for (const t of editor.currentPage?.texts ?? []) {
-        if (editing.value?.id === t.id) continue;
-        baseRenderer.drawText(t);
+      for (const r of orderByLayer(
+        editor.layers,
+        editor.strokes,
+        editor.shapes,
+        pageImgs,
+        editor.currentPage?.texts ?? [],
+      )) {
+        if (r.kind === "image") baseRenderer.drawImageItem(r.item);
+        else if (r.kind === "stroke") baseRenderer.drawStroke(r.item);
+        else if (r.kind === "shape") baseRenderer.drawShape(r.item);
+        else if (editing.value?.id !== r.item.id) baseRenderer.drawText(r.item);
       }
-      for (const img of front) baseRenderer.drawImageItem(img);
       baseRenderer.endFrame();
     }
     dlog(`render base strokes=${editor.strokes.length} cur=${currentStroke ? "y" : "n"}`);
