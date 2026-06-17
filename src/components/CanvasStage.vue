@@ -1761,22 +1761,39 @@ function onWheel(e: WheelEvent) {
   }
 }
 
+// Abandon any in-progress stroke/shape/erase without committing — used when a
+// second finger turns a one-finger draw into a two-finger pan/zoom.
+function discardActiveDraw() {
+  currentStroke = undefined;
+  currentShape = undefined;
+  predictedPoints = [];
+  if (isErasing) {
+    isErasing = false;
+    lastEraseWorld = null;
+    eraseCursor.value = null;
+    areaErased = false;
+    eraseLockId = undefined;
+  }
+  editor.setDrawing(false);
+  dirtyBase = true;
+  schedule();
+}
+
 function onNavPointerDown(e: PointerEvent) {
   if (e.pointerType === "touch") {
     if (!wrap.value) return;
     const rect = wrap.value.getBoundingClientRect();
     touchPoints.set(e.pointerId, { x: e.clientX - rect.left, y: e.clientY - rect.top });
     if (touchPoints.size >= 2) {
-      if (currentStroke || isErasing) return;
       e.preventDefault();
+      // Two fingers = pan/zoom. Drop whatever the first finger started so the
+      // gesture becomes a pinch instead of leaving a stray stroke.
+      discardActiveDraw();
       const pts = Array.from(touchPoints.values());
       pinchLastDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
       pinchLastMx = (pts[0].x + pts[1].x) / 2;
       pinchLastMy = (pts[0].y + pts[1].y) / 2;
-      if (!pinchActive) {
-        pinchActive = true;
-        isErasing = false;
-      }
+      pinchActive = true;
     }
     return;
   }
