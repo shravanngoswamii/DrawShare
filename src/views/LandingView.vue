@@ -3,6 +3,7 @@ import { getStroke } from "perfect-freehand";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useTheme } from "@/composables/useTheme";
+import { makeSessionCode } from "@/core/sync";
 
 const router = useRouter();
 const { isDark, toggleTheme } = useTheme();
@@ -55,6 +56,37 @@ let viewerH = 0;
 
 const reduceMotion =
   typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+// Session-code chip: a fresh crypto-random code each load (same alphabet the app
+// hands out), revealed character-by-character — starts as XXXXXX, then each slot
+// flickers and locks left to right.
+const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const displayCode = ref<string[]>(Array(6).fill("X"));
+let codeTimer = 0;
+
+function animateCode() {
+  const final = makeSessionCode().split("");
+  if (reduceMotion) {
+    displayCode.value = final;
+    return;
+  }
+  const STEP = 150; // gap before each slot starts resolving
+  const SCRAMBLE = 150; // how long a slot flickers before locking
+  const total = (final.length - 1) * STEP + SCRAMBLE;
+  const start = performance.now();
+  const tick = () => {
+    const t = performance.now() - start;
+    displayCode.value = final.map((ch, i) => {
+      const at = i * STEP;
+      if (t < at) return "X";
+      if (t < at + SCRAMBLE) return CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+      return ch;
+    });
+    if (t < total) codeTimer = window.setTimeout(tick, 45);
+    else displayCode.value = final;
+  };
+  tick();
+}
 
 function inkColor() {
   return isDark.value ? "#EAEEF5" : "#14213D";
@@ -264,6 +296,7 @@ onMounted(() => {
   resizeObserver = new ResizeObserver(() => fitCanvases());
   if (hostCanvas.value) resizeObserver.observe(hostCanvas.value);
   if (viewerCanvas.value) resizeObserver.observe(viewerCanvas.value);
+  animateCode();
 });
 
 // Intro ink uses the theme colour (graphite on paper, chalk on slate); repaint
@@ -273,6 +306,7 @@ watch(isDark, () => renderBoth());
 onBeforeUnmount(() => {
   resizeObserver?.disconnect();
   cancelAnimationFrame(raf);
+  clearTimeout(codeTimer);
 });
 </script>
 
@@ -361,7 +395,7 @@ onBeforeUnmount(() => {
           </figure>
 
           <div class="link">
-            <span class="code-chip mono">K7M2QX</span>
+            <span class="code-chip mono">{{ displayCode.join("") }}</span>
             <svg class="link-arrow" width="40" height="16" viewBox="0 0 40 16" fill="none" aria-hidden="true">
               <path d="M1 8h34" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 3" stroke-linecap="round"/>
               <path d="M31 3l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
