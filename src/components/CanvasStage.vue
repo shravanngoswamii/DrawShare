@@ -2373,6 +2373,13 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
+/* Lift the zoom controls above the floating toolbar pill on phones. */
+@media (max-width: 767px) {
+  .cam-controls {
+    bottom: 68px;
+  }
+}
+
 .cam-btn {
   display: flex;
   align-items: center;

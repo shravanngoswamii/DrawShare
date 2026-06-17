@@ -798,50 +798,84 @@ onMounted(() => {
 
 /* Mobile keeps the simple bottom bar regardless of dock */
 @media (max-width: 767px) {
+  /* Floating pill, centred near the bottom and horizontally scrollable — it sits
+     over the canvas instead of reserving a full-width strip. Centred with
+     margin:auto (NOT transform) and a solid background (NOT glass), so neither a
+     transform nor a backdrop-filter creates a containing block — that lets the
+     tool popovers (position:fixed) escape the pill's scroll clip. The desktop
+     dockStyle is applied inline, so the overrides need !important. */
   .toolbar,
   .toolbar.dock-left,
   .toolbar.dock-right,
   .toolbar.dock-top,
   .toolbar.dock-bottom {
-    position: static;
-    width: 100%;
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    bottom: calc(var(--safe-bottom) + 12px) !important;
+    margin: 0 auto !important;
+    transform: none !important;
+    width: max-content;
+    max-width: calc(100vw - 24px);
     height: auto;
     flex-direction: row;
-    justify-content: center;
     align-items: center;
-    /* The desktop dockStyle is applied inline (incl. transform: translateX(-50%)
-       for centering); !important is needed to neutralize it on mobile, otherwise
-       the full-width static bar gets shifted half the viewport off-centre. */
-    transform: none !important;
-    inset: auto !important;
     background: var(--color-surface);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    border-radius: 0;
-    border: none;
-    border-top: 1px solid var(--color-border);
-    box-shadow: none;
-    padding: var(--space-2) var(--space-2);
-    padding-bottom: calc(var(--safe-bottom) + var(--space-2));
-    overflow: visible;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    box-shadow: 0 6px 20px var(--color-glass-shadow), 0 2px 6px var(--color-glass-shadow);
+    padding: 4px 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
     opacity: 1 !important;
     pointer-events: auto !important;
+    z-index: 30;
   }
-  .grip, .toggle-btn { display: none; }
-  /* Real wrapping flex row: every tool fits the phone width across centered rows
-     (no overflow clip, so the tool popovers can open above the bar). */
+  .toolbar::-webkit-scrollbar {
+    display: none;
+  }
+  .grip,
+  .toggle-btn {
+    display: none;
+  }
   .toolbar-body {
     display: flex;
-    flex-flow: row wrap;
-    justify-content: center;
+    flex-flow: row nowrap;
     align-items: center;
     gap: var(--space-1);
-    width: 100%;
   }
-  .group { flex-direction: row; gap: var(--space-1); flex-shrink: 0; }
-  /* Dividers waste horizontal room and look odd across wrapped rows. */
-  .divider { display: none; }
-  .tool { width: 40px; height: 40px; }
-  .popover { left: 50%; right: auto; top: auto; bottom: calc(100% + 10px); transform: translateX(-50%); }
+  .group {
+    flex-direction: row;
+    gap: var(--space-1);
+    flex-shrink: 0;
+  }
+  .divider {
+    width: 1px;
+    height: 24px;
+    margin: 0 2px;
+    flex-shrink: 0;
+  }
+  .tool {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+  }
+  /* Popovers open as a centred card above the pill (fixed → escapes the scroll
+     clip, since the pill has no transform/filter). */
+  .popover {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    bottom: calc(var(--safe-bottom) + 68px) !important;
+    margin: 0 auto !important;
+    width: max-content !important;
+    max-width: calc(100vw - 24px) !important;
+    transform: none !important;
+  }
 }
 </style>
