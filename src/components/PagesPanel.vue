@@ -191,9 +191,10 @@ const backgrounds = [
 ] as const;
 
 async function setBackground(value: "blank" | "ruled" | "grid" | "dotted") {
-  const page = editor.currentPage;
-  if (!page) return;
-  await editor.setPageBackground(page.id, value);
+  // Background is a notebook-wide choice — apply it to every page, not just this one.
+  for (const page of editor.pages) {
+    await editor.setPageBackground(page.id, value);
+  }
 }
 
 async function exportCurrentPage() {
@@ -700,7 +701,7 @@ function removeSnapshot() {
           <button class="share-btn" data-tour="share" :class="{ live: live.isHosting }" @click="emit('share')" :title="live.isHosting ? `Live session: ${live.code}` : 'Start a live session'" :aria-label="live.isHosting ? `Live session active, code: ${live.code}` : 'Start a live session'">
             <span v-if="live.isHosting" class="live-dot" aria-hidden="true"></span>
             <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><path d="M16 6l-4-4-4 4" /><path d="M12 2v13" />
+              <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9" /><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5" /><circle cx="12" cy="12" r="2" /><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5" /><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1" />
             </svg>
             <span class="share-label">{{ live.isHosting ? `Live · ${live.code}` : 'Share live session' }}</span>
           </button>
@@ -820,12 +821,15 @@ function removeSnapshot() {
 .film {
   list-style: none;
   margin: var(--space-2) 0 0;
-  padding: 0 0 4px;
+  padding: 0;
   display: flex;
   gap: var(--space-2);
   overflow-x: auto;
-  scrollbar-width: thin;
+  /* Scrollable by drag/wheel/swipe, but no visible scrollbar. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+.film::-webkit-scrollbar { display: none; }
 .film > li { flex: 0 0 auto; }
 .film-thumb {
   position: relative;
