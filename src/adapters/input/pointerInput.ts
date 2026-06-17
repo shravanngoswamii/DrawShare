@@ -13,7 +13,6 @@ export class PointerInputAdapter implements InputAdapter {
   private handlers: InputHandlers | undefined;
   private startTime = 0;
   private activeId: number | undefined;
-  private penWasUsedRecently = false;
   private penLockoutUntil = 0;
   private moveCount = 0;
 
@@ -62,8 +61,12 @@ export class PointerInputAdapter implements InputAdapter {
 
   private shouldIgnore(e: PointerEvent): boolean {
     if (e.pointerType !== "touch") return false;
-    if (this.penWasUsedRecently || performance.now() < this.penLockoutUntil) return true;
-    if (e.width > 25 || e.height > 25) return true;
+    // Palm rejection is transient: only while the pen is in use (or just lifted)
+    // do we ignore touches, so a resting palm can't draw. Once the pen has been
+    // idle past the lockout, finger drawing works again — this is what lets you
+    // draw with a finger on a pencil-capable iPad/iPhone.
+    if (performance.now() < this.penLockoutUntil) return true;
+    // A non-primary touch is the second finger of a pinch — left to pan/zoom.
     if (!e.isPrimary) return true;
     return false;
   }
@@ -82,7 +85,6 @@ export class PointerInputAdapter implements InputAdapter {
 
   private begin(e: PointerEvent): void {
     if (e.pointerType === "pen") {
-      this.penWasUsedRecently = true;
       this.penLockoutUntil = performance.now() + 1500;
     }
     this.activeId = e.pointerId;
