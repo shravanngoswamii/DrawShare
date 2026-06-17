@@ -2,6 +2,7 @@ import type {
   ID,
   ImageItem,
   Layer,
+  Narration,
   Page,
   Project,
   ReplayEvent,
@@ -46,6 +47,11 @@ export interface StorageAdapter {
   appendEvent(e: ReplayEvent): Promise<void>;
   listEvents(projectId: ID): Promise<ReplayEvent[]>;
   clearEvents(projectId: ID): Promise<void>;
+
+  // Voice narration (one recording per project, stored as a Blob).
+  putNarration(n: Narration): Promise<void>;
+  getNarration(projectId: ID): Promise<Narration | undefined>;
+  deleteNarration(projectId: ID): Promise<void>;
 }
 
 export interface InputAdapter {

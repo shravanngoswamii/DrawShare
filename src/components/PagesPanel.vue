@@ -11,6 +11,7 @@ import { useThumbnails } from "@/composables/useThumbnails";
 import { devMode, setDevMode } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
+import { useNarrationStore } from "@/stores/narration";
 import { PAPER_SIZES, useProjectsStore } from "@/stores/projects";
 
 const props = defineProps<{ open?: boolean; collapsed?: boolean }>();
@@ -18,6 +19,7 @@ const emit = defineEmits<{ close: []; toggle: []; share: [] }>();
 
 const editor = useEditorStore();
 const live = useLiveStore();
+const narration = useNarrationStore();
 const projects = useProjectsStore();
 const router = useRouter();
 const { isDark, toggleTheme } = useTheme();
@@ -284,6 +286,40 @@ function removeSnapshot() {
   if (!id) return;
   localStorage.removeItem(snapshotKey(id));
   snapshotUrl.value = null;
+}
+
+// ── Narration ────────────────────────────────────────────────────────────────
+
+watch(
+  () => editor.project?.id,
+  async (id) => {
+    if (id) await narration.load(id);
+  },
+  { immediate: true },
+);
+
+function formatNarrationDuration(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+async function startNarration() {
+  await narration.startRecording();
+}
+
+async function stopNarration() {
+  const id = editor.project?.id;
+  if (!id) return;
+  await narration.stopRecording(id);
+}
+
+async function deleteNarration() {
+  const id = editor.project?.id;
+  if (!id) return;
+  if (!confirm("Delete voice narration? This cannot be undone.")) return;
+  await narration.deleteNarration(id);
 }
 </script>
 
@@ -670,6 +706,62 @@ function removeSnapshot() {
           Records every edit so replay shows exactly what happened — erasing, moving,
           undo. Off, replay reconstructs the drawing from its final state.
         </p>
+      </div>
+
+      <!-- ── Voice narration ── -->
+      <div class="section">
+        <div class="section-title">Voice narration</div>
+
+        <!-- No narration yet -->
+        <template v-if="!narration.narration && !narration.isRecording">
+          <button class="narr-record-btn" @click="startNarration" aria-label="Record voice narration">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 1a4 4 0 0 1 4 4v7a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <line x1="12" y1="19" x2="12" y2="23" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <line x1="8" y1="23" x2="16" y2="23" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+            <span>Record narration</span>
+          </button>
+          <p class="mode-hint">Record your voice while drawing. Plays back in sync with replay.</p>
+        </template>
+
+        <!-- Recording in progress -->
+        <template v-else-if="narration.isRecording">
+          <div class="narr-recording-row">
+            <span class="narr-dot" aria-hidden="true"></span>
+            <span class="narr-timer" aria-live="polite">{{ formatNarrationDuration(narration.recElapsedSec * 1000) }}</span>
+          </div>
+          <button class="narr-stop-btn" @click="stopNarration" aria-label="Stop recording">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+            </svg>
+            <span>Stop recording</span>
+          </button>
+        </template>
+
+        <!-- Narration exists -->
+        <template v-else>
+          <div class="narr-info">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+              <path d="M12 1a4 4 0 0 1 4 4v7a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" y1="19" x2="12" y2="23"/>
+              <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+            <span>{{ formatNarrationDuration(narration.narration?.durationMs ?? 0) }}</span>
+          </div>
+          <div class="narr-actions">
+            <button class="page-action" @click="narration.exportAudio()" aria-label="Export narration audio">Export audio</button>
+            <button class="page-action danger" @click="deleteNarration" aria-label="Delete narration">Delete</button>
+          </div>
+          <p class="mode-hint">Press Replay to hear the narration alongside the drawing.</p>
+        </template>
+
+        <p v-if="narration.permissionDenied" class="narr-error" role="alert">
+          Microphone access denied. Allow microphone access in your browser settings.
+        </p>
+        <p v-if="narration.error" class="narr-error" role="alert">{{ narration.error }}</p>
       </div>
 
       <!-- ── Snapshot link ── -->
@@ -1283,6 +1375,97 @@ function removeSnapshot() {
   background: var(--color-accent);
   border-color: var(--color-accent);
   color: var(--color-accent-text);
+}
+
+/* ── Narration ── */
+.narr-record-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  transition: background 80ms ease, color 80ms ease;
+}
+.narr-record-btn:hover {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+.narr-recording-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.narr-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-danger);
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.2);
+  animation: narr-blink 1s step-start infinite;
+  flex-shrink: 0;
+}
+
+@keyframes narr-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.narr-timer {
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--color-danger);
+}
+
+.narr-stop-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-danger);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  transition: background 80ms ease;
+}
+.narr-stop-btn:hover { background: rgba(220, 38, 38, 0.15); }
+
+.narr-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-2);
+}
+
+.narr-actions {
+  display: flex;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.narr-error {
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-danger);
+  line-height: 1.4;
 }
 
 /* ── Snapshot ── */

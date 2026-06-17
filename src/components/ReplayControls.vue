@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { onBeforeUnmount, watch } from "vue";
+import { useNarrationStore } from "@/stores/narration";
 import type { ReplaySpeed } from "@/stores/replay";
 import { useReplayStore } from "@/stores/replay";
 
 const replay = useReplayStore();
+const narration = useNarrationStore();
 
 // ── RAF animation loop ──────────────────────────────────────────────────────
 
@@ -33,9 +35,28 @@ watch(
   (v) => {
     if (v) {
       startLoop();
-    } else if (rafId !== null) {
-      cancelAnimationFrame(rafId);
-      rafId = null;
+      narration.play(replay.time);
+    } else {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      narration.pause();
+    }
+  },
+);
+
+watch(
+  () => replay.speed,
+  (v) => narration.setPlaybackRate(v),
+);
+
+watch(
+  () => replay.active,
+  (v) => {
+    if (!v) {
+      narration.pause();
+      narration.seek(0);
     }
   },
 );
@@ -64,7 +85,9 @@ function togglePlay() {
 }
 
 function onSeek(e: Event) {
-  replay.setTime(+(e.target as HTMLInputElement).value);
+  const t = +(e.target as HTMLInputElement).value;
+  replay.setTime(t);
+  narration.seek(t);
 }
 
 function setSpeed(v: ReplaySpeed) {
