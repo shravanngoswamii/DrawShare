@@ -456,8 +456,8 @@ function formatDate(ts: number): string {
 
 <style scoped>
 .page {
-  height: 100dvh;
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -962,14 +962,16 @@ function formatDate(ts: number): string {
     height: 40px;
   }
 
+  /* Search takes its own full-width row; the action buttons wrap to a row
+     beneath it (a grid scattered the 5 items across rows). */
   .header-actions {
-    display: grid;
-    grid-template-columns: 1fr auto;
+    flex-wrap: wrap;
     gap: var(--space-2);
   }
 
   .search {
-    width: 100%;
+    flex: 1 1 100%;
+    width: auto;
   }
 
   .new-label {
@@ -979,6 +981,7 @@ function formatDate(ts: number): string {
   .new-btn {
     width: 40px;
     padding: 0;
+    margin-left: auto;
   }
 
   .main {

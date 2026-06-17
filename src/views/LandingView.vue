@@ -579,8 +579,8 @@ onBeforeUnmount(() => {
   --ink-swatch: #14213d;
   --pencil: #fcb814;
   --eraser: #ff3b30;
-  height: 100dvh;
   height: 100vh;
+  height: 100dvh;
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
