@@ -539,10 +539,14 @@ function syncCamera() {
 
 function fitCanvas() {
   if (!wrap.value || !baseEl.value || !liveEl.value) return;
-  const rect = wrap.value.getBoundingClientRect();
   const ratio = dpr();
-  viewW = rect.width;
-  viewH = rect.height;
+  // Size from the layout box, not getBoundingClientRect: the editor plays an
+  // open animation that scales an ancestor, and getBoundingClientRect returns
+  // that shrunk, transformed size. Measuring it mid-animation sized the canvas
+  // ~0.95× too small, leaving a dead band at the right/bottom that never fixed
+  // itself (a finishing transform doesn't trigger the ResizeObserver).
+  viewW = wrap.value.clientWidth;
+  viewH = wrap.value.clientHeight;
   // viewW/viewH are stored before setViewport so culling uses updated dimensions
   baseRenderer.setViewport(viewW, viewH, ratio);
   liveRenderer.setViewport(viewW, viewH, ratio);
