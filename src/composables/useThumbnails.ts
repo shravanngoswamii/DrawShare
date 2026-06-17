@@ -1,8 +1,24 @@
 import { getStroke } from "perfect-freehand";
 import { ref } from "vue";
 import { storage } from "@/adapters/storage/indexedDB";
+import { useTheme } from "@/composables/useTheme";
 import { splitImageLayers } from "@/core/images";
+import { adaptInk } from "@/core/ink";
 import type { ImageItem, Page, Project, Shape, Stroke, TextItem } from "@/core/types";
+
+// Read the active theme so thumbnails match the editor: dark paper + light-flipped
+// ink in dark mode, exactly like the live canvas (paper from --color-canvas-surface,
+// ink through adaptInk). isDark comes from useTheme so it tracks system mode too,
+// where no data-theme attribute is set. Falls back to a white sheet headlessly.
+const { isDark: themeIsDark } = useTheme();
+
+function themeColors(): { paper: string; isDark: boolean } {
+  if (typeof document === "undefined") return { paper: "#ffffff", isDark: false };
+  const paper = getComputedStyle(document.documentElement)
+    .getPropertyValue("--color-canvas-surface")
+    .trim();
+  return { paper: paper || "#ffffff", isDark: themeIsDark.value };
+}
 
 // Page panel thumbnails: A4 ratio, contain mode
 const THUMB_W = 52;
@@ -80,9 +96,9 @@ function contentBounds(
   return { minX, minY, maxX, maxY };
 }
 
-function drawShape(ctx: OffscreenCanvasRenderingContext2D, shape: Shape): void {
+function drawShape(ctx: OffscreenCanvasRenderingContext2D, shape: Shape, isDark: boolean): void {
   ctx.save();
-  ctx.strokeStyle = shape.color;
+  ctx.strokeStyle = adaptInk(shape.color, isDark);
   ctx.lineWidth = shape.size;
   ctx.globalAlpha = shape.opacity;
   ctx.lineCap = "round";
@@ -150,11 +166,13 @@ async function renderToCanvas(
   const pageImages = images.filter((i) => i.pageId === page.id);
   const texts = page.texts ?? [];
 
+  const { paper, isDark } = themeColors();
+
   const canvas = new OffscreenCanvas(w, h);
   const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D | null;
   if (!ctx) return null;
 
-  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = paper;
   ctx.fillRect(0, 0, w, h);
 
   const bounds = contentBounds(pageStrokes, texts, pageShapes, pageImages);
@@ -199,7 +217,7 @@ async function renderToCanvas(
     const inputs = stroke.points.map((p) => [p.x, p.y, p.p] as [number, number, number]);
     const path = getStroke(inputs, { ...PEN_OPTIONS, size: stroke.size, last: true });
     if (!path.length) continue;
-    ctx.fillStyle = stroke.color;
+    ctx.fillStyle = adaptInk(stroke.color, isDark);
     ctx.globalAlpha = stroke.opacity;
     ctx.beginPath();
     ctx.moveTo(path[0][0], path[0][1]);
@@ -214,12 +232,12 @@ async function renderToCanvas(
     ctx.globalAlpha = 1;
   }
 
-  for (const shape of pageShapes) drawShape(ctx, shape);
+  for (const shape of pageShapes) drawShape(ctx, shape, isDark);
 
   for (const item of texts) {
     if (!item.text) continue;
     ctx.save();
-    ctx.fillStyle = item.color;
+    ctx.fillStyle = adaptInk(item.color, isDark);
     ctx.font = `${item.size}px ui-sans-serif, system-ui, -apple-system, sans-serif`;
     ctx.textBaseline = "top";
     const lineHeight = item.size * 1.3;

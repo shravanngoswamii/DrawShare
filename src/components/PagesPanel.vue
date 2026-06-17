@@ -86,6 +86,18 @@ watch(
   { immediate: true },
 );
 
+// Thumbnails bake in the theme (paper + ink), so they go stale on a theme switch.
+// Drop the cache and re-render the current page now plus lazy-load the rest.
+watch(isDark, () => {
+  thumbnails.value = {};
+  const cur = editor.currentPage;
+  if (cur) renderThumbnail(cur, editor.strokes, editor.shapes, editor.images);
+  for (const p of editor.pages) {
+    if (cur?.id === p.id) continue;
+    loadAndRenderThumbnail(p);
+  }
+});
+
 async function commitName() {
   if (!editor.project) return;
   const trimmed = projectName.value.trim();

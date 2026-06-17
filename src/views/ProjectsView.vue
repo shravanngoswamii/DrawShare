@@ -75,6 +75,11 @@ watch(
   },
 );
 
+// Card thumbnails bake in the theme, so re-render them all on a theme switch.
+watch(isDark, () => {
+  for (const p of projects.projects) renderProjectThumbnail(p);
+});
+
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase();
   if (!q) return projects.activeProjects;
