@@ -22,6 +22,23 @@ const projects = useProjectsStore();
 const { isDark, toggleTheme } = useTheme();
 const { thumbnails, renderThumbnail, loadAndRenderThumbnail } = useThumbnails();
 
+// On mobile the collapsed mini-dock doubles as the panel launcher: it floats
+// top-right whenever the drawer is closed, and tapping expand slides the drawer
+// in. (On mobile the panel is never truly "collapsed" — it's an off-screen
+// drawer — so the dock is gated on the drawer being shut instead.)
+const isMobile = ref(
+  typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
+);
+let mobileMq: MediaQueryList | undefined;
+function onMobileChange(e: MediaQueryListEvent) {
+  isMobile.value = e.matches;
+}
+onMounted(() => {
+  mobileMq = window.matchMedia("(max-width: 767px)");
+  mobileMq.addEventListener("change", onMobileChange);
+});
+onBeforeUnmount(() => mobileMq?.removeEventListener("change", onMobileChange));
+
 // Current page name, edited inline in the detail header (master-detail layout).
 const pageName = ref("");
 watch(
@@ -283,7 +300,7 @@ function removeSnapshot() {
 
     <!-- Collapsed (desktop): a slim vertical dock with just the essentials —
          expand, theme, live session. The full title shows on hover. -->
-    <div v-if="collapsed" class="mini-dock" :class="{ quiet: editor.isDrawing }" aria-label="Pages, collapsed">
+    <div v-if="collapsed || (isMobile && !open)" class="mini-dock" :class="{ quiet: editor.isDrawing }" aria-label="Pages, collapsed">
       <button
         class="dock-btn dock-expand"
         @click="emit('toggle')"
@@ -323,7 +340,7 @@ function removeSnapshot() {
       </button>
     </div>
 
-    <aside v-else class="panel" :class="{ quiet: editor.isDrawing }" aria-label="Pages and settings">
+    <aside v-if="!collapsed" class="panel" :class="{ quiet: editor.isDrawing }" aria-label="Pages and settings">
 
       <!-- ── Header ── -->
       <div class="panel-head">
@@ -1376,8 +1393,15 @@ function removeSnapshot() {
 
 /* ── Mobile — slide-in drawer ── */
 @media (max-width: 767px) {
-  /* Collapse is a desktop affordance; on mobile the panel is a drawer. */
-  .mini-dock { display: none; }
+  /* On mobile the mini-dock is the panel launcher (it replaces the old
+     hamburger): same vertical dock as desktop, floated clear of the safe area.
+     .wrap is pointer-events:none on mobile, so the dock needs its own. */
+  .mini-dock {
+    top: calc(var(--safe-top, 0px) + 12px);
+    right: 12px;
+    z-index: 50;
+    pointer-events: auto;
+  }
   .wrap {
     display: block;
     position: fixed;
