@@ -69,6 +69,8 @@ const cam = { x: 0, y: 0, zoom: 1 };
 const zoomLabel = ref("100%");
 const bgStyle = ref({ backgroundSize: "32px 32px", backgroundPosition: "0px 0px" });
 const panCursor = ref(false);
+// Resize cursor shown while hovering a selected image's corner (Select tool).
+const hoverCursor = ref<string | null>(null);
 const pageFrameStyle = ref<Record<string, string> | null>(null);
 
 function updatePageFrame() {
@@ -1720,7 +1722,35 @@ function laserEnd() {
 
 // Spotlight follows the cursor on hover (no press needed), so it stays on mouse
 // events. Hover fires them fine; only the pressed-pointer path is suppressed.
+function cornerCursor(c: ResizeCorner | null): string | null {
+  if (c === "nw" || c === "se") return "nwse-resize";
+  if (c === "ne" || c === "sw") return "nesw-resize";
+  return null;
+}
+
+// Show a directional resize cursor when the pointer is over a selected image's
+// corner (or mid-resize). Runs on hover; during the drag the adapter suppresses
+// mouse events, so the cursor set at grab time simply persists.
+function updateHoverCursor(e: MouseEvent) {
+  if (imageResize) {
+    hoverCursor.value = cornerCursor(imageResize.corner);
+    return;
+  }
+  const img =
+    editor.tool === "select" && selectedImageId.value
+      ? editor.images.find((i) => i.id === selectedImageId.value)
+      : undefined;
+  const sp = img ? presenterPoint(e) : null;
+  if (!img || !sp) {
+    hoverCursor.value = null;
+    return;
+  }
+  const w = toWorld(sp.x, sp.y);
+  hoverCursor.value = cornerCursor(imageResizeCornerAt(img, w.x, w.y));
+}
+
 function onPresenterMove(e: MouseEvent) {
+  updateHoverCursor(e);
   if (editor.presenterMode !== "spotlight") return;
   const p = presenterPoint(e);
   if (!p) return;
@@ -1729,6 +1759,7 @@ function onPresenterMove(e: MouseEvent) {
 }
 
 function onPresenterLeave() {
+  hoverCursor.value = null;
   if (editor.presenterMode !== "spotlight") return;
   presenterPos.value = null;
   if (live.mode === "host") live.broadcast({ t: "presenter-off" });
@@ -2065,7 +2096,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="stage" ref="wrap" :class="{ 'pan-cursor': panCursor, 'is-notebook': editor.notebookMode !== 'off' }" @mousemove="onPresenterMove" @mouseleave="onPresenterLeave">
+  <div class="stage" ref="wrap" :class="{ 'pan-cursor': panCursor, 'is-notebook': editor.notebookMode !== 'off' }" :style="hoverCursor ? { cursor: hoverCursor } : undefined" @mousemove="onPresenterMove" @mouseleave="onPresenterLeave">
     <div v-if="editor.notebookMode === 'off'" class="page-bg" :class="`bg-${props.page.background}`" :style="bgStyle" aria-hidden="true"></div>
     <canvas ref="baseEl" class="layer base"></canvas>
     <canvas ref="liveEl" class="layer live"></canvas>
