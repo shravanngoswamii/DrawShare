@@ -26,6 +26,12 @@ const { thumbnails, renderThumbnail, loadAndRenderThumbnail } = useThumbnails();
 const renamingId = ref<string | null>(null);
 const renameValue = ref("");
 
+// Progressive disclosure: occasional settings/actions stay collapsed by default
+// so the panel opens on just Pages + Layers. Header overflow menu holds the rest.
+const showSetup = ref(false);
+const showActions = ref(false);
+const menuOpen = ref(false);
+
 const projectName = ref("");
 watch(
   () => editor.project?.name,
@@ -309,16 +315,36 @@ function removeSnapshot() {
           :placeholder="editor.project?.name ?? 'Untitled'"
         />
         <span class="save-chip" :class="{ saving: editor.saving > 0 }" role="status" aria-live="polite">{{ saveStatus }}</span>
-        <button class="head-icon" @click="toggleTheme" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'" :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'">
-          <svg v-if="isDark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
-          </svg>
-          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
-          </svg>
-        </button>
+        <div class="head-menu-wrap">
+          <button class="head-icon" @click="menuOpen = !menuOpen" :aria-expanded="menuOpen" aria-haspopup="true" title="More" aria-label="More options">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />
+            </svg>
+          </button>
+          <div v-if="menuOpen" class="head-menu" role="menu">
+            <button class="head-menu-item" role="menuitem" @click="toggleTheme(); menuOpen = false">
+              <svg v-if="isDark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+              </svg>
+              <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+              </svg>
+              <span>{{ isDark ? 'Light mode' : 'Dark mode' }}</span>
+            </button>
+            <button class="head-menu-item" role="menuitem" @click="toggleFullscreen(); menuOpen = false">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M21 8V5a2 2 0 0 0-2-2h-3" /><path d="M3 16v3a2 2 0 0 0 2 2h3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+              </svg>
+              <span>{{ isFullscreen ? 'Exit fullscreen' : 'Fullscreen' }}</span>
+            </button>
+            <button class="head-menu-item" :class="{ 'is-on': devMode }" role="menuitemcheckbox" :aria-checked="devMode" @click="setDevMode(!devMode); menuOpen = false">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m8 9-3 3 3 3" /><path d="m16 9 3 3-3 3" /><path d="M13.5 7.5 10 17" />
+              </svg>
+              <span>Dev mode</span>
+            </button>
+          </div>
+        </div>
         <button class="head-icon desktop-toggle" @click="emit('toggle')" title="Collapse panel" aria-label="Collapse panel">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24" aria-hidden="true">
             <path fill="currentColor" fill-rule="evenodd" d="M10 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-8zM9 7H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3zM4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" clip-rule="evenodd"/>
@@ -331,6 +357,7 @@ function removeSnapshot() {
           </svg>
         </button>
       </div>
+      <div v-if="menuOpen" class="menu-backdrop" @click="menuOpen = false"></div>
 
       <!-- ── Share ── -->
       <div class="share-section">
@@ -399,48 +426,6 @@ function removeSnapshot() {
             </div>
           </li>
         </ul>
-
-        <!-- Page-level tools: export, clear, fullscreen, dev -->
-        <div class="page-tools">
-          <button class="tool-btn" @click="exportCurrentPage" title="Export page as PNG" aria-label="Export page as PNG">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-            <span>Export PNG</span>
-          </button>
-          <button class="tool-btn" @click="clearPage" title="Clear all strokes" aria-label="Clear all strokes on this page">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-            </svg>
-            <span>Clear page</span>
-          </button>
-          <button class="tool-btn" @click="toggleFullscreen" :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'" :aria-label="isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'" :aria-pressed="isFullscreen">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M21 8V5a2 2 0 0 0-2-2h-3" /><path d="M3 16v3a2 2 0 0 0 2 2h3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" />
-            </svg>
-            <span>{{ isFullscreen ? 'Exit full' : 'Fullscreen' }}</span>
-          </button>
-          <button v-if="editor.notebookMode !== 'off'" class="tool-btn" @click="exportNotebookPdf" title="Export A4 page as PDF" aria-label="Export notebook as PDF">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>
-              <path d="M9 15h6M9 18h4"/>
-            </svg>
-            <span>Export PDF</span>
-          </button>
-          <button class="tool-btn" :class="{ 'tool-active': devMode }" @click="setDevMode(!devMode)" title="Dev mode" aria-label="Toggle developer mode" :aria-pressed="devMode">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="m8 9-3 3 3 3" /><path d="m16 9 3 3-3 3" /><path d="M13.5 7.5 10 17" />
-            </svg>
-            <span>Dev mode</span>
-          </button>
-        </div>
       </div>
 
       <!-- ── Layers ── -->
@@ -555,9 +540,16 @@ function removeSnapshot() {
         </div>
       </div>
 
-      <!-- ── Background ── -->
-      <div class="section">
-        <div class="section-title">Background</div>
+      <!-- ── Page setup (collapsible: background, size, canvas mode) ── -->
+      <div class="section group-section">
+        <button class="group-toggle" :aria-expanded="showSetup" @click="showSetup = !showSetup">
+          <span class="section-title">Page setup</span>
+          <svg class="chev" :class="{ open: showSetup }" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+        </button>
+        <div v-if="showSetup" class="group-body">
+      <!-- Background -->
+      <div class="subsection">
+        <div class="sub-title">Background</div>
         <div class="bg-grid">
           <button
             v-for="b in backgrounds"
@@ -573,9 +565,9 @@ function removeSnapshot() {
         </div>
       </div>
 
-      <!-- ── Page size (Free mode only; notebook mode uses fixed A4 sheets) ── -->
-      <div v-if="editor.notebookMode === 'off'" class="section">
-        <div class="section-title">Page size</div>
+      <!-- Page size (Free mode only; notebook mode uses fixed A4 sheets) -->
+      <div v-if="editor.notebookMode === 'off'" class="subsection">
+        <div class="sub-title">Page size</div>
         <div class="bg-grid">
           <button
             v-for="sz in paperSizes"
@@ -629,9 +621,9 @@ function removeSnapshot() {
         </div>
       </div>
 
-      <!-- ── Canvas mode ── -->
-      <div class="section">
-        <div class="section-title">Canvas Mode</div>
+      <!-- Canvas mode -->
+      <div class="subsection">
+        <div class="sub-title">Canvas mode</div>
         <div class="mode-btns" role="group" aria-label="Canvas mode">
           <button class="mode-btn" :class="{ active: editor.notebookMode === 'off' }" :aria-pressed="editor.notebookMode === 'off'" @click="editor.setNotebookMode('off')">Free</button>
           <button class="mode-btn" :class="{ active: editor.notebookMode === 'notebook' }" :aria-pressed="editor.notebookMode === 'notebook'" @click="editor.setNotebookMode('notebook')">Notebook</button>
@@ -650,59 +642,75 @@ function removeSnapshot() {
           </div>
         </div>
       </div>
-
-      <!-- ── Session recording ── -->
-      <div class="section">
-        <div class="record-row">
-          <span class="section-title">Record session</span>
-          <button
-            class="rec-toggle"
-            role="switch"
-            aria-label="Record session"
-            :aria-checked="editor.recordReplay"
-            :class="{ on: editor.recordReplay }"
-            @click="editor.setRecordReplay(!editor.recordReplay)"
-          >
-            <span class="rec-knob"></span>
-          </button>
         </div>
-        <p class="mode-hint">
-          Records every edit so replay shows exactly what happened — erasing, moving,
-          undo. Off, replay reconstructs the drawing from its final state.
-        </p>
       </div>
 
-      <!-- ── Snapshot link ── -->
-      <div class="section">
-        <div class="section-title">Snapshot link</div>
-        <template v-if="!snapshotUrl">
-          <button class="share-btn" @click="publishSnapshot">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-            </svg>
-            <span class="share-label">Create snapshot link</span>
-          </button>
-        </template>
-        <template v-else>
-          <div class="snapshot-url-row">
-            <input
-              class="input snapshot-input"
-              :value="snapshotUrl"
-              readonly
-              aria-label="Snapshot link"
-              @focus="($event.target as HTMLInputElement).select()"
-            />
-            <button class="btn snapshot-copy-btn" @click="copySnapshotUrl">
-              {{ snapshotCopied ? 'Copied!' : 'Copy' }}
+      <!-- ── Share & export (collapsible: snapshot, record, export, clear) ── -->
+      <div class="section group-section">
+        <button class="group-toggle" :aria-expanded="showActions" @click="showActions = !showActions">
+          <span class="section-title">Share &amp; export</span>
+          <svg class="chev" :class="{ open: showActions }" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+        </button>
+        <div v-if="showActions" class="group-body">
+          <!-- Export / clear -->
+          <div class="page-tools">
+            <button class="tool-btn" @click="exportCurrentPage" title="Export page as PNG" aria-label="Export page as PNG">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              <span>Export PNG</span>
+            </button>
+            <button v-if="editor.notebookMode !== 'off'" class="tool-btn" @click="exportNotebookPdf" title="Export A4 page as PDF" aria-label="Export notebook as PDF">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6M9 18h4"/>
+              </svg>
+              <span>Export PDF</span>
+            </button>
+            <button class="tool-btn" @click="clearPage" title="Clear all strokes" aria-label="Clear all strokes on this page">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+              </svg>
+              <span>Clear page</span>
             </button>
           </div>
-          <div class="snapshot-actions">
-            <button class="page-action danger" @click="removeSnapshot">Remove link</button>
+
+          <!-- Record session -->
+          <div class="subsection">
+            <div class="record-row">
+              <span class="sub-title">Record session</span>
+              <button class="rec-toggle" role="switch" aria-label="Record session" :aria-checked="editor.recordReplay" :class="{ on: editor.recordReplay }" @click="editor.setRecordReplay(!editor.recordReplay)">
+                <span class="rec-knob"></span>
+              </button>
+            </div>
+            <p class="mode-hint">
+              Records every edit so replay shows exactly what happened — erasing, moving,
+              undo. Off, replay reconstructs the drawing from its final state.
+            </p>
           </div>
-          <p class="snapshot-note muted">Anyone with this link can still view it</p>
-        </template>
+
+          <!-- Snapshot link -->
+          <div class="subsection">
+            <div class="sub-title">Snapshot link</div>
+            <template v-if="!snapshotUrl">
+              <button class="share-btn" @click="publishSnapshot">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                </svg>
+                <span class="share-label">Create snapshot link</span>
+              </button>
+            </template>
+            <template v-else>
+              <div class="snapshot-url-row">
+                <input class="input snapshot-input" :value="snapshotUrl" readonly aria-label="Snapshot link" @focus="($event.target as HTMLInputElement).select()" />
+                <button class="btn snapshot-copy-btn" @click="copySnapshotUrl">{{ snapshotCopied ? 'Copied!' : 'Copy' }}</button>
+              </div>
+              <div class="snapshot-actions">
+                <button class="page-action danger" @click="removeSnapshot">Remove link</button>
+              </div>
+              <p class="snapshot-note muted">Anyone with this link can still view it</p>
+            </template>
+          </div>
+        </div>
       </div>
 
     </aside>
@@ -883,6 +891,98 @@ function removeSnapshot() {
   letter-spacing: 0.05em;
   color: var(--color-text-muted);
   margin-bottom: var(--space-3);
+}
+
+/* ── Collapsible groups (progressive disclosure) ── */
+.group-section {
+  padding: 0;
+}
+.group-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--space-3);
+  color: var(--color-text-muted);
+  transition: background 80ms ease;
+}
+.group-toggle:hover {
+  background: var(--color-surface-2);
+}
+.group-toggle .section-title {
+  margin-bottom: 0;
+}
+.chev {
+  flex-shrink: 0;
+  transition: transform 150ms ease;
+}
+.chev.open {
+  transform: rotate(90deg);
+}
+.group-body {
+  padding: 0 var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.subsection {
+  display: flex;
+  flex-direction: column;
+}
+.sub-title {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-2);
+}
+.record-row .sub-title {
+  margin-bottom: 0;
+}
+
+/* ── Header overflow menu ── */
+.head-menu-wrap {
+  position: relative;
+  display: flex;
+}
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+}
+.head-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 16;
+  min-width: 168px;
+  padding: 4px;
+  background: var(--color-glass-bg-strong, var(--color-surface));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--color-glass-border, var(--color-border));
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.head-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  transition: background 80ms ease;
+}
+.head-menu-item:hover {
+  background: var(--color-surface-2);
+}
+.head-menu-item.is-on {
+  color: var(--color-accent);
 }
 
 /* ── Pages ── */
