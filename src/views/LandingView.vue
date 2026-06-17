@@ -642,13 +642,26 @@ onBeforeUnmount(() => {
     <!-- Footer -->
     <footer class="footer">
       <div class="shell footer-inner">
-        <span class="footer-brand mono">DrawShare</span>
-        <div class="footer-links">
+        <a class="footer-brand" href="#top" aria-label="Back to top">
+          <svg class="footer-mark" width="30" height="30" viewBox="0 0 1024 1024" aria-hidden="true">
+            <path d="M916.668 273.393l-66.711 66.711-168.533-168.532 66.712-66.712c52.639-52.639 132.855-57.328 179.24-10.942 23.311 23.309 33.783 55.149 31.698 87.511-1.802 32.647-16.207 65.765-42.406 91.964z" fill="#FF3B30"/>
+            <path d="M143.188 708.155L697.96 155.654l168.981 168.981L304.964 883.58M161.098 920.034l-97.765 38.158 34.206-101.717z" fill="#152B3C"/>
+            <path d="M240.709 708.755l-62.541 0.002-34.98-0.602-45.649 148.32 63.556 63.558 143.869-36.453 4.897-45.216 0.025-60.384-70.581 9.731z" fill="#FCB814"/>
+            <path d="M317.969 621.444a14.888 14.888 0 0 1-10.561-4.375c-5.834-5.831-5.834-15.29 0-21.121L641.67 261.687c5.836-5.834 15.287-5.834 21.121 0 5.834 5.831 5.834 15.29 0 21.121L328.529 617.07a14.887 14.887 0 0 1-10.56 4.374z" fill="#FFFFFF"/>
+          </svg>
+          <span class="footer-name h-display">DrawShare</span>
+        </a>
+        <p class="footer-tagline">Local-first whiteboard. Draw, organise pages, and share live — no account, works offline.</p>
+        <nav class="footer-links" aria-label="Footer">
           <a href="https://github.com/shravanngoswamii/DrawShare" target="_blank" rel="noopener" class="footer-link">GitHub</a>
           <a href="https://github.com/shravanngoswamii/DrawShare/issues" target="_blank" rel="noopener" class="footer-link">Issues</a>
           <a href="https://github.com/shravanngoswamii/DrawShare/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener" class="footer-link">Contributing</a>
-        </div>
-        <span class="footer-copy mono">MIT · local-first</span>
+        </nav>
+        <div class="footer-divider" aria-hidden="true"></div>
+        <p class="footer-meta mono">
+          MIT licensed · Works offline · Built by
+          <a href="https://github.com/shravanngoswamii" target="_blank" rel="noopener">Shravan Goswami</a>
+        </p>
       </div>
     </footer>
 
@@ -1227,25 +1240,46 @@ onBeforeUnmount(() => {
 .footer {
   border-top: 1px solid var(--color-border);
   background: var(--color-surface);
-  padding: var(--space-6);
+  padding: clamp(40px, 6vw, 64px) var(--space-6);
 }
 .footer-inner {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: var(--space-5);
-  flex-wrap: wrap;
+  text-align: center;
+  gap: var(--space-4);
 }
 .footer-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  text-decoration: none;
+  color: var(--color-text);
+}
+.footer-mark {
+  flex-shrink: 0;
+}
+.footer-name {
   font-weight: 700;
+  font-size: var(--text-lg);
+  letter-spacing: -0.015em;
+}
+.footer-tagline {
+  margin: 0;
+  max-width: 30rem;
   font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--color-text-muted);
 }
 .footer-links {
   display: flex;
-  gap: var(--space-4);
-  flex: 1;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2) var(--space-5);
 }
 .footer-link {
   font-size: var(--text-sm);
+  font-weight: 500;
   color: var(--color-text-muted);
   text-decoration: none;
   transition: color 100ms;
@@ -1253,10 +1287,23 @@ onBeforeUnmount(() => {
 .footer-link:hover {
   color: var(--color-text);
 }
-.footer-copy {
+.footer-divider {
+  width: min(120px, 40%);
+  height: 1px;
+  background: var(--color-border);
+  margin: var(--space-1) 0;
+}
+.footer-meta {
+  margin: 0;
   font-size: var(--text-xs);
   color: var(--color-text-muted);
-  margin-left: auto;
+}
+.footer-meta a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+.footer-meta a:hover {
+  text-decoration: underline;
 }
 
 /* ── Responsive ── */
@@ -1314,14 +1361,6 @@ onBeforeUnmount(() => {
   .join-input {
     flex: 1;
     width: 0;
-  }
-  .footer-inner {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-3);
-  }
-  .footer-copy {
-    margin-left: 0;
   }
 }
 @media (min-width: 768px) and (max-width: 1023px) {
