@@ -2,8 +2,8 @@
 // vite.config.ts: CACHE gets a per-build id (so every deploy installs a fresh
 // worker and purges old caches) and PRECACHE is filled with the build's real
 // asset URLs. The defaults below are only used by the dev server.
-const CACHE = "drawshare-2743d505";
-const PRECACHE = ["/DrawShare/","/DrawShare/apple-touch-icon.png","/DrawShare/assets/EditorView-BghlC5R2.js","/DrawShare/assets/LandingView-D684XbDV.js","/DrawShare/assets/ProjectsView-tq-xjwoM.js","/DrawShare/assets/SnapshotView-B68hrbte.js","/DrawShare/assets/ViewerView-HRc7VJFG.js","/DrawShare/assets/_plugin-vue_export-helper-CH6YEdlL.js","/DrawShare/assets/canvas2d-CCWw7tqM.js","/DrawShare/assets/index-9FoybH_E.js","/DrawShare/assets/ink-Dfh4FB4e.js","/DrawShare/assets/live-BcI1tErC.js","/DrawShare/assets/style-BLkASJwA.css","/DrawShare/assets/sync-Cmrce1cQ.js","/DrawShare/assets/useSnapshot-igPqZI0q.js","/DrawShare/assets/useStackRenderer-CrpGLHfr.js","/DrawShare/assets/useThumbnails-oxZcNWvz.js","/DrawShare/favicon.svg","/DrawShare/icon-192.png","/DrawShare/icon-512.png","/DrawShare/index.html","/DrawShare/manifest.webmanifest"];
+const CACHE = "drawshare-a8cbfbcb";
+const PRECACHE = ["/DrawShare/","/DrawShare/apple-touch-icon.png","/DrawShare/assets/EditorView-Cgq9dl3_.js","/DrawShare/assets/LandingView-B1UBxvHA.js","/DrawShare/assets/ProjectsView-DYmRCZzX.js","/DrawShare/assets/SnapshotView-CkWDbbRY.js","/DrawShare/assets/ViewerView-Q2KWccvH.js","/DrawShare/assets/_plugin-vue_export-helper-C2tWdbG3.js","/DrawShare/assets/canvas2d-NXvrn7iA.js","/DrawShare/assets/index-D38ngTb_.js","/DrawShare/assets/ink-Dfh4FB4e.js","/DrawShare/assets/live-4Id0nBh6.js","/DrawShare/assets/style-Csyp9Sw3.css","/DrawShare/assets/sync-Cmrce1cQ.js","/DrawShare/assets/useSnapshot-igPqZI0q.js","/DrawShare/assets/useStackRenderer-CW5brv0h.js","/DrawShare/assets/useThumbnails-DAHfrP8r.js","/DrawShare/favicon.svg","/DrawShare/icon-192.png","/DrawShare/icon-512.png","/DrawShare/index.html","/DrawShare/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   // Precache the whole current build — app shell + every hashed JS/CSS chunk
