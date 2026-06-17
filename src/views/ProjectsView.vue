@@ -2,17 +2,16 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import HelpPanel from "@/components/HelpPanel.vue";
+import NewProjectDialog from "@/components/NewProjectDialog.vue";
 import { useOnboarding } from "@/composables/useOnboarding";
 import { useProjectBackup } from "@/composables/useProjectBackup";
 import { useTheme } from "@/composables/useTheme";
 import { useThumbnails } from "@/composables/useThumbnails";
-import { useEditorStore } from "@/stores/editor";
-import { PAPER_SIZES, type PaperSizeId, useProjectsStore } from "@/stores/projects";
+import { useProjectsStore } from "@/stores/projects";
 
 const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 const projects = useProjectsStore();
-const editor = useEditorStore();
 const router = useRouter();
 const { isDark, toggleTheme } = useTheme();
 const { exportAll, exportProject, importAll } = useProjectBackup();
@@ -86,28 +85,9 @@ const filtered = computed(() => {
   return projects.activeProjects.filter((p) => p.name.toLowerCase().includes(q));
 });
 
-// New-project dialog: pick the canvas type (and paper size for notebook) up
-// front, since it's fixed for the project's life.
+// New-project dialog (NewProjectDialog owns the canvas-type / paper-size choice
+// and the create-then-open flow).
 const showCreate = ref(false);
-const createMode = ref<"free" | "notebook">("free");
-const createSize = ref<PaperSizeId>("a4");
-const paperSizes = PAPER_SIZES;
-
-function createNew() {
-  createMode.value = "free";
-  createSize.value = "a4";
-  showCreate.value = true;
-}
-
-function confirmCreate() {
-  showCreate.value = false;
-  const { project, page } = projects.create("Untitled", {
-    mode: createMode.value,
-    size: createSize.value,
-  });
-  editor.initNew(project, page);
-  router.push({ name: "editor", params: { id: project.id } });
-}
 
 function open(id: string) {
   router.push({ name: "editor", params: { id } });
@@ -166,7 +146,7 @@ function formatDate(ts: number): string {
   <div class="page">
     <header class="header">
       <div class="header-inner">
-        <div class="brand">
+        <button class="brand" type="button" @click="router.push({ name: 'landing' })" title="Back to home" aria-label="Back to home">
           <svg class="brand-mark" width="28" height="28" viewBox="0 0 1024 1024" aria-hidden="true">
             <path d="M916.668 273.393l-66.711 66.711-168.533-168.532 66.712-66.712c52.639-52.639 132.855-57.328 179.24-10.942 23.311 23.309 33.783 55.149 31.698 87.511-1.802 32.647-16.207 65.765-42.406 91.964z" fill="#FF3B30"/>
             <path d="M762.348 163.22c-2.195 0-4.427-0.49-6.534-1.518-7.41-3.613-10.494-12.555-6.877-19.972 21.34-43.746 70.902-63.624 110.446-44.341 7.41 3.618 10.494 12.558 6.876 19.973-3.623 7.408-12.551 10.484-19.976 6.879-24.737-12.065-56.382 1.652-70.494 30.588-2.589 5.305-7.906 8.391-13.441 8.391z" fill="#FFFFFF"/>
@@ -178,7 +158,7 @@ function formatDate(ts: number): string {
             <path d="M317.969 621.444a14.888 14.888 0 0 1-10.561-4.375c-5.834-5.831-5.834-15.29 0-21.121L641.67 261.687c5.836-5.834 15.287-5.834 21.121 0 5.834 5.831 5.834 15.29 0 21.121L328.529 617.07a14.887 14.887 0 0 1-10.56 4.374z" fill="#FFFFFF"/>
           </svg>
           <div class="brand-name">DrawShare</div>
-        </div>
+        </button>
         <div class="header-actions">
           <input
             v-model="query"
@@ -215,7 +195,7 @@ function formatDate(ts: number): string {
               <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
             </svg>
           </button>
-          <button class="btn btn-primary new-btn" data-tour="new-project" @click="createNew">
+          <button class="btn btn-primary new-btn" data-tour="new-project" @click="showCreate = true">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 5v14M5 12h14" />
@@ -267,7 +247,7 @@ function formatDate(ts: number): string {
             </div>
           </div>
         </div>
-        <button class="btn btn-primary hero-cta" @click="createNew">
+        <button class="btn btn-primary hero-cta" @click="showCreate = true">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 5v14M5 12h14" />
           </svg>
@@ -402,62 +382,13 @@ function formatDate(ts: number): string {
   </div>
   <HelpPanel :open="helpOpen" @close="helpOpen = false" />
 
-  <!-- New-project dialog: choose canvas type (fixed for the project's life) -->
-  <div v-if="showCreate" class="create-backdrop" @click="showCreate = false">
-    <div class="create-dialog" role="dialog" aria-modal="true" aria-label="New project" @click.stop>
-      <h2 class="create-title">New project</h2>
-      <p class="create-sub muted">Pick how the canvas works. This can't be changed later.</p>
-      <div class="mode-cards">
-        <button
-          class="mode-card"
-          :class="{ active: createMode === 'free' }"
-          :aria-pressed="createMode === 'free'"
-          @click="createMode = 'free'"
-        >
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M3 3h18v18H3z" opacity="0" /><path d="M4 12h16M12 4v16" opacity="0" /><path d="M6 18c4-10 8 6 12-4" /><circle cx="4.5" cy="19.5" r="1.2" /><circle cx="19.5" cy="4.5" r="1.2" />
-          </svg>
-          <span class="mode-name">Free</span>
-          <span class="mode-desc muted">Infinite canvas, draw anywhere</span>
-        </button>
-        <button
-          class="mode-card"
-          :class="{ active: createMode === 'notebook' }"
-          :aria-pressed="createMode === 'notebook'"
-          @click="createMode = 'notebook'"
-        >
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="5" y="3" width="14" height="18" rx="1.5" /><path d="M9 3v18" />
-          </svg>
-          <span class="mode-name">Notebook</span>
-          <span class="mode-desc muted">Fixed-size pages</span>
-        </button>
-      </div>
-      <div v-if="createMode === 'notebook'" class="size-block">
-        <div class="size-label">Page size</div>
-        <div class="size-row">
-          <button
-            v-for="sz in paperSizes"
-            :key="sz.id"
-            class="size-btn"
-            :class="{ active: createSize === sz.id }"
-            :aria-pressed="createSize === sz.id"
-            @click="createSize = sz.id"
-          >{{ sz.label }}</button>
-        </div>
-      </div>
-      <div class="create-actions">
-        <button class="btn" @click="showCreate = false">Cancel</button>
-        <button class="btn btn-primary" @click="confirmCreate">Create project</button>
-      </div>
-    </div>
-  </div>
+  <NewProjectDialog :open="showCreate" @close="showCreate = false" />
 </template>
 
 <style scoped>
 .page {
-  height: 100dvh;
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -962,14 +893,16 @@ function formatDate(ts: number): string {
     height: 40px;
   }
 
+  /* Search takes its own full-width row; the action buttons wrap to a row
+     beneath it (a grid scattered the 5 items across rows). */
   .header-actions {
-    display: grid;
-    grid-template-columns: 1fr auto;
+    flex-wrap: wrap;
     gap: var(--space-2);
   }
 
   .search {
-    width: 100%;
+    flex: 1 1 100%;
+    width: auto;
   }
 
   .new-label {
@@ -979,6 +912,7 @@ function formatDate(ts: number): string {
   .new-btn {
     width: 40px;
     padding: 0;
+    margin-left: auto;
   }
 
   .main {
@@ -1070,89 +1004,4 @@ function formatDate(ts: number): string {
   z-index: 10;
 }
 /* ── New-project dialog ── */
-.create-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-4);
-  background: rgba(15, 23, 42, 0.5);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-}
-.create-dialog {
-  width: min(440px, 100%);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  padding: var(--space-5);
-}
-.create-title {
-  margin: 0;
-  font-size: var(--text-lg);
-  font-weight: 650;
-  letter-spacing: -0.01em;
-}
-.create-sub {
-  margin: var(--space-1) 0 var(--space-4);
-  font-size: var(--text-sm);
-}
-.mode-cards {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-3);
-}
-.mode-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  padding: var(--space-4);
-  border: 1.5px solid var(--color-border-strong);
-  border-radius: var(--radius-md);
-  background: var(--color-glass-bg);
-  text-align: left;
-  transition: border-color 80ms ease, background 80ms ease;
-}
-.mode-card:hover { border-color: var(--color-accent); }
-.mode-card.active {
-  border-color: var(--color-accent);
-  background: var(--color-accent-soft);
-}
-.mode-card svg { color: var(--color-text-muted); margin-bottom: var(--space-1); }
-.mode-card.active svg { color: var(--color-accent); }
-.mode-name { font-size: var(--text-sm); font-weight: 600; }
-.mode-desc { font-size: var(--text-xs); line-height: 1.3; }
-.size-block { margin-top: var(--space-4); }
-.size-label {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--color-text-muted);
-  margin-bottom: var(--space-2);
-}
-.size-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.size-btn {
-  padding: 6px 14px;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-md);
-  background: var(--color-glass-bg);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  transition: border-color 80ms ease, background 80ms ease, color 80ms ease;
-}
-.size-btn:hover { border-color: var(--color-accent); }
-.size-btn.active {
-  border-color: var(--color-accent);
-  background: var(--color-accent);
-  color: var(--color-accent-text);
-}
-.create-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  margin-top: var(--space-5);
-}
 </style>

@@ -13,6 +13,20 @@
   max-width: 340px;
 }
 
+/* On a phone keep a comfortable, readable width — not the desktop 340px (which
+   overflowed off-screen) and not 0 (which let intro.js crush floating cards into
+   a one-word-per-line column). A ~300px card fits when intro.js places it
+   above/below its element (positionPrecedence bottom/top), where there's full
+   width. max-width keeps it on-screen on the narrowest phones. */
+@media (max-width: 767px) {
+  .introjs-tooltip.ds-introjs {
+    min-width: min(300px, calc(100vw - 32px));
+    max-width: calc(100vw - 32px);
+    max-height: calc(100dvh - 32px);
+    overflow-y: auto;
+  }
+}
+
 .ds-introjs .introjs-tooltip-header {
   padding: var(--space-4) var(--space-4) 0;
 }

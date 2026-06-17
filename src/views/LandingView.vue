@@ -1,17 +1,59 @@
 <script setup lang="ts">
 import { getStroke } from "perfect-freehand";
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import NewProjectDialog from "@/components/NewProjectDialog.vue";
 import { useTheme } from "@/composables/useTheme";
+import { useThumbnails } from "@/composables/useThumbnails";
 import { makeSessionCode } from "@/core/sync";
+import { useProjectsStore } from "@/stores/projects";
 
 const router = useRouter();
 const { isDark, toggleTheme } = useTheme();
+const projects = useProjectsStore();
+const { projectThumbnails, renderProjectThumbnail } = useThumbnails();
 
 const joinCode = ref("");
+const showCreate = ref(false);
 
+// A few most-recent boards surface on the landing for returning users; the full
+// grid lives on /projects so the page stays uncluttered. Hidden when there are
+// none (first-time visitors just see the hero).
+const RECENT_LIMIT = 4;
+const recentProjects = computed(() =>
+  [...projects.activeProjects].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, RECENT_LIMIT),
+);
+
+function relativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  const mins = Math.round(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// "Start drawing" / "New board" open the shared dialog so you can pick Free vs
+// Notebook (and paper size) up front, same as the projects grid.
 function startDrawing() {
-  router.push({ name: "app" });
+  showCreate.value = true;
+}
+
+function openAllBoards() {
+  router.push({ name: "projects" });
+}
+
+// The logo links to the top of the page. Under hash routing a bare href="#top"
+// would rewrite the route hash (to /top, a dead route), so scroll by hand.
+function scrollTop() {
+  window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
+}
+
+function openProject(id: string) {
+  router.push({ name: "editor", params: { id } });
 }
 
 function joinSession() {
@@ -297,11 +339,20 @@ onMounted(() => {
   if (hostCanvas.value) resizeObserver.observe(hostCanvas.value);
   if (viewerCanvas.value) resizeObserver.observe(viewerCanvas.value);
   animateCode();
+
+  void (async () => {
+    if (!projects.loaded) await projects.load();
+    for (const p of recentProjects.value) renderProjectThumbnail(p);
+  })();
 });
 
 // Intro ink uses the theme colour (graphite on paper, chalk on slate); repaint
-// when the theme flips so committed strokes recolour.
-watch(isDark, () => renderBoth());
+// when the theme flips so committed strokes recolour. Board thumbnails bake in
+// the theme too, so re-render those as well.
+watch(isDark, () => {
+  renderBoth();
+  for (const p of recentProjects.value) renderProjectThumbnail(p);
+});
 
 onBeforeUnmount(() => {
   resizeObserver?.disconnect();
@@ -315,7 +366,7 @@ onBeforeUnmount(() => {
     <!-- Nav -->
     <nav class="nav">
       <div class="nav-inner">
-        <a class="brand" href="#top" aria-label="DrawShare home">
+        <a class="brand" href="#top" aria-label="DrawShare home" @click.prevent="scrollTop">
           <svg class="brand-mark" width="26" height="26" viewBox="0 0 1024 1024" aria-hidden="true">
             <path d="M916.668 273.393l-66.711 66.711-168.533-168.532 66.712-66.712c52.639-52.639 132.855-57.328 179.24-10.942 23.311 23.309 33.783 55.149 31.698 87.511-1.802 32.647-16.207 65.765-42.406 91.964z" fill="#FF3B30"/>
             <path d="M143.188 708.155L697.96 155.654l168.981 168.981L304.964 883.58M161.098 920.034l-97.765 38.158 34.206-101.717z" fill="#152B3C"/>
@@ -339,7 +390,7 @@ onBeforeUnmount(() => {
               <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
             </svg>
           </button>
-          <button class="btn btn-primary nav-cta" @click="startDrawing">Open app</button>
+          <button class="btn btn-primary nav-cta" @click="openAllBoards">Open app</button>
         </div>
       </div>
     </nav>
@@ -427,6 +478,41 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </header>
+
+    <!-- Recent boards — only for returning visitors who have boards. The full
+         grid (rename, backup, trash) lives on /projects to keep this clean. -->
+    <section v-if="recentProjects.length" class="recent">
+      <div class="shell">
+        <div class="recent-head">
+          <h2 class="section-title left recent-title h-display">Your boards</h2>
+          <div class="recent-head-actions">
+            <button class="btn btn-ghost btn-sm" @click="startDrawing">New board</button>
+            <button class="recent-all" @click="openAllBoards">
+              View all
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M5 12h14" /><path d="m12 5 7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <ul class="recent-grid">
+          <li v-for="p in recentProjects" :key="p.id" class="recent-card">
+            <button class="recent-thumb" @click="openProject(p.id)" :aria-label="`Open ${p.name}`">
+              <img
+                v-if="projectThumbnails[p.id]"
+                :src="projectThumbnails[p.id]"
+                class="recent-thumb-img"
+                :alt="`Preview of ${p.name}`"
+                aria-hidden="true"
+              />
+              <div v-else class="recent-thumb-ph paper-grid"></div>
+            </button>
+            <button class="recent-name" @click="openProject(p.id)">{{ p.name }}</button>
+            <span class="recent-meta mono">{{ relativeTime(p.updatedAt) }}</span>
+          </li>
+        </ul>
+      </div>
+    </section>
 
     <!-- How it works -->
     <section class="steps">
@@ -562,15 +648,30 @@ onBeforeUnmount(() => {
     <!-- Footer -->
     <footer class="footer">
       <div class="shell footer-inner">
-        <span class="footer-brand mono">DrawShare</span>
-        <div class="footer-links">
+        <a class="footer-brand" href="#top" aria-label="Back to top" @click.prevent="scrollTop">
+          <svg class="footer-mark" width="30" height="30" viewBox="0 0 1024 1024" aria-hidden="true">
+            <path d="M916.668 273.393l-66.711 66.711-168.533-168.532 66.712-66.712c52.639-52.639 132.855-57.328 179.24-10.942 23.311 23.309 33.783 55.149 31.698 87.511-1.802 32.647-16.207 65.765-42.406 91.964z" fill="#FF3B30"/>
+            <path d="M143.188 708.155L697.96 155.654l168.981 168.981L304.964 883.58M161.098 920.034l-97.765 38.158 34.206-101.717z" fill="#152B3C"/>
+            <path d="M240.709 708.755l-62.541 0.002-34.98-0.602-45.649 148.32 63.556 63.558 143.869-36.453 4.897-45.216 0.025-60.384-70.581 9.731z" fill="#FCB814"/>
+            <path d="M317.969 621.444a14.888 14.888 0 0 1-10.561-4.375c-5.834-5.831-5.834-15.29 0-21.121L641.67 261.687c5.836-5.834 15.287-5.834 21.121 0 5.834 5.831 5.834 15.29 0 21.121L328.529 617.07a14.887 14.887 0 0 1-10.56 4.374z" fill="#FFFFFF"/>
+          </svg>
+          <span class="footer-name h-display">DrawShare</span>
+        </a>
+        <p class="footer-tagline">Local-first whiteboard. Draw, organise pages, and share live — no account, works offline.</p>
+        <nav class="footer-links" aria-label="Footer">
           <a href="https://github.com/shravanngoswamii/DrawShare" target="_blank" rel="noopener" class="footer-link">GitHub</a>
           <a href="https://github.com/shravanngoswamii/DrawShare/issues" target="_blank" rel="noopener" class="footer-link">Issues</a>
           <a href="https://github.com/shravanngoswamii/DrawShare/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener" class="footer-link">Contributing</a>
-        </div>
-        <span class="footer-copy mono">MIT · local-first</span>
+        </nav>
+        <div class="footer-divider" aria-hidden="true"></div>
+        <p class="footer-meta mono">
+          MIT licensed · Works offline · Built by
+          <a href="https://github.com/shravanngoswamii" target="_blank" rel="noopener">Shravan Goswami</a>
+        </p>
       </div>
     </footer>
+
+    <NewProjectDialog :open="showCreate" @close="showCreate = false" />
   </div>
 </template>
 
@@ -579,8 +680,8 @@ onBeforeUnmount(() => {
   --ink-swatch: #14213d;
   --pencil: #fcb814;
   --eraser: #ff3b30;
-  height: 100dvh;
   height: 100vh;
+  height: 100dvh;
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
@@ -896,6 +997,98 @@ onBeforeUnmount(() => {
   margin-bottom: var(--space-2);
 }
 
+/* ── Recent boards ── */
+.recent {
+  padding: clamp(40px, 6vw, 64px) var(--space-6) clamp(16px, 2.5vw, 28px);
+}
+.recent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+.recent-title {
+  margin: 0;
+  font-size: clamp(1.3rem, 2.4vw, 1.7rem);
+}
+.recent-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+.recent-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-accent);
+}
+.recent-all:hover {
+  text-decoration: underline;
+}
+.recent-grid {
+  /* Fixed 4 columns (not auto-fit) so a single board stays one card wide
+     instead of stretching across the whole row. */
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.recent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.recent-thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+  overflow: hidden;
+  transition: border-color 120ms, box-shadow 120ms, transform 120ms;
+}
+.recent-thumb:hover {
+  border-color: var(--color-border-strong, var(--color-border));
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+.recent-thumb-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.recent-thumb-ph {
+  width: 100%;
+  height: 100%;
+}
+.recent-name {
+  font-size: var(--text-sm);
+  font-weight: 650;
+  color: var(--color-text);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  transition: color 80ms ease;
+}
+.recent-name:hover {
+  color: var(--color-accent);
+}
+.recent-meta {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
 /* ── Steps ── */
 .steps {
   padding: clamp(56px, 8vw, 88px) var(--space-6);
@@ -1053,25 +1246,46 @@ onBeforeUnmount(() => {
 .footer {
   border-top: 1px solid var(--color-border);
   background: var(--color-surface);
-  padding: var(--space-6);
+  padding: clamp(40px, 6vw, 64px) var(--space-6);
 }
 .footer-inner {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: var(--space-5);
-  flex-wrap: wrap;
+  text-align: center;
+  gap: var(--space-4);
 }
 .footer-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  text-decoration: none;
+  color: var(--color-text);
+}
+.footer-mark {
+  flex-shrink: 0;
+}
+.footer-name {
   font-weight: 700;
+  font-size: var(--text-lg);
+  letter-spacing: -0.015em;
+}
+.footer-tagline {
+  margin: 0;
+  max-width: 30rem;
   font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--color-text-muted);
 }
 .footer-links {
   display: flex;
-  gap: var(--space-4);
-  flex: 1;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2) var(--space-5);
 }
 .footer-link {
   font-size: var(--text-sm);
+  font-weight: 500;
   color: var(--color-text-muted);
   text-decoration: none;
   transition: color 100ms;
@@ -1079,10 +1293,23 @@ onBeforeUnmount(() => {
 .footer-link:hover {
   color: var(--color-text);
 }
-.footer-copy {
+.footer-divider {
+  width: min(120px, 40%);
+  height: 1px;
+  background: var(--color-border);
+  margin: var(--space-1) 0;
+}
+.footer-meta {
+  margin: 0;
   font-size: var(--text-xs);
   color: var(--color-text-muted);
-  margin-left: auto;
+}
+.footer-meta a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+.footer-meta a:hover {
+  text-decoration: underline;
 }
 
 /* ── Responsive ── */
@@ -1108,12 +1335,20 @@ onBeforeUnmount(() => {
   .screen.viewer {
     transform: none;
   }
+  .recent,
   .steps,
   .features,
   .join,
   .cta {
     padding-left: var(--space-4);
     padding-right: var(--space-4);
+  }
+  .recent-head {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .recent-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .steps-row {
     grid-template-columns: 1fr;
@@ -1132,14 +1367,6 @@ onBeforeUnmount(() => {
   .join-input {
     flex: 1;
     width: 0;
-  }
-  .footer-inner {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-3);
-  }
-  .footer-copy {
-    margin-left: 0;
   }
 }
 @media (min-width: 768px) and (max-width: 1023px) {

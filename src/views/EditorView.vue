@@ -60,6 +60,14 @@ const pagesCollapsed = ref(false);
 const shareOpen = ref(false);
 const helpOpen = ref(false);
 
+// The mini-dock's expand button means different things by viewport: on desktop
+// it un-collapses the docked panel in place; on mobile there's no docked panel,
+// so it slides the drawer in instead.
+function onPanelToggle() {
+  if (window.matchMedia("(max-width: 767px)").matches) panelOpen.value = true;
+  else pagesCollapsed.value = !pagesCollapsed.value;
+}
+
 // Editor open/close animation. Closing plays the reverse (collapse-to-center)
 // before any navigation away from the editor — back button, browser back, or
 // programmatic. Skipped under reduced-motion.
@@ -82,7 +90,7 @@ onMounted(async () => {
     // measures the tools/panel at their final positions.
     maybeStart("editor", 700);
   } catch {
-    router.replace({ name: "app" });
+    router.replace({ name: "projects" });
   }
 });
 
@@ -94,7 +102,7 @@ watch(
       try {
         await editor.open(next);
       } catch {
-        router.replace({ name: "app" });
+        router.replace({ name: "projects" });
       }
     }
   },
@@ -147,19 +155,14 @@ onBeforeUnmount(() => removeProbe?.());
   <div class="editor" :class="{ closing }">
     <a href="#canvas-main" class="skip-link">Skip to canvas</a>
     <div class="body">
-      <button class="hub-btn" :class="{ quiet: editor.isDrawing }" @click="panelOpen = !panelOpen" title="Menu" aria-label="Open menu">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
-          <path d="M4 6h16M4 12h16M4 18h16" />
-        </svg>
-      </button>
       <Toolbar :collapsed="toolbarCollapsed" :panel-open="!pagesCollapsed" @toggle="toolbarCollapsed = !toolbarCollapsed" @image-import="canvasStage?.triggerFileImport()" />
       <main id="canvas-main" class="stage-wrap" aria-label="Drawing canvas" @pointerdown="helpOpen = false">
         <CanvasStage v-if="editor.currentPage" ref="canvasStage" :page="editor.currentPage" />
         <div v-else class="loading muted" aria-live="polite">Loading.</div>
       </main>
-      <PagesPanel :open="panelOpen" :collapsed="pagesCollapsed" @close="panelOpen = false" @toggle="pagesCollapsed = !pagesCollapsed" @share="shareOpen = true" />
+      <PagesPanel :open="panelOpen" :collapsed="pagesCollapsed" @close="panelOpen = false" @toggle="onPanelToggle" @share="shareOpen = true" />
       <!-- Back to projects (top-left) -->
-      <button class="back-fab" :class="{ quiet: editor.isDrawing }" @click="router.push({ name: 'app' })" title="Back to projects" aria-label="Back to projects">
+      <button class="back-fab" :class="{ quiet: editor.isDrawing }" @click="router.push({ name: 'projects' })" title="Back to projects" aria-label="Back to projects">
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="m12 19-7-7 7-7" /><path d="M19 12H5" />
         </svg>
@@ -397,35 +400,6 @@ onBeforeUnmount(() => removeProbe?.());
   .replay-fab.shifted { right: calc(var(--sidepanel-w) + 16px); }
 }
 
-.hub-btn {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 20;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: var(--color-glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--color-glass-border);
-  box-shadow: 0 2px 8px var(--color-glass-shadow), 0 1px 2px var(--color-glass-shadow);
-  color: var(--color-text-muted);
-  transition: opacity 150ms ease;
-}
-
-.hub-btn.quiet {
-  opacity: 0.06;
-  pointer-events: none;
-}
-
-@media (max-width: 767px) {
-  .hub-btn { display: flex; }
-}
-
 @media (max-width: 767px) {
   .body {
     display: flex;
@@ -437,6 +411,18 @@ onBeforeUnmount(() => removeProbe?.());
     flex: 1;
     min-height: 0;
     inset: auto;
+  }
+
+  /* The toolbar is a floating pill at the bottom; lift the corner FABs above it. */
+  .help-fab {
+    bottom: calc(var(--safe-bottom, 0px) + 72px);
+  }
+  .replay-fab {
+    bottom: calc(var(--safe-bottom, 0px) + 118px);
+  }
+  .help-fab.shifted,
+  .replay-fab.shifted {
+    right: 12px;
   }
 }
 </style>

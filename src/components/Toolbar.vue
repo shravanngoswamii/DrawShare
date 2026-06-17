@@ -798,37 +798,84 @@ onMounted(() => {
 
 /* Mobile keeps the simple bottom bar regardless of dock */
 @media (max-width: 767px) {
+  /* Floating pill, centred near the bottom and horizontally scrollable — it sits
+     over the canvas instead of reserving a full-width strip. Centred with
+     margin:auto (NOT transform) and a solid background (NOT glass), so neither a
+     transform nor a backdrop-filter creates a containing block — that lets the
+     tool popovers (position:fixed) escape the pill's scroll clip. The desktop
+     dockStyle is applied inline, so the overrides need !important. */
   .toolbar,
   .toolbar.dock-left,
   .toolbar.dock-right,
   .toolbar.dock-top,
   .toolbar.dock-bottom {
-    position: static;
-    width: 100%;
-    height: var(--toolbar-h);
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    bottom: calc(var(--safe-bottom) + 12px) !important;
+    margin: 0 auto !important;
+    transform: none !important;
+    width: max-content;
+    max-width: calc(100vw - 24px);
+    height: auto;
     flex-direction: row;
-    transform: none;
+    align-items: center;
     background: var(--color-surface);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    border-radius: 0;
-    border: none;
-    border-top: 1px solid var(--color-border);
-    box-shadow: none;
-    padding: 0 var(--space-3);
-    padding-bottom: var(--safe-bottom);
-    gap: var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    box-shadow: 0 6px 20px var(--color-glass-shadow), 0 2px 6px var(--color-glass-shadow);
+    padding: 4px 6px;
     overflow-x: auto;
-    overflow-y: visible;
-    justify-content: flex-start;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
     opacity: 1 !important;
     pointer-events: auto !important;
+    z-index: 30;
   }
-  .grip, .toggle-btn { display: none; }
-  .toolbar-body { display: contents; }
-  .group { flex-direction: row; gap: var(--space-1); flex-shrink: 0; }
-  .divider { width: 1px; height: 24px; margin: 0 var(--space-1); }
-  .tool { width: 40px; height: 40px; }
-  .popover { left: auto; right: 0; top: auto; bottom: calc(100% + 10px); transform: none; }
+  .toolbar::-webkit-scrollbar {
+    display: none;
+  }
+  .grip,
+  .toggle-btn {
+    display: none;
+  }
+  .toolbar-body {
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: center;
+    gap: var(--space-1);
+  }
+  .group {
+    flex-direction: row;
+    gap: var(--space-1);
+    flex-shrink: 0;
+  }
+  .divider {
+    width: 1px;
+    height: 24px;
+    margin: 0 2px;
+    flex-shrink: 0;
+  }
+  .tool {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+  }
+  /* Popovers open as a centred card above the pill (fixed → escapes the scroll
+     clip, since the pill has no transform/filter). */
+  .popover {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    bottom: calc(var(--safe-bottom) + 68px) !important;
+    margin: 0 auto !important;
+    width: max-content !important;
+    max-width: calc(100vw - 24px) !important;
+    transform: none !important;
+  }
 }
 </style>

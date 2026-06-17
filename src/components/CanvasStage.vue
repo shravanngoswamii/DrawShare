@@ -2373,6 +2373,14 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
+/* Lift the zoom controls above the floating toolbar pill on phones. Must include
+   the safe-area inset like the pill does, or it sits lower and the pill overlaps it. */
+@media (max-width: 767px) {
+  .cam-controls {
+    bottom: calc(var(--safe-bottom, 0px) + 72px);
+  }
+}
+
 .cam-btn {
   display: flex;
   align-items: center;

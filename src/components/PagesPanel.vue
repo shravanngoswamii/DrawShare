@@ -22,6 +22,23 @@ const projects = useProjectsStore();
 const { isDark, toggleTheme } = useTheme();
 const { thumbnails, renderThumbnail, loadAndRenderThumbnail } = useThumbnails();
 
+// On mobile the collapsed mini-dock doubles as the panel launcher: it floats
+// top-right whenever the drawer is closed, and tapping expand slides the drawer
+// in. (On mobile the panel is never truly "collapsed" — it's an off-screen
+// drawer — so the dock is gated on the drawer being shut instead.)
+const isMobile = ref(
+  typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
+);
+let mobileMq: MediaQueryList | undefined;
+function onMobileChange(e: MediaQueryListEvent) {
+  isMobile.value = e.matches;
+}
+onMounted(() => {
+  mobileMq = window.matchMedia("(max-width: 767px)");
+  mobileMq.addEventListener("change", onMobileChange);
+});
+onBeforeUnmount(() => mobileMq?.removeEventListener("change", onMobileChange));
+
 // Current page name, edited inline in the detail header (master-detail layout).
 const pageName = ref("");
 watch(
@@ -283,7 +300,7 @@ function removeSnapshot() {
 
     <!-- Collapsed (desktop): a slim vertical dock with just the essentials —
          expand, theme, live session. The full title shows on hover. -->
-    <div v-if="collapsed" class="mini-dock" :class="{ quiet: editor.isDrawing }" aria-label="Pages, collapsed">
+    <div v-if="collapsed || (isMobile && !open)" class="mini-dock" :class="{ quiet: editor.isDrawing }" aria-label="Pages, collapsed">
       <button
         class="dock-btn dock-expand"
         @click="emit('toggle')"
@@ -323,7 +340,7 @@ function removeSnapshot() {
       </button>
     </div>
 
-    <aside v-else class="panel" :class="{ quiet: editor.isDrawing }" aria-label="Pages and settings">
+    <aside v-if="!collapsed" class="panel" :class="{ quiet: editor.isDrawing }" aria-label="Pages and settings">
 
       <!-- ── Header ── -->
       <div class="panel-head">
@@ -1374,10 +1391,17 @@ function removeSnapshot() {
   .head-menu-item { padding: 11px 12px; }
 }
 
-/* ── Mobile — slide-in drawer ── */
+/* ── Mobile — floating panel that grows out of the top-right dock ── */
 @media (max-width: 767px) {
-  /* Collapse is a desktop affordance; on mobile the panel is a drawer. */
-  .mini-dock { display: none; }
+  /* On mobile the mini-dock is the panel launcher (it replaces the old
+     hamburger): same vertical dock as desktop, floated clear of the safe area.
+     .wrap is pointer-events:none on mobile, so the dock needs its own. */
+  .mini-dock {
+    top: calc(var(--safe-top, 0px) + 12px);
+    right: 12px;
+    z-index: 50;
+    pointer-events: auto;
+  }
   .wrap {
     display: block;
     position: fixed;
@@ -1390,34 +1414,47 @@ function removeSnapshot() {
     display: block;
     position: absolute;
     inset: 0;
-    background: rgba(15, 23, 42, 0.5);
+    background: rgba(15, 23, 42, 0.35);
     opacity: 0;
     transition: opacity 180ms ease;
     pointer-events: none;
   }
 
+  /* Floating card pinned to the top-right, just under the dock. It scales up
+     from that exact corner (transform-origin) so it reads as the collapsed dock
+     unfolding into the panel — the DoodleBUGS pattern — rather than a drawer
+     sliding in off the right edge. Caps short of the bottom toolbar pill. */
   .panel {
     position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: min(320px, 90vw);
-    border-radius: 0;
+    top: calc(var(--safe-top, 0px) + 12px);
+    right: 12px;
+    left: auto;
+    bottom: auto;
+    height: auto;
+    width: min(340px, calc(100vw - 24px));
+    max-height: calc(100dvh - (var(--safe-top, 0px) + 12px) - (var(--safe-bottom, 0px) + 76px));
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
     background: var(--color-surface);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    border-left: 1px solid var(--color-border);
-    box-shadow: var(--shadow-lg);
-    transform: translateX(100%) !important;
-    transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1) !important;
-    opacity: 1 !important;
-    pointer-events: auto;
-    padding-top: var(--safe-top);
+    box-shadow: var(--shadow-floating);
+    transform-origin: top right;
+    transform: scale(0);
+    opacity: 0;
+    pointer-events: none;
+    transition:
+      transform 280ms cubic-bezier(0.25, 0.8, 0.25, 1),
+      opacity 220ms ease;
   }
 
   .wrap.is-open { pointer-events: auto; }
   .wrap.is-open .backdrop { opacity: 1; pointer-events: auto; }
-  .wrap.is-open .panel { transform: translateX(0) !important; }
+  .wrap.is-open .panel {
+    transform: scale(1);
+    opacity: 1;
+    pointer-events: auto;
+  }
 
   .desktop-toggle { display: none; }
   .close-btn { display: inline-flex; }

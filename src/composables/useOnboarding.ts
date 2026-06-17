@@ -131,6 +131,11 @@ function run(name: TourName) {
       exitOnEsc: true,
       disableInteraction: true,
       scrollToElement: true,
+      // Keep the tooltip beside its element but let intro.js flip to whatever
+      // side fits — on a narrow phone "right"/"left" rarely fit, so it falls
+      // back to below/above instead of overflowing off-screen.
+      autoPosition: true,
+      positionPrecedence: ["bottom", "top", "right", "left"],
       overlayOpacity: 0.5,
       nextLabel: "Next",
       prevLabel: "Back",

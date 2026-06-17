@@ -158,7 +158,10 @@ const faqs = [
   box-shadow: 0 12px 36px var(--color-glass-shadow), 0 2px 8px var(--color-glass-shadow);
   display: flex;
   flex-direction: column;
-  clip-path: inset(0 round 14px);
+  /* overflow:hidden (not clip-path) clips children to the rounded corners:
+     clip-path + backdrop-filter together drop the blur in Chrome, especially on
+     mobile, leaving the panel flat instead of frosted. */
+  overflow: hidden;
   animation: help-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
   transform-origin: bottom left;
 }
@@ -424,9 +427,33 @@ details[open] .faq-q::before { transform: rotate(90deg); }
 @media (max-width: 767px) {
   .help-panel {
     right: 8px;
-    bottom: 72px;
+    bottom: calc(var(--safe-bottom, 0px) + 72px);
     width: calc(100vw - 16px);
     max-width: 340px;
+    /* The canvas behind the panel is camera-transformed, so it's its own
+       compositing layer — Android Chrome won't sample it as a backdrop, and a
+       translucent fill + blur just renders flat see-through. Use the near-opaque
+       glass token (theme-adaptive, ~0.88) so it reads as frosted glass with or
+       without real blur; keep a modest blur as progressive enhancement. */
+    background: var(--color-glass-bg);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+  }
+  /* Beat the desktop per-theme fills (higher specificity) with the same
+     theme-adaptive token so both light and dark stay frosted on mobile. */
+  html[data-theme="light"] .help-panel,
+  html[data-theme="dark"] .help-panel {
+    background: var(--color-glass-bg);
+  }
+  /* Drop the header's nested backdrop-filter: a backdrop-filter inside an
+     overflow:hidden parent that also has one is dropped on mobile Chrome. The
+     stronger glass token keeps scrolled content hidden behind the sticky head. */
+  .help-head,
+  html[data-theme="light"] .help-head,
+  html[data-theme="dark"] .help-head {
+    background: var(--color-glass-bg-strong);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 }
 </style>
