@@ -2,19 +2,19 @@
 import { getStroke } from "perfect-freehand";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import NewProjectDialog from "@/components/NewProjectDialog.vue";
 import { useTheme } from "@/composables/useTheme";
 import { useThumbnails } from "@/composables/useThumbnails";
 import { makeSessionCode } from "@/core/sync";
-import { useEditorStore } from "@/stores/editor";
 import { useProjectsStore } from "@/stores/projects";
 
 const router = useRouter();
 const { isDark, toggleTheme } = useTheme();
 const projects = useProjectsStore();
-const editor = useEditorStore();
 const { projectThumbnails, renderProjectThumbnail } = useThumbnails();
 
 const joinCode = ref("");
+const showCreate = ref(false);
 
 // A few most-recent boards surface on the landing for returning users; the full
 // grid lives on /projects so the page stays uncluttered. Hidden when there are
@@ -36,12 +36,10 @@ function relativeTime(ts: number): string {
   return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-// "Start drawing" goes straight to a fresh board (Free canvas) — no projects-grid
-// detour. Notebook/paper-size choices stay on the full /projects screen.
+// "Start drawing" / "New board" open the shared dialog so you can pick Free vs
+// Notebook (and paper size) up front, same as the projects grid.
 function startDrawing() {
-  const { project, page } = projects.create("Untitled", { mode: "free", size: "a4" });
-  editor.initNew(project, page);
-  router.push({ name: "editor", params: { id: project.id } });
+  showCreate.value = true;
 }
 
 function openAllBoards() {
@@ -653,6 +651,8 @@ onBeforeUnmount(() => {
         <span class="footer-copy mono">MIT · local-first</span>
       </div>
     </footer>
+
+    <NewProjectDialog :open="showCreate" @close="showCreate = false" />
   </div>
 </template>
 
@@ -1011,8 +1011,10 @@ onBeforeUnmount(() => {
   text-decoration: underline;
 }
 .recent-grid {
+  /* Fixed 4 columns (not auto-fit) so a single board stays one card wide
+     instead of stretching across the whole row. */
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-4);
   list-style: none;
   margin: 0;
@@ -1291,6 +1293,9 @@ onBeforeUnmount(() => {
   .recent-head {
     flex-wrap: wrap;
     gap: var(--space-2);
+  }
+  .recent-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .steps-row {
     grid-template-columns: 1fr;
