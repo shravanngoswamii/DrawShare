@@ -46,15 +46,7 @@ Output goes to `dist/`. The base path can be set with the `BASE_PATH` env var so
 
 Pushing to `main` runs `.github/workflows/deploy.yml`, which builds and publishes `dist/` to the `gh-pages` branch. Pull requests get their own preview deploy via `.github/workflows/preview.yml`.
 
-## Cloud backup (optional)
-
-DrawShare can back boards up to the user's **own** Google Drive and sync them across their devices — no DrawShare account or server. It's off unless a Google OAuth client id is configured.
-
-1. In [Google Cloud Console](https://console.cloud.google.com/): create a project, enable the **Google Drive API**, and create an **OAuth 2.0 Client ID** of type *Web application*.
-2. Add your origin (e.g. `https://shravangoswami.com`, and `http://localhost:5173` for dev) under **Authorised JavaScript origins**.
-3. Copy `.env.example` to `.env.local` and set `VITE_GOOGLE_CLIENT_ID`.
-
-The app requests only the `drive.appdata` scope, so it can read and write just its own hidden app folder — never the user's other files. Each board is one JSON file there; sync is per-project, last-writer-wins, keeping both copies on a true conflict.
+Optional cloud backup (to each user's own Google Drive) is off unless `VITE_GOOGLE_CLIENT_ID` is set — see `.env.example` for the one-time setup.
 
 ## Data model
 
