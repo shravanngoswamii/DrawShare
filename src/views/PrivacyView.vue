@@ -110,8 +110,10 @@
 
 <style scoped>
 .privacy {
-  min-height: 100vh;
-  min-height: 100dvh;
+  /* html/body/#app are overflow:hidden app-wide, so this view scrolls itself. */
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
   background: var(--color-bg);
   color: var(--color-text);
   padding: clamp(28px, 6vw, 72px) var(--space-5) 96px;
