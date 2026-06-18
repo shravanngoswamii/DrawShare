@@ -105,7 +105,8 @@ async function commitRename() {
   renamingId.value = null;
 }
 
-async function remove(id: string) {
+async function remove(id: string, name: string) {
+  if (!confirm(`Delete "${name}"? You can restore it from Trash for 30 days.`)) return;
   if (!deletingIds.value.includes(id)) {
     deletingIds.value = [...deletingIds.value, id];
   }
@@ -328,7 +329,7 @@ function formatDate(ts: number): string {
               <button class="btn btn-ghost btn-sm" @click="exportProject(p.id)" title="Export this project as JSON backup">
                 Export
               </button>
-              <button class="btn btn-ghost btn-sm card-danger" @click="remove(p.id)">
+              <button class="btn btn-ghost btn-sm card-danger" @click="remove(p.id, p.name)">
                 Delete
               </button>
             </div>
