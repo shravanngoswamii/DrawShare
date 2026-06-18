@@ -20,8 +20,10 @@ export interface Theme {
   family: string;
   name: string;
   mode: Mode;
-  /** Representative colour for the picker swatch. */
+  /** Accent colour for the picker swatch. */
   swatch: string;
+  /** Background colour for the picker preview tile. */
+  bg: string;
   /** CSS custom-property overrides; empty for the default (slate). */
   tokens: Record<string, string>;
 }
@@ -171,16 +173,17 @@ const MODES: Mode[] = ["light", "dark"];
 function familyTheme(f: Family, mode: Mode): Theme {
   const accent = mode === "dark" ? f.dark : f.light;
   const s = SLATE_SEED[mode];
+  const bg = f.default ? s.bg : tint(s.bg, parse(accent), 0.05);
   const tokens = f.default
     ? {}
     : buildTokens({
         mode,
-        bg: tint(s.bg, parse(accent), 0.05),
+        bg,
         surface: tint(s.surface, parse(accent), 0.04),
         text: s.text,
         accent,
       });
-  return { id: `${f.id}-${mode}`, family: f.id, name: f.name, mode, swatch: accent, tokens };
+  return { id: `${f.id}-${mode}`, family: f.id, name: f.name, mode, swatch: accent, bg, tokens };
 }
 
 // ── signature themes (famous editor / reading palettes) ───────────────────────
@@ -203,10 +206,11 @@ const SIGNATURES: Signature[] = [
     family: "sepia",
     name: "Sepia",
     mode: "light",
-    bg: "#f4ecd8",
-    surface: "#fbf6e8",
-    text: "#4b3f33",
-    accent: "#9c6b3f",
+    // The warm cream reading paper from Apple Books / Kindle.
+    bg: "#f7eed7",
+    surface: "#fcf6e6",
+    text: "#4a3f30",
+    accent: "#9c6a35",
   },
   {
     id: "solarized-light",
@@ -308,6 +312,7 @@ function signatureTheme(s: Signature): Theme {
     name: s.name,
     mode: s.mode,
     swatch: s.accent,
+    bg: s.bg,
     tokens: buildTokens(s),
   };
 }
