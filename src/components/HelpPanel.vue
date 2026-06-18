@@ -1,10 +1,23 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { useRoute } from "vue-router";
 import { useOnboarding } from "@/composables/useOnboarding";
+import { useTheme } from "@/composables/useTheme";
+import { type Mode, THEME_FAMILIES } from "@/core/themes";
 import { devMode, setDevMode } from "@/debug";
 
 defineProps<{ open: boolean }>();
 const emit = defineEmits<{ close: [] }>();
+
+const { isDark, isSystem, activeThemeId, setTheme, useSystemTheme } = useTheme();
+const families = THEME_FAMILIES;
+const activeFamily = computed(() => activeThemeId.value.replace(/-(light|dark)$/, ""));
+function applyMode(mode: Mode) {
+  setTheme(`${activeFamily.value}-${mode}`);
+}
+function pickFamily(id: string) {
+  setTheme(`${id}-${isDark.value ? "dark" : "light"}`);
+}
 
 const route = useRoute();
 const { replay } = useOnboarding();
@@ -77,6 +90,29 @@ const faqs = [
               View on GitHub
             </a>
             <span class="version-badge">v0.1.0 · MIT</span>
+          </div>
+        </section>
+
+        <!-- Theme -->
+        <section class="help-section">
+          <h3 class="help-section-title">Theme</h3>
+          <div class="theme-modes" role="group" aria-label="Appearance">
+            <button class="mode-btn" :class="{ active: isSystem }" @click="useSystemTheme()">System</button>
+            <button class="mode-btn" :class="{ active: !isSystem && !isDark }" @click="applyMode('light')">Light</button>
+            <button class="mode-btn" :class="{ active: !isSystem && isDark }" @click="applyMode('dark')">Dark</button>
+          </div>
+          <div class="theme-swatches" role="group" aria-label="Accent colour">
+            <button
+              v-for="f in families"
+              :key="f.id"
+              class="swatch"
+              :class="{ active: activeFamily === f.id }"
+              :style="{ '--sw': isDark ? f.dark : f.light }"
+              :title="f.name"
+              :aria-label="f.name"
+              :aria-pressed="activeFamily === f.id"
+              @click="pickFamily(f.id)"
+            ></button>
           </div>
         </section>
 
@@ -172,11 +208,11 @@ const faqs = [
     border-color: rgba(148, 163, 184, 0.18);
   }
 }
-html[data-theme="dark"] .help-panel {
+html[data-mode="dark"] .help-panel {
   background: rgba(15, 23, 42, 0.68);
   border-color: rgba(148, 163, 184, 0.18);
 }
-html[data-theme="light"] .help-panel {
+html[data-mode="light"] .help-panel {
   background: rgba(255, 255, 255, 0.6);
   border-color: rgba(255, 255, 255, 0.55);
 }
@@ -208,8 +244,8 @@ html[data-theme="light"] .help-panel {
 @media (prefers-color-scheme: dark) {
   .help-head { background: rgba(15, 23, 42, 0.78); }
 }
-html[data-theme="dark"] .help-head { background: rgba(15, 23, 42, 0.78); }
-html[data-theme="light"] .help-head { background: rgba(255, 255, 255, 0.72); }
+html[data-mode="dark"] .help-head { background: rgba(15, 23, 42, 0.78); }
+html[data-mode="light"] .help-head { background: rgba(255, 255, 255, 0.72); }
 
 .help-title {
   flex: 1;
@@ -272,6 +308,48 @@ html[data-theme="light"] .help-head { background: rgba(255, 255, 255, 0.72); }
   font-size: 10px;
   color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* Theme picker */
+.theme-modes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 3px;
+  margin-bottom: var(--space-3);
+  background: var(--color-surface-2);
+  border-radius: var(--radius-md);
+}
+.mode-btn {
+  padding: 5px 0;
+  border-radius: calc(var(--radius-md) - 2px);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  transition: background 80ms ease, color 80ms ease;
+}
+.mode-btn:hover { color: var(--color-text); }
+.mode-btn.active {
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-xs);
+}
+.theme-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-pill);
+  background: var(--sw);
+  border: 1px solid var(--color-border-strong);
+  transition: transform 80ms ease, box-shadow 80ms ease;
+}
+.swatch:hover { transform: scale(1.08); }
+.swatch.active {
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--sw);
 }
 
 .help-section-title {
@@ -441,16 +519,16 @@ details[open] .faq-q::before { transform: rotate(90deg); }
   }
   /* Beat the desktop per-theme fills (higher specificity) with the same
      theme-adaptive token so both light and dark stay frosted on mobile. */
-  html[data-theme="light"] .help-panel,
-  html[data-theme="dark"] .help-panel {
+  html[data-mode="light"] .help-panel,
+  html[data-mode="dark"] .help-panel {
     background: var(--color-glass-bg);
   }
   /* Drop the header's nested backdrop-filter: a backdrop-filter inside an
      overflow:hidden parent that also has one is dropped on mobile Chrome. The
      stronger glass token keeps scrolled content hidden behind the sticky head. */
   .help-head,
-  html[data-theme="light"] .help-head,
-  html[data-theme="dark"] .help-head {
+  html[data-mode="light"] .help-head,
+  html[data-mode="dark"] .help-head {
     background: var(--color-glass-bg-strong);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;

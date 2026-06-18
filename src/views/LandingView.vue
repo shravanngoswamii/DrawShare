@@ -690,7 +690,7 @@ onBeforeUnmount(() => {
   color: var(--color-text);
   background: var(--color-bg);
 }
-:global([data-theme="dark"]) .landing {
+:global([data-mode="dark"]) .landing {
   --ink-swatch: #eaeef5;
 }
 
