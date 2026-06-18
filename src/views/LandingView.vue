@@ -3,13 +3,14 @@ import { getStroke } from "perfect-freehand";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import NewProjectDialog from "@/components/NewProjectDialog.vue";
+import ThemeMenu from "@/components/ThemeMenu.vue";
 import { useTheme } from "@/composables/useTheme";
 import { useThumbnails } from "@/composables/useThumbnails";
 import { makeSessionCode } from "@/core/sync";
 import { useProjectsStore } from "@/stores/projects";
 
 const router = useRouter();
-const { isDark, toggleTheme } = useTheme();
+const { isDark } = useTheme();
 const projects = useProjectsStore();
 const { projectThumbnails, renderProjectThumbnail } = useThumbnails();
 
@@ -382,14 +383,7 @@ onBeforeUnmount(() => {
             </svg>
             GitHub
           </a>
-          <button class="theme-btn" @click="toggleTheme" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'" :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'">
-            <svg v-if="isDark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
-            </svg>
-            <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
-            </svg>
-          </button>
+          <ThemeMenu />
           <button class="btn btn-primary nav-cta" @click="openAllBoards">Open app</button>
         </div>
       </div>
@@ -690,7 +684,7 @@ onBeforeUnmount(() => {
   color: var(--color-text);
   background: var(--color-bg);
 }
-:global([data-theme="dark"]) .landing {
+:global([data-mode="dark"]) .landing {
   --ink-swatch: #eaeef5;
 }
 
@@ -761,20 +755,6 @@ onBeforeUnmount(() => {
   transition: color 120ms;
 }
 .nav-link:hover {
-  color: var(--color-text);
-}
-.theme-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  color: var(--color-text-muted);
-  transition: background 100ms, color 100ms;
-}
-.theme-btn:hover {
-  background: var(--color-surface-2);
   color: var(--color-text);
 }
 .nav-cta {

@@ -110,9 +110,11 @@
 }
 
 /* ── Dark mode ─────────────────────────────────────────────────────────────
-   Applied when the OS preference is dark (and the user hasn't overridden
-   it to light) or when data-theme="dark" is set explicitly on <html>.
-   html[data-theme] wins due to higher specificity than :root inside @media.
+   The base light/dark palettes are keyed on data-mode (set by useTheme), with
+   prefers-color-scheme as the no-preference fallback. A selected theme layers
+   its palette on top via html[data-theme="<id>"] (see the injected theme
+   stylesheet); data-mode also drives the per-mode bits a theme leaves alone
+   (shadows, semantics, focus) and the [data-mode] overrides in components.
    ── */
 @media (prefers-color-scheme: dark) {
   :root {
@@ -151,7 +153,7 @@
 }
 
 /* Force dark regardless of OS preference */
-html[data-theme="dark"] {
+html[data-mode="dark"] {
   --color-bg: #0f172a;
   --color-surface: #1e293b;
   --color-surface-2: #263548;
@@ -186,7 +188,7 @@ html[data-theme="dark"] {
 }
 
 /* Force light even when OS is dark */
-html[data-theme="light"] {
+html[data-mode="light"] {
   --color-bg: #f8fafc;
   --color-surface: #ffffff;
   --color-surface-2: #f1f5f9;

@@ -172,11 +172,11 @@ const faqs = [
     border-color: rgba(148, 163, 184, 0.18);
   }
 }
-html[data-theme="dark"] .help-panel {
+html[data-mode="dark"] .help-panel {
   background: rgba(15, 23, 42, 0.68);
   border-color: rgba(148, 163, 184, 0.18);
 }
-html[data-theme="light"] .help-panel {
+html[data-mode="light"] .help-panel {
   background: rgba(255, 255, 255, 0.6);
   border-color: rgba(255, 255, 255, 0.55);
 }
@@ -208,8 +208,8 @@ html[data-theme="light"] .help-panel {
 @media (prefers-color-scheme: dark) {
   .help-head { background: rgba(15, 23, 42, 0.78); }
 }
-html[data-theme="dark"] .help-head { background: rgba(15, 23, 42, 0.78); }
-html[data-theme="light"] .help-head { background: rgba(255, 255, 255, 0.72); }
+html[data-mode="dark"] .help-head { background: rgba(15, 23, 42, 0.78); }
+html[data-mode="light"] .help-head { background: rgba(255, 255, 255, 0.72); }
 
 .help-title {
   flex: 1;
@@ -441,16 +441,16 @@ details[open] .faq-q::before { transform: rotate(90deg); }
   }
   /* Beat the desktop per-theme fills (higher specificity) with the same
      theme-adaptive token so both light and dark stay frosted on mobile. */
-  html[data-theme="light"] .help-panel,
-  html[data-theme="dark"] .help-panel {
+  html[data-mode="light"] .help-panel,
+  html[data-mode="dark"] .help-panel {
     background: var(--color-glass-bg);
   }
   /* Drop the header's nested backdrop-filter: a backdrop-filter inside an
      overflow:hidden parent that also has one is dropped on mobile Chrome. The
      stronger glass token keeps scrolled content hidden behind the sticky head. */
   .help-head,
-  html[data-theme="light"] .help-head,
-  html[data-theme="dark"] .help-head {
+  html[data-mode="light"] .help-head,
+  html[data-mode="dark"] .help-head {
     background: var(--color-glass-bg-strong);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;

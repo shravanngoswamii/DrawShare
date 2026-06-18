@@ -44,7 +44,7 @@ const props = defineProps<{ page: Page }>();
 const editor = useEditorStore();
 const live = useLiveStore();
 const replay = useReplayStore();
-const { isDark } = useTheme();
+const { isDark, activeThemeId } = useTheme();
 
 function applyInkAdapter() {
   baseRenderer.setInkAdapter((c) => adaptInk(c, isDark.value));
@@ -2054,8 +2054,9 @@ onMounted(async () => {
   }
 });
 
-// Re-paint ink when the theme flips (dark-mode ink adaptation is render-time).
-watch(isDark, () => {
+// Re-paint when the theme changes — on a light/dark flip (ink adaptation is
+// render-time) and on any palette switch (e.g. Sepia repaints the canvas paper).
+watch([isDark, activeThemeId], () => {
   applyInkAdapter();
   if (wrap.value) sheetColors = resolveSheetColors(wrap.value);
   updateEditStyle();

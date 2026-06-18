@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import ThemeMenu from "@/components/ThemeMenu.vue";
 import { confirmDialog } from "@/composables/useDialog";
 import {
   exportNotebookPdf as exportNotebookPdfToPrint,
@@ -367,6 +368,7 @@ function removeSnapshot() {
           :placeholder="editor.project?.name ?? 'Untitled'"
         />
         <span class="save-chip" :class="{ saving: editor.saving > 0 }" role="status" aria-live="polite">{{ saveStatus }}</span>
+        <ThemeMenu />
         <div class="head-menu-wrap">
           <button class="head-icon" @click="menuOpen = !menuOpen" :aria-expanded="menuOpen" aria-haspopup="true" title="More" aria-label="More options">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -374,15 +376,6 @@ function removeSnapshot() {
             </svg>
           </button>
           <div v-if="menuOpen" class="head-menu" role="menu">
-            <button class="head-menu-item" role="menuitem" @click="toggleTheme(); menuOpen = false">
-              <svg v-if="isDark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
-              </svg>
-              <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
-              </svg>
-              <span>{{ isDark ? 'Light mode' : 'Dark mode' }}</span>
-            </button>
             <button class="head-menu-item" role="menuitem" @click="toggleFullscreen(); menuOpen = false">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M21 8V5a2 2 0 0 0-2-2h-3" /><path d="M3 16v3a2 2 0 0 0 2 2h3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" />
