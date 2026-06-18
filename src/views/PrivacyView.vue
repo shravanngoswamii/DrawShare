@@ -72,11 +72,11 @@
       <h2>Cloud backup (optional)</h2>
       <p>
         If you connect cloud backup, DrawShare signs in to <strong>your own</strong> Google
-        Drive and stores each board as a file in a private, app-only folder that only DrawShare
-        can see — it cannot read the rest of your Drive. Your boards go to your Google account,
-        not to us; we never receive or store them. This use of Google Drive is governed by
-        Google's privacy policy, and you can disconnect at any time, or revoke access from your
-        Google Account's security settings.
+        Drive and stores each board as a file in a "DrawShare" folder there. DrawShare can only
+        access the files it creates in your Drive — it cannot read the rest of your Drive. Your
+        boards go to your Google account, not to us; we never receive or store them. This use of
+        Google Drive is governed by Google's privacy policy, and you can disconnect at any time,
+        or revoke access from your Google Account's security settings.
       </p>
 
       <h2>Your control over your data</h2>

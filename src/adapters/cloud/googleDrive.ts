@@ -1,9 +1,10 @@
 // Google Drive backup provider — entirely client-side, no DrawShare backend.
-// Uses Google Identity Services (GIS) for an OAuth token with the narrow
-// `drive.appdata` scope, so DrawShare can only read/write its own hidden folder
-// in the user's Drive — never their other files. One JSON file per project lives
-// in that folder, tagged with appProperties (projectId / updatedAt / hash) so
-// the sync engine can reconcile without downloading everything.
+// Uses Google Identity Services (GIS) for an OAuth token with the `drive.file`
+// scope, which grants access only to files this app creates — never the user's
+// other files. Backups live in a visible "DrawShare" folder in My Drive (so the
+// user can see and download them), one JSON file per project, each tagged with
+// appProperties (projectId / updatedAt / hash) so the sync engine can reconcile
+// without downloading everything.
 //
 // The access token is cached in localStorage with its expiry, so reloads reuse
 // it silently. Acquiring a *new* token shows Google's popup, so that only ever
@@ -65,13 +66,15 @@ declare global {
 }
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
-const SCOPE = "https://www.googleapis.com/auth/drive.appdata";
+const SCOPE = "https://www.googleapis.com/auth/drive.file";
 const GIS_SRC = "https://accounts.google.com/gsi/client";
 const CONSENT_KEY = "drawshare-drive-connected"; // user has connected before
 const TOKEN_KEY = "drawshare-drive-token"; // { token, expiry } — survives reloads
+const FOLDER_NAME = "DrawShare";
 
 let gisPromise: Promise<void> | null = null;
 let tokenClient: TokenClient | null = null;
+let folderId = ""; // id of the "DrawShare" folder, resolved lazily per session
 
 function readToken(): string {
   try {
@@ -146,6 +149,29 @@ async function api(path: string, init: RequestInit = {}): Promise<Response> {
   return res;
 }
 
+// Find (or create) the visible "DrawShare" folder. With drive.file we only see
+// folders this app created, so this resolves to our own folder, recreating it
+// if the user deleted it. Cached in-memory for the session.
+async function ensureFolder(): Promise<string> {
+  if (folderId) return folderId;
+  const q = `mimeType='application/vnd.google-apps.folder' and name='${FOLDER_NAME}' and trashed=false`;
+  const found = await api(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)`,
+  );
+  const data = (await found.json()) as { files?: Array<{ id: string }> };
+  if (data.files?.[0]) {
+    folderId = data.files[0].id;
+    return folderId;
+  }
+  const created = await api("https://www.googleapis.com/drive/v3/files?fields=id", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: FOLDER_NAME, mimeType: "application/vnd.google-apps.folder" }),
+  });
+  folderId = ((await created.json()) as { id: string }).id;
+  return folderId;
+}
+
 export const googleDrive: CloudProvider = {
   id: "google-drive",
   label: "Google Drive",
@@ -176,6 +202,7 @@ export const googleDrive: CloudProvider = {
   },
 
   disconnect() {
+    folderId = "";
     try {
       localStorage.removeItem(CONSENT_KEY);
       localStorage.removeItem(TOKEN_KEY);
@@ -183,9 +210,11 @@ export const googleDrive: CloudProvider = {
   },
 
   async list() {
+    const folder = await ensureFolder();
+    const q = `'${folder}' in parents and trashed=false`;
     const fields = "files(id,appProperties)";
     const res = await api(
-      `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&pageSize=1000&fields=${encodeURIComponent(fields)}`,
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&pageSize=1000&fields=${encodeURIComponent(fields)}`,
     );
     const data = (await res.json()) as {
       files?: Array<{ id: string; appProperties?: Record<string, string> }>;
@@ -217,7 +246,7 @@ export const googleDrive: CloudProvider = {
       mimeType: "application/json",
       appProperties: { projectId: p.projectId, updatedAt: String(p.updatedAt), hash: p.hash },
     };
-    if (!p.fileId) metadata.parents = ["appDataFolder"];
+    if (!p.fileId) metadata.parents = [await ensureFolder()];
 
     const boundary = "drawshare-boundary";
     const body =
