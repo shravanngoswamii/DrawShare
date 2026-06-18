@@ -1,20 +1,13 @@
-<script setup lang="ts">
-import { useRouter } from "vue-router";
-
-const router = useRouter();
-const GITHUB_ISSUES = "https://github.com/shravanngoswamii/DrawShare/issues";
-</script>
-
 <template>
   <main class="privacy">
     <div class="doc">
       <header class="doc-head">
-        <button class="home" type="button" @click="router.push({ name: 'landing' })">
+        <RouterLink class="home" :to="{ name: 'landing' }">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="m12 19-7-7 7-7" /><path d="M19 12H5" />
           </svg>
           DrawShare
-        </button>
+        </RouterLink>
         <h1>Privacy Policy</h1>
         <p class="updated">Last updated 18 June 2026</p>
       </header>
@@ -109,7 +102,7 @@ const GITHUB_ISSUES = "https://github.com/shravanngoswamii/DrawShare/issues";
       <h2>Contact</h2>
       <p>
         Questions or concerns? Open an issue on
-        <a :href="GITHUB_ISSUES" target="_blank" rel="noopener noreferrer">GitHub</a>.
+        <a href="https://github.com/shravanngoswamii/DrawShare/issues" target="_blank" rel="noopener noreferrer">GitHub</a>.
       </p>
     </div>
   </main>
@@ -138,6 +131,7 @@ const GITHUB_ISSUES = "https://github.com/shravanngoswamii/DrawShare/issues";
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--color-text-muted);
+  text-decoration: none;
   transition: color 80ms ease;
 }
 .home:hover {
