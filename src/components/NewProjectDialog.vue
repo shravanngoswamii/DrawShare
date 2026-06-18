@@ -55,7 +55,7 @@ function confirmCreate() {
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M3 3h18v18H3z" opacity="0" /><path d="M4 12h16M12 4v16" opacity="0" /><path d="M6 18c4-10 8 6 12-4" /><circle cx="4.5" cy="19.5" r="1.2" /><circle cx="19.5" cy="4.5" r="1.2" />
           </svg>
-          <span class="mode-name">Free</span>
+          <span class="mode-name">Freeform</span>
           <span class="mode-desc muted">Infinite canvas, draw anywhere</span>
         </button>
         <button
