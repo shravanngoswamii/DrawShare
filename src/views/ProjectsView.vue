@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import HelpPanel from "@/components/HelpPanel.vue";
 import NewProjectDialog from "@/components/NewProjectDialog.vue";
+import { alertDialog, confirmDialog } from "@/composables/useDialog";
 import { useOnboarding } from "@/composables/useOnboarding";
 import { useProjectBackup } from "@/composables/useProjectBackup";
 import { useTheme } from "@/composables/useTheme";
@@ -35,9 +36,15 @@ async function handleImport(e: Event) {
   try {
     const count = await importAll(file);
     await projects.load();
-    alert(`Imported ${count} project${count !== 1 ? "s" : ""} successfully.`);
+    await alertDialog({
+      title: "Import complete",
+      message: `Imported ${count} project${count !== 1 ? "s" : ""} successfully.`,
+    });
   } catch (err) {
-    alert(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+    await alertDialog({
+      title: "Import failed",
+      message: err instanceof Error ? err.message : String(err),
+    });
   } finally {
     importing.value = false;
     if (importInput.value) importInput.value.value = "";
@@ -106,7 +113,13 @@ async function commitRename() {
 }
 
 async function remove(id: string, name: string) {
-  if (!confirm(`Delete "${name}"? You can restore it from Trash for 30 days.`)) return;
+  const ok = await confirmDialog({
+    title: `Delete "${name}"?`,
+    message: "You can restore it from Trash for 30 days.",
+    confirmText: "Delete",
+    danger: true,
+  });
+  if (!ok) return;
   if (!deletingIds.value.includes(id)) {
     deletingIds.value = [...deletingIds.value, id];
   }
@@ -123,7 +136,13 @@ async function restore(id: string) {
 }
 
 async function permanentDelete(id: string, name: string) {
-  if (!confirm(`Permanently delete "${name}"? This cannot be undone.`)) return;
+  const ok = await confirmDialog({
+    title: `Permanently delete "${name}"?`,
+    message: "This cannot be undone.",
+    confirmText: "Delete forever",
+    danger: true,
+  });
+  if (!ok) return;
   await projects.permanentDelete(id);
 }
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { confirmDialog } from "@/composables/useDialog";
 import {
   exportNotebookPdf as exportNotebookPdfToPrint,
   exportPageAsPdf,
@@ -141,7 +142,13 @@ function toggleFullscreen() {
 }
 
 async function clearPage() {
-  if (!confirm("Clear all strokes on this page?")) return;
+  const ok = await confirmDialog({
+    title: "Clear this page?",
+    message: "All strokes on this page will be removed.",
+    confirmText: "Clear",
+    danger: true,
+  });
+  if (!ok) return;
   await editor.clearPage();
 }
 
@@ -162,7 +169,13 @@ async function commitPageName() {
 
 async function remove(id: string, name: string) {
   if (editor.pages.length <= 1) return;
-  if (!confirm(`Delete "${name}"?`)) return;
+  const ok = await confirmDialog({
+    title: `Delete "${name}"?`,
+    message: "This page and its contents will be removed.",
+    confirmText: "Delete",
+    danger: true,
+  });
+  if (!ok) return;
   await editor.deletePage(id);
 }
 
