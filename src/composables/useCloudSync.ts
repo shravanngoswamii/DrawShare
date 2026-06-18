@@ -1,4 +1,4 @@
-import { computed, ref } from "vue";
+import { computed, effectScope, ref, watch } from "vue";
 import { googleDrive } from "@/adapters/cloud/googleDrive";
 import { storage } from "@/adapters/storage/indexedDB";
 import { hashString, reconcile, type SyncEntry, type SyncState } from "@/core/cloudSync";
@@ -23,6 +23,9 @@ const LAST_KEY = "drawshare-sync-last";
 
 const connected = ref(provider.isConnected());
 const syncing = ref(false);
+// Connected before, but the cached token has expired — needs an interactive
+// reconnect. Background sync sets this instead of popping up a login.
+const needsAuth = ref(false);
 const errorMsg = ref<string | null>(null);
 const online = ref(typeof navigator === "undefined" ? true : navigator.onLine);
 const lastSyncedAt = ref<number | null>(readLast());
@@ -80,8 +83,22 @@ function remapEntry(entry: BackupEntry): BackupEntry {
   return { project, pages };
 }
 
-export async function syncNow(): Promise<void> {
+export async function syncNow(interactive = false): Promise<void> {
   if (!provider.isConfigured() || !connected.value || syncing.value || !online.value) return;
+  // No valid token: a background run must never pop up Google's login — flag for
+  // reconnect and bail. An interactive run (Connect / Sync now) may prompt.
+  if (!provider.hasToken()) {
+    if (!interactive) {
+      needsAuth.value = true;
+      return;
+    }
+    const ok = await provider.authorize();
+    if (!ok) {
+      errorMsg.value = "Authorization failed";
+      return;
+    }
+  }
+  needsAuth.value = false;
   syncing.value = true;
   errorMsg.value = null;
   const state = loadState();
@@ -192,17 +209,33 @@ function start() {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") void syncNow();
   });
-  window.setInterval(() => void syncNow(), 90_000);
+  window.setInterval(() => void syncNow(), 30_000);
+
+  // Sync a few seconds after any local edit settles. editor saves call
+  // projects.touch(), which bumps updatedAt — watch that signature. A detached
+  // scope keeps it alive regardless of which component first mounted us.
+  effectScope(true).run(() => {
+    const projects = useProjectsStore();
+    let debounce: ReturnType<typeof setTimeout> | undefined;
+    watch(
+      () => projects.projects.map((p) => `${p.id}:${p.updatedAt}`).join("|"),
+      () => {
+        clearTimeout(debounce);
+        debounce = setTimeout(() => void syncNow(), 4000);
+      },
+    );
+  });
 }
 
 export function useCloudSync() {
   start();
 
   const status = computed<
-    "unavailable" | "disconnected" | "offline" | "syncing" | "error" | "synced"
+    "unavailable" | "disconnected" | "reauth" | "offline" | "syncing" | "error" | "synced"
   >(() => {
     if (!provider.isConfigured()) return "unavailable";
     if (!connected.value) return "disconnected";
+    if (needsAuth.value) return "reauth";
     if (!online.value) return "offline";
     if (syncing.value) return "syncing";
     if (errorMsg.value) return "error";
@@ -210,22 +243,25 @@ export function useCloudSync() {
   });
 
   async function connect() {
-    try {
-      await provider.connect();
-      connected.value = true;
-      await syncNow();
-    } catch (err) {
-      errorMsg.value = err instanceof Error ? err.message : String(err);
+    const ok = await provider.authorize();
+    if (!ok) {
+      errorMsg.value = "Authorization failed";
+      return;
     }
+    connected.value = true;
+    needsAuth.value = false;
+    await syncNow(true);
   }
 
   function disconnect() {
     provider.disconnect();
     connected.value = false;
+    needsAuth.value = false;
     errorMsg.value = null;
   }
 
-  // Kick off an initial sync if we're already connected from a previous visit.
+  // Kick off an initial sync if we're already connected from a previous visit
+  // (silent — uses the cached token, never pops up a login).
   if (connected.value && online.value) void syncNow();
 
   return {
@@ -233,6 +269,7 @@ export function useCloudSync() {
     available: provider.isConfigured(),
     connected,
     syncing,
+    needsAuth,
     errorMsg,
     lastSyncedAt,
     status,

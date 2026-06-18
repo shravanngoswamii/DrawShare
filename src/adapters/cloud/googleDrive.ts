@@ -4,6 +4,11 @@
 // in the user's Drive — never their other files. One JSON file per project lives
 // in that folder, tagged with appProperties (projectId / updatedAt / hash) so
 // the sync engine can reconcile without downloading everything.
+//
+// The access token is cached in localStorage with its expiry, so reloads reuse
+// it silently. Acquiring a *new* token shows Google's popup, so that only ever
+// happens on an explicit Connect/Reconnect — background sync never pops up; it
+// just uses the cached token (or asks the UI to reconnect when it has expired).
 
 export interface RemoteEntry {
   fileId: string;
@@ -17,7 +22,10 @@ export interface CloudProvider {
   readonly label: string;
   isConfigured(): boolean;
   isConnected(): boolean;
-  connect(): Promise<void>;
+  /** True when a non-expired access token is cached (sync can run silently). */
+  hasToken(): boolean;
+  /** Interactive — may show Google's popup. Returns false if the user declines. */
+  authorize(): Promise<boolean>;
   disconnect(): void;
   list(): Promise<RemoteEntry[]>;
   download(fileId: string): Promise<string>;
@@ -59,13 +67,30 @@ declare global {
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
 const SCOPE = "https://www.googleapis.com/auth/drive.appdata";
 const GIS_SRC = "https://accounts.google.com/gsi/client";
-// Remember that the user has consented, so we can refresh the token silently.
-const CONSENT_KEY = "drawshare-drive-connected";
+const CONSENT_KEY = "drawshare-drive-connected"; // user has connected before
+const TOKEN_KEY = "drawshare-drive-token"; // { token, expiry } — survives reloads
 
 let gisPromise: Promise<void> | null = null;
 let tokenClient: TokenClient | null = null;
-let accessToken = "";
-let tokenExpiry = 0;
+
+function readToken(): string {
+  try {
+    const v = JSON.parse(localStorage.getItem(TOKEN_KEY) ?? "null") as {
+      token?: string;
+      expiry?: number;
+    } | null;
+    if (v?.token && typeof v.expiry === "number" && Date.now() < v.expiry - 60_000) return v.token;
+  } catch {}
+  return "";
+}
+function writeToken(token: string, expiresInSec: number) {
+  try {
+    localStorage.setItem(
+      TOKEN_KEY,
+      JSON.stringify({ token, expiry: Date.now() + expiresInSec * 1000 }),
+    );
+  } catch {}
+}
 
 function loadGis(): Promise<void> {
   if (window.google?.accounts?.oauth2) return Promise.resolve();
@@ -81,13 +106,11 @@ function loadGis(): Promise<void> {
   return gisPromise;
 }
 
-// Resolve a usable access token. `interactive` shows the consent popup; silent
-// refresh (prompt: "") works once the user has consented before.
-async function getToken(interactive: boolean): Promise<string> {
-  if (accessToken && Date.now() < tokenExpiry - 60_000) return accessToken;
+// Interactive: opens Google's popup to grant/refresh a token, then caches it.
+async function requestToken(): Promise<string> {
   await loadGis();
   const oauth2 = window.google?.accounts.oauth2;
-  if (!oauth2) throw new Error("Google Identity Services unavailable");
+  if (!oauth2) throw new Error("Google sign-in unavailable");
   if (!tokenClient) {
     tokenClient = oauth2.initTokenClient({
       client_id: CLIENT_ID,
@@ -102,19 +125,19 @@ async function getToken(interactive: boolean): Promise<string> {
         reject(new Error(r.error || "Authorization failed"));
         return;
       }
-      accessToken = r.access_token;
-      tokenExpiry = Date.now() + (r.expires_in ?? 3600) * 1000;
+      writeToken(r.access_token, r.expires_in ?? 3600);
       try {
         localStorage.setItem(CONSENT_KEY, "1");
       } catch {}
-      resolve(accessToken);
+      resolve(r.access_token);
     };
-    client.requestAccessToken({ prompt: interactive ? "consent" : "" });
+    client.requestAccessToken({ prompt: "" });
   });
 }
 
 async function api(path: string, init: RequestInit = {}): Promise<Response> {
-  const token = await getToken(false);
+  const token = readToken();
+  if (!token) throw new Error("Drive authorization expired — reconnect");
   const res = await fetch(path, {
     ...init,
     headers: { ...(init.headers ?? {}), Authorization: `Bearer ${token}` },
@@ -139,15 +162,23 @@ export const googleDrive: CloudProvider = {
     }
   },
 
-  async connect() {
-    await getToken(true);
+  hasToken() {
+    return readToken() !== "";
+  },
+
+  async authorize() {
+    try {
+      await requestToken();
+      return true;
+    } catch {
+      return false;
+    }
   },
 
   disconnect() {
-    accessToken = "";
-    tokenExpiry = 0;
     try {
       localStorage.removeItem(CONSENT_KEY);
+      localStorage.removeItem(TOKEN_KEY);
     } catch {}
   },
 
