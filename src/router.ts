@@ -31,6 +31,11 @@ const routes: RouteRecordRaw[] = [
     component: () => import("./views/SnapshotView.vue"),
   },
   {
+    path: "/privacy",
+    name: "privacy",
+    component: () => import("./views/PrivacyView.vue"),
+  },
+  {
     path: "/:pathMatch(.*)*",
     name: "not-found",
     component: () => import("./views/NotFoundView.vue"),

@@ -43,6 +43,7 @@ jobs:
       - name: Build for preview
         env:
           BASE_PATH: /${{ github.event.repository.name }}/pr-previews/${{ github.event.pull_request.number }}/
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
         run: npm run build
 
       - name: Add SPA fallback

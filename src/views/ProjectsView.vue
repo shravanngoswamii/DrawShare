@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import CloudSyncMenu from "@/components/CloudSyncMenu.vue";
 import HelpPanel from "@/components/HelpPanel.vue";
 import NewProjectDialog from "@/components/NewProjectDialog.vue";
 import ThemeMenu from "@/components/ThemeMenu.vue";
@@ -187,6 +188,7 @@ function formatDate(ts: number): string {
             type="search"
             placeholder="Search projects"
           />
+          <CloudSyncMenu />
           <!-- Export all projects -->
           <button class="btn btn-ghost btn-icon" title="Export all projects" aria-label="Export all projects" @click="exportAll">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"

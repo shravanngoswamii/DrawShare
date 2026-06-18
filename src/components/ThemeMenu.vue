@@ -51,6 +51,12 @@ function onKeydown(e: KeyboardEvent) {
 function close() {
   open.value = false;
 }
+// The popover is fixed-positioned, so close it if the *page* scrolls (it would
+// otherwise drift). But ignore scrolling *inside* the popover's own grid.
+function onScroll(e: Event) {
+  if (pop.value && e.target instanceof Node && pop.value.contains(e.target)) return;
+  open.value = false;
+}
 
 watch(open, (v) => {
   if (v) {
@@ -58,19 +64,19 @@ watch(open, (v) => {
     document.addEventListener("pointerdown", onDocPointer, true);
     document.addEventListener("keydown", onKeydown);
     window.addEventListener("resize", close);
-    window.addEventListener("scroll", close, true);
+    window.addEventListener("scroll", onScroll, true);
   } else {
     document.removeEventListener("pointerdown", onDocPointer, true);
     document.removeEventListener("keydown", onKeydown);
     window.removeEventListener("resize", close);
-    window.removeEventListener("scroll", close, true);
+    window.removeEventListener("scroll", onScroll, true);
   }
 });
 onBeforeUnmount(() => {
   document.removeEventListener("pointerdown", onDocPointer, true);
   document.removeEventListener("keydown", onKeydown);
   window.removeEventListener("resize", close);
-  window.removeEventListener("scroll", close, true);
+  window.removeEventListener("scroll", onScroll, true);
 });
 </script>
 
