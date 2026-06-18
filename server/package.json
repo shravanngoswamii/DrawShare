@@ -1,0 +1,22 @@
+{
+  "name": "drawshare-broadcast-relay",
+  "version": "1.0.0",
+  "description": "DrawShare WebSocket broadcast relay — fans out a host's stroke stream to an unlimited number of read-only viewers.",
+  "type": "module",
+  "private": true,
+  "main": "dist/broadcast.js",
+  "scripts": {
+    "dev": "tsx broadcast.ts",
+    "build": "tsc",
+    "start": "node dist/broadcast.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  }
+}

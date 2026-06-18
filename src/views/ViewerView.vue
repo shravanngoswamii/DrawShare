@@ -18,6 +18,11 @@ const offerToken = computed(() => {
   return typeof token === "string" ? token : "";
 });
 
+const broadcastServer = computed(() => {
+  const s = route.query.server;
+  return typeof s === "string" ? decodeURIComponent(s) : "";
+});
+
 const statusLabel = computed(() => {
   switch (live.status) {
     case "connecting":
@@ -44,7 +49,11 @@ const dotClass = computed(() => {
 });
 
 onMounted(async () => {
-  await live.join(props.code, offerToken.value);
+  if (broadcastServer.value) {
+    await live.joinBroadcast(props.code, broadcastServer.value);
+  } else {
+    await live.join(props.code, offerToken.value);
+  }
 });
 
 onBeforeUnmount(() => {
@@ -52,7 +61,11 @@ onBeforeUnmount(() => {
 });
 
 async function reconnect() {
-  await live.join(props.code, offerToken.value);
+  if (broadcastServer.value) {
+    await live.joinBroadcast(props.code, broadcastServer.value);
+  } else {
+    await live.join(props.code, offerToken.value);
+  }
 }
 
 function leave() {
