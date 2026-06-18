@@ -22,8 +22,10 @@ export interface Theme {
   mode: Mode;
   /** Accent colour for the picker swatch. */
   swatch: string;
-  /** Background colour for the picker preview tile. */
+  /** Background / surface / text colours for the picker preview tile. */
   bg: string;
+  surface: string;
+  text: string;
   /** CSS custom-property overrides; empty for the default (slate). */
   tokens: Record<string, string>;
 }
@@ -174,16 +176,19 @@ function familyTheme(f: Family, mode: Mode): Theme {
   const accent = mode === "dark" ? f.dark : f.light;
   const s = SLATE_SEED[mode];
   const bg = f.default ? s.bg : tint(s.bg, parse(accent), 0.05);
-  const tokens = f.default
-    ? {}
-    : buildTokens({
-        mode,
-        bg,
-        surface: tint(s.surface, parse(accent), 0.04),
-        text: s.text,
-        accent,
-      });
-  return { id: `${f.id}-${mode}`, family: f.id, name: f.name, mode, swatch: accent, bg, tokens };
+  const surface = f.default ? s.surface : tint(s.surface, parse(accent), 0.04);
+  const tokens = f.default ? {} : buildTokens({ mode, bg, surface, text: s.text, accent });
+  return {
+    id: `${f.id}-${mode}`,
+    family: f.id,
+    name: f.name,
+    mode,
+    swatch: accent,
+    bg,
+    surface,
+    text: s.text,
+    tokens,
+  };
 }
 
 // ── signature themes (famous editor / reading palettes) ───────────────────────
@@ -313,6 +318,8 @@ function signatureTheme(s: Signature): Theme {
     mode: s.mode,
     swatch: s.accent,
     bg: s.bg,
+    surface: s.surface,
+    text: s.text,
     tokens: buildTokens(s),
   };
 }

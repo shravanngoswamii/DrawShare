@@ -128,9 +128,16 @@ onBeforeUnmount(() => {
             @click="choose(t.id)"
           >
             <span class="tm-prev" :style="{ background: t.bg }" aria-hidden="true">
-              <span class="tm-prev-dot" :style="{ background: t.swatch }"></span>
+              <span class="tm-prev-card" :style="{ background: t.surface }">
+                <span class="tm-prev-bar" :style="{ background: t.swatch }"></span>
+                <span class="tm-prev-line" :style="{ background: t.text }"></span>
+                <span class="tm-prev-line tm-prev-line-short" :style="{ background: t.text }"></span>
+              </span>
             </span>
-            <span class="tm-tile-name">{{ t.name }}</span>
+            <span class="tm-tile-row">
+              <span class="tm-tile-name">{{ t.name }}</span>
+              <svg v-if="activeThemeId === t.id" class="tm-tile-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+            </span>
           </button>
         </div>
       </div>
@@ -248,44 +255,79 @@ onBeforeUnmount(() => {
 .tm-tile {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 5px;
-  border: 1px solid transparent;
+  gap: 6px;
+  padding: 4px;
   border-radius: var(--radius-md);
   text-align: left;
-  transition: background 80ms ease, border-color 80ms ease;
+  transition: background 80ms ease;
 }
 .tm-tile:hover {
   background: var(--color-surface-2);
 }
-.tm-tile.active {
-  border-color: var(--color-accent);
-  background: var(--color-accent-soft);
-}
+
+/* Mini theme sample: a "page" (bg) holding a surface card with an accent pill
+   and two ink lines — a real glance of the palette. */
 .tm-prev {
-  position: relative;
-  display: block;
-  height: 34px;
-  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 50px;
+  padding: 8px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-border-strong);
-  overflow: hidden;
+  box-shadow: var(--shadow-xs);
+  transition: box-shadow 80ms ease, transform 80ms ease;
 }
-.tm-prev-dot {
-  position: absolute;
-  left: 7px;
-  bottom: 7px;
-  width: 12px;
-  height: 12px;
+.tm-tile:hover .tm-prev {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+.tm-tile.active .tm-prev {
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-accent);
+}
+.tm-prev-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  padding: 7px;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.tm-prev-bar {
+  width: 42%;
+  height: 6px;
   border-radius: var(--radius-pill);
-  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.55);
+}
+.tm-prev-line {
+  width: 80%;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  opacity: 0.45;
+}
+.tm-prev-line-short {
+  width: 55%;
+}
+.tm-tile-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px;
 }
 .tm-tile-name {
+  flex: 1;
   font-size: var(--text-xs);
-  font-weight: 500;
+  font-weight: 550;
   color: var(--color-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.tm-tile-check {
+  flex-shrink: 0;
+  color: var(--color-accent);
 }
 .tm-tile.active .tm-tile-name {
   color: var(--color-accent);
