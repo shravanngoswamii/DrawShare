@@ -29,10 +29,24 @@ describe("themes registry", () => {
       if (theme.id === DEFAULT_LIGHT_ID || theme.id === DEFAULT_DARK_ID) continue;
       expect(theme.tokens["--color-accent"], theme.id).toMatch(colour);
       expect(theme.tokens["--color-bg"], theme.id).toMatch(colour);
-      expect(theme.tokens["--color-accent-text"]).toBe(
-        theme.mode === "dark" ? "#0f172a" : "#ffffff",
-      );
+      // Accent text is chosen by accent luminance for contrast.
+      expect(["#0f172a", "#ffffff"], theme.id).toContain(theme.tokens["--color-accent-text"]);
     }
+  });
+
+  it("includes the famous editor/reading palettes", () => {
+    const ids = new Set(THEMES.map((t) => t.id));
+    for (const id of [
+      "sepia-light",
+      "solarized-light",
+      "gruvbox-light",
+      "dracula-dark",
+      "nord-dark",
+    ]) {
+      expect(ids.has(id), id).toBe(true);
+    }
+    // Every id encodes its mode so the FOUC script can resolve it.
+    for (const t of THEMES) expect(t.id.endsWith(`-${t.mode}`)).toBe(true);
   });
 
   it("derives mode from an id and finds the opposite-mode sibling", () => {

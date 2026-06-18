@@ -1,10 +1,14 @@
 // Theme registry. The app's look is driven entirely by the CSS custom
-// properties in tokens.css; a theme just overrides a subset of them. To stay
-// readable and consistent across dozens of palettes (rather than hand-tuning
-// each), every non-default theme is *derived* from a compact seed: a brand
-// accent plus a faint tint applied over the proven slate neutral scale. Text,
-// semantics, shadows and focus come from the shared light/dark base (data-mode),
-// so only ~16 colour tokens change per theme.
+// properties in tokens.css; a theme just overrides a subset of them. Every
+// non-default theme's full palette is *derived* from a compact seed (background,
+// surface, text and an accent) by buildTokens(), so adding a theme is a few
+// colours rather than 20-odd hand-tuned tokens.
+//
+// Two kinds of theme:
+//   • Colour families — the proven slate neutral scale, faintly tinted toward a
+//     brand accent, in both light and dark.
+//   • Signature themes — beloved editor/reading palettes (Sepia, Solarized,
+//     Gruvbox, Dracula, Nord, …) with their own neutrals.
 //
 // "Slate" is the default and emits no overrides at all, so the out-of-the-box
 // light/dark look is exactly the tokens.css base.
@@ -12,7 +16,7 @@
 export type Mode = "light" | "dark";
 
 export interface Theme {
-  id: string; // `${family}-${mode}`, e.g. "blue-dark"
+  id: string; // always ends in "-light" or "-dark" (the FOUC script relies on it)
   family: string;
   name: string;
   mode: Mode;
@@ -80,63 +84,64 @@ function withAlpha(c: RGBA, a: number): string {
   return format({ ...c, a });
 }
 
-// ── slate neutral scale (copied from tokens.css) ─────────────────────────────
-// The 12 surface/border/canvas/glass tokens each theme tints toward its accent.
-// text, ink, semantics, shadows and focus are intentionally left to the base.
-
-const SLATE: Record<Mode, Record<string, string>> = {
-  light: {
-    "--color-bg": "#f8fafc",
-    "--color-surface": "#ffffff",
-    "--color-surface-2": "#f1f5f9",
-    "--color-surface-3": "#e2e8f0",
-    "--color-border": "#e2e8f0",
-    "--color-border-strong": "#cbd5e1",
-    "--color-canvas-surface": "#ffffff",
-    "--color-canvas-line": "#e2e8f0",
-    "--color-canvas-dot": "#cbd5e1",
-    "--color-glass-bg": "rgba(255, 255, 255, 0.88)",
-    "--color-glass-bg-strong": "rgba(255, 255, 255, 0.97)",
-    "--color-glass-border": "rgba(226, 232, 240, 0.8)",
-  },
-  dark: {
-    "--color-bg": "#0f172a",
-    "--color-surface": "#1e293b",
-    "--color-surface-2": "#263548",
-    "--color-surface-3": "#334155",
-    "--color-border": "rgba(148, 163, 184, 0.12)",
-    "--color-border-strong": "rgba(148, 163, 184, 0.22)",
-    "--color-canvas-surface": "#1e293b",
-    "--color-canvas-line": "rgba(148, 163, 184, 0.12)",
-    "--color-canvas-dot": "rgba(148, 163, 184, 0.3)",
-    "--color-glass-bg": "rgba(15, 23, 42, 0.85)",
-    "--color-glass-bg-strong": "rgba(30, 41, 59, 0.96)",
-    "--color-glass-border": "rgba(148, 163, 184, 0.15)",
-  },
-};
-
-// Tint strength toward the accent — kept subtle so neutrals stay professional
-// and text contrast is preserved. Dark surfaces take a touch more to read.
-const TINT: Record<Mode, number> = { light: 0.05, dark: 0.08 };
-
-function deriveTokens(mode: Mode, accentHex: string): Record<string, string> {
-  const accent = parse(accentHex);
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(SLATE[mode])) {
-    out[key] = tint(value, accent, TINT[mode]);
-  }
-  out["--color-accent"] = format(accent);
-  out["--color-accent-hover"] = format(
-    mix(accent, parse(mode === "dark" ? "#ffffff" : "#000000"), 0.14),
-  );
-  out["--color-accent-soft"] = withAlpha(accent, mode === "dark" ? 0.18 : 0.12);
-  out["--color-accent-text"] = mode === "dark" ? "#0f172a" : "#ffffff";
-  return out;
+// Perceptual luminance (0..1) — decides whether text on the accent is dark/light.
+function luminance(c: RGBA): number {
+  return (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) / 255;
 }
 
-// ── families ─────────────────────────────────────────────────────────────────
-// Each family has a light accent (~600 level, white text) and a dark accent
-// (~400 level, dark text). Slate is the default (neutral, no overrides).
+// ── palette derivation ────────────────────────────────────────────────────────
+
+interface Seed {
+  mode: Mode;
+  bg: string;
+  surface: string;
+  text: string;
+  accent: string;
+}
+
+function buildTokens(seed: Seed): Record<string, string> {
+  const dark = seed.mode === "dark";
+  const bg = parse(seed.bg);
+  const surface = parse(seed.surface);
+  const text = parse(seed.text);
+  const accent = parse(seed.accent);
+  const white = parse("#ffffff");
+  const black = parse("#000000");
+
+  const border = mix(surface, text, dark ? 0.16 : 0.12);
+  const borderStrong = mix(surface, text, dark ? 0.28 : 0.22);
+
+  return {
+    "--color-bg": format(bg),
+    "--color-surface": format(surface),
+    "--color-surface-2": format(mix(surface, text, dark ? 0.06 : 0.05)),
+    "--color-surface-3": format(mix(surface, text, dark ? 0.12 : 0.1)),
+    "--color-border": format(border),
+    "--color-border-strong": format(borderStrong),
+    "--color-text": format(text),
+    "--color-text-muted": format(mix(text, bg, 0.4)),
+    "--color-text-subtle": format(mix(text, bg, 0.62)),
+    "--color-canvas-surface": format(surface),
+    "--color-canvas-line": format(border),
+    "--color-canvas-dot": format(borderStrong),
+    "--color-glass-bg": withAlpha(surface, 0.88),
+    "--color-glass-bg-strong": withAlpha(surface, 0.97),
+    "--color-glass-border": withAlpha(border, 0.85),
+    "--color-ink": withAlpha(text, dark ? 0.6 : 0.55),
+    "--color-ink-fill": withAlpha(text, dark ? 0.1 : 0.06),
+    "--color-accent": format(accent),
+    "--color-accent-hover": format(mix(accent, dark ? white : black, 0.14)),
+    "--color-accent-soft": withAlpha(accent, dark ? 0.18 : 0.12),
+    "--color-accent-text": luminance(accent) > 0.62 ? "#0f172a" : "#ffffff",
+  };
+}
+
+// ── colour families (slate neutrals + a brand accent) ─────────────────────────
+
+const SLATE_SEED: Record<Mode, { bg: string; surface: string; text: string }> = {
+  light: { bg: "#f8fafc", surface: "#ffffff", text: "#0f172a" },
+  dark: { bg: "#0f172a", surface: "#1e293b", text: "#f1f5f9" },
+};
 
 interface Family {
   id: string;
@@ -161,35 +166,156 @@ const FAMILIES: Family[] = [
   { id: "fuchsia", name: "Fuchsia", light: "#c026d3", dark: "#e879f9" },
 ];
 
-// Exposed for the theme picker (one entry per palette, with both mode swatches).
-export interface ThemeFamily {
-  id: string;
-  name: string;
-  light: string;
-  dark: string;
-}
-export const THEME_FAMILIES: ThemeFamily[] = FAMILIES.map(({ id, name, light, dark }) => ({
-  id,
-  name,
-  light,
-  dark,
-}));
-
 const MODES: Mode[] = ["light", "dark"];
 
-export const THEMES: Theme[] = FAMILIES.flatMap((f) =>
-  MODES.map((mode) => {
-    const accent = mode === "dark" ? f.dark : f.light;
-    return {
-      id: `${f.id}-${mode}`,
-      family: f.id,
-      name: f.name,
-      mode,
-      swatch: accent,
-      tokens: f.default ? {} : deriveTokens(mode, accent),
-    };
-  }),
-);
+function familyTheme(f: Family, mode: Mode): Theme {
+  const accent = mode === "dark" ? f.dark : f.light;
+  const s = SLATE_SEED[mode];
+  const tokens = f.default
+    ? {}
+    : buildTokens({
+        mode,
+        bg: tint(s.bg, parse(accent), 0.05),
+        surface: tint(s.surface, parse(accent), 0.04),
+        text: s.text,
+        accent,
+      });
+  return { id: `${f.id}-${mode}`, family: f.id, name: f.name, mode, swatch: accent, tokens };
+}
+
+// ── signature themes (famous editor / reading palettes) ───────────────────────
+
+interface Signature {
+  id: string; // ends in -light / -dark
+  family: string;
+  name: string;
+  mode: Mode;
+  bg: string;
+  surface: string;
+  text: string;
+  accent: string;
+}
+
+const SIGNATURES: Signature[] = [
+  // Warm, bookish / paper
+  {
+    id: "sepia-light",
+    family: "sepia",
+    name: "Sepia",
+    mode: "light",
+    bg: "#f4ecd8",
+    surface: "#fbf6e8",
+    text: "#4b3f33",
+    accent: "#9c6b3f",
+  },
+  {
+    id: "solarized-light",
+    family: "solarized",
+    name: "Solarized Light",
+    mode: "light",
+    bg: "#fdf6e3",
+    surface: "#eee8d5",
+    text: "#586e75",
+    accent: "#268bd2",
+  },
+  {
+    id: "gruvbox-light",
+    family: "gruvbox",
+    name: "Gruvbox Light",
+    mode: "light",
+    bg: "#fbf1c7",
+    surface: "#f4e8be",
+    text: "#3c3836",
+    accent: "#b57614",
+  },
+  // Dark classics
+  {
+    id: "solarized-dark",
+    family: "solarized",
+    name: "Solarized Dark",
+    mode: "dark",
+    bg: "#002b36",
+    surface: "#073642",
+    text: "#93a1a1",
+    accent: "#268bd2",
+  },
+  {
+    id: "gruvbox-dark",
+    family: "gruvbox",
+    name: "Gruvbox Dark",
+    mode: "dark",
+    bg: "#282828",
+    surface: "#3c3836",
+    text: "#ebdbb2",
+    accent: "#fabd2f",
+  },
+  {
+    id: "dracula-dark",
+    family: "dracula",
+    name: "Dracula",
+    mode: "dark",
+    bg: "#282a36",
+    surface: "#343746",
+    text: "#f8f8f2",
+    accent: "#bd93f9",
+  },
+  {
+    id: "nord-dark",
+    family: "nord",
+    name: "Nord",
+    mode: "dark",
+    bg: "#2e3440",
+    surface: "#3b4252",
+    text: "#eceff4",
+    accent: "#88c0d0",
+  },
+  {
+    id: "onedark-dark",
+    family: "onedark",
+    name: "One Dark",
+    mode: "dark",
+    bg: "#282c34",
+    surface: "#31363f",
+    text: "#abb2bf",
+    accent: "#61afef",
+  },
+  {
+    id: "tokyonight-dark",
+    family: "tokyonight",
+    name: "Tokyo Night",
+    mode: "dark",
+    bg: "#1a1b26",
+    surface: "#24283b",
+    text: "#c0caf5",
+    accent: "#7aa2f7",
+  },
+  {
+    id: "catppuccin-dark",
+    family: "catppuccin",
+    name: "Catppuccin",
+    mode: "dark",
+    bg: "#1e1e2e",
+    surface: "#313244",
+    text: "#cdd6f4",
+    accent: "#cba6f7",
+  },
+];
+
+function signatureTheme(s: Signature): Theme {
+  return {
+    id: s.id,
+    family: s.family,
+    name: s.name,
+    mode: s.mode,
+    swatch: s.accent,
+    tokens: buildTokens(s),
+  };
+}
+
+export const THEMES: Theme[] = [
+  ...FAMILIES.flatMap((f) => MODES.map((mode) => familyTheme(f, mode))),
+  ...SIGNATURES.map(signatureTheme),
+];
 
 export const DEFAULT_LIGHT_ID = "slate-light";
 export const DEFAULT_DARK_ID = "slate-dark";
@@ -204,12 +330,15 @@ export function modeOf(id: string): Mode {
   return getTheme(id)?.mode ?? (id.endsWith("-dark") ? "dark" : "light");
 }
 
-// The same family in the opposite mode (for the quick light/dark toggle).
+// The same family in the opposite mode for the quick light/dark toggle; falls
+// back to the default slate when that family has no sibling (e.g. Dracula).
 export function oppositeMode(id: string): string {
   const theme = getTheme(id);
   if (!theme) return id;
   const other: Mode = theme.mode === "dark" ? "light" : "dark";
-  return `${theme.family}-${other}`;
+  const sibling = `${theme.family}-${other}`;
+  if (getTheme(sibling)) return sibling;
+  return other === "dark" ? DEFAULT_DARK_ID : DEFAULT_LIGHT_ID;
 }
 
 // Generated CSS for every non-default theme. Injected once at startup; selecting
