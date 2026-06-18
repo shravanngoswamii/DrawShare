@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { buildShareUrl } from "@/core/shareLinks";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
 
@@ -14,15 +15,14 @@ const showFallback = ref(false);
 
 const relayJoinUrl = computed(() => {
   if (!live.code) return "";
-  const base = window.location.origin + window.location.pathname;
-  return `${base}#/v/${live.code}`;
+  return buildShareUrl(`v/${live.code}`);
 });
 
-// Full URL with embedded offer token (legacy/offline fallback)
+// Full URL with the offer token embedded (offline fallback). The token rides in
+// the fragment so it stays client-side, never reaching the server.
 const joinUrl = computed(() => {
   if (!live.code || !live.offerToken) return "";
-  const base = window.location.origin + window.location.pathname;
-  return `${base}#/v/${live.code}?offer=${encodeURIComponent(live.offerToken)}`;
+  return buildShareUrl(`v/${live.code}`, { offer: live.offerToken });
 });
 
 const qrUrl = computed(() => {

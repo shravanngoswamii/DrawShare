@@ -8,6 +8,7 @@ import {
 import { encodeSnapshot } from "@/composables/useSnapshot";
 import { useTheme } from "@/composables/useTheme";
 import { useThumbnails } from "@/composables/useThumbnails";
+import { buildShareUrl } from "@/core/shareLinks";
 import { devMode, setDevMode } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
@@ -262,8 +263,8 @@ async function publishSnapshot() {
   const pageImages = editor.images.filter((i) => i.pageId === page.id && onVisibleLayer(i));
   const pageTexts = (page.texts ?? []).filter(onVisibleLayer);
   const encoded = await encodeSnapshot(page, pageStrokes, pageTexts, pageShapes, pageImages);
-  const base = window.location.href.replace(/#.*$/, "");
-  const url = `${base}#/s?d=${encoded}`;
+  // Snapshot data rides in the fragment so the whole drawing stays client-side.
+  const url = buildShareUrl("s", { d: encoded });
   localStorage.setItem(snapshotKey(page.id), url);
   snapshotUrl.value = url;
   try {
