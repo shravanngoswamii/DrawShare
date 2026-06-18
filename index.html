@@ -56,9 +56,10 @@
          we can resolve the mode here without loading the theme registry. -->
     <script>
       (() => {
+        var el = document.documentElement;
+        var v;
         try {
-          var el = document.documentElement;
-          var v = localStorage.getItem("drawshare-theme");
+          v = localStorage.getItem("drawshare-theme");
           if (v === "light" || v === "dark") {
             el.setAttribute("data-mode", v); // legacy 2-state values
           } else if (v && v !== "system") {
