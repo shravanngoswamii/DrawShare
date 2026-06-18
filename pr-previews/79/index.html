@@ -65,29 +65,8 @@
         } catch (e) {}
       })();
     </script>
-    <!-- Migrate old hash-routing links (#/path?query) to history-mode URLs before
-         the app boots, so existing shared links still open. Snapshot/offer
-         payloads move into the fragment. No-op for normal history URLs. -->
-    <script>
-      (() => {
-        try {
-          var h = location.hash;
-          if (h.indexOf("#/") !== 0) return;
-          var parts = h.slice(1).split("?");
-          var path = parts[0];
-          var q = new URLSearchParams(parts[1] || "");
-          if (path === "/app") path = "/projects";
-          var frag = "";
-          if (path === "/s" && q.get("d")) frag = "#d=" + q.get("d");
-          else if (path.indexOf("/v/") === 0 && q.get("offer"))
-            frag = "#offer=" + encodeURIComponent(q.get("offer"));
-          var rel = path === "/" ? "" : path.replace(/^\//, "");
-          history.replaceState(null, "", location.pathname + rel + location.search + frag);
-        } catch (e) {}
-      })();
-    </script>
-    <script type="module" crossorigin src="/DrawShare/pr-previews/79/assets/index-GSI6ixLo.js"></script>
-    <link rel="stylesheet" crossorigin href="/DrawShare/pr-previews/79/assets/style-CiI3S0F9.css">
+    <script type="module" crossorigin src="/DrawShare/pr-previews/79/assets/index-DYGOcQ4G.js"></script>
+    <link rel="stylesheet" crossorigin href="/DrawShare/pr-previews/79/assets/style-COgXuiA0.css">
   </head>
   <body>
     <div id="app"></div>
