@@ -51,22 +51,31 @@
     />
     <meta name="twitter:image" content="https://shravangoswami.com/DrawShare/og-image.png" />
 
-    <!-- Prevent flash of wrong theme: apply data-theme before CSS renders -->
+    <!-- Prevent flash of wrong theme: set data-mode (+ data-theme) before CSS
+         renders. The theme id encodes its mode as a "-light"/"-dark" suffix, so
+         we can resolve the mode here without loading the theme registry. -->
     <script>
       (() => {
-        var t;
+        var el = document.documentElement;
+        var v;
         try {
-          t = localStorage.getItem("drawshare-theme");
-          if (t === "dark" || (t !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
-            document.documentElement.setAttribute("data-theme", "dark");
-          } else if (t === "light") {
-            document.documentElement.setAttribute("data-theme", "light");
+          v = localStorage.getItem("drawshare-theme");
+          if (v === "light" || v === "dark") {
+            el.setAttribute("data-mode", v); // legacy 2-state values
+          } else if (v && v !== "system") {
+            el.setAttribute("data-mode", v.slice(-5) === "-dark" ? "dark" : "light");
+            el.setAttribute("data-theme", v);
+          } else {
+            el.setAttribute(
+              "data-mode",
+              window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
+            );
           }
         } catch (e) {}
       })();
     </script>
-    <script type="module" crossorigin src="/DrawShare/assets/index-BUuavaYz.js"></script>
-    <link rel="stylesheet" crossorigin href="/DrawShare/assets/style-Czsqx9xj.css">
+    <script type="module" crossorigin src="/DrawShare/assets/index-COQcW9TQ.js"></script>
+    <link rel="stylesheet" crossorigin href="/DrawShare/assets/style-L-wfceS3.css">
   </head>
   <body>
     <div id="app"></div>
