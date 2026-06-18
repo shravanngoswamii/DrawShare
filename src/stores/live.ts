@@ -1,4 +1,5 @@
 import { defineStore } from "pinia";
+import { BroadcastRelayAdapter } from "@/adapters/sync/broadcastRelay";
 import {
   relayFetchAnswer,
   relayFetchOffer,
@@ -25,6 +26,9 @@ interface LiveState {
   status: Status;
   code: string;
   viewerCount: number;
+  // true when using the internet broadcast relay instead of P2P WebRTC
+  broadcastMode: boolean;
+  broadcastServerUrl: string;
   error: string;
   disconnectReason: string;
   reconnectAttempt: number;
@@ -51,6 +55,7 @@ interface LiveState {
 }
 
 let session: WebRTCSession | undefined;
+let broadcastAdapter: BroadcastRelayAdapter | undefined;
 let activePollCode: string | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 const MAX_RECONNECT_ATTEMPTS = 3;
@@ -76,6 +81,8 @@ export const useLiveStore = defineStore("live", {
     status: "idle",
     code: "",
     viewerCount: 0,
+    broadcastMode: false,
+    broadcastServerUrl: "",
     error: "",
     disconnectReason: "",
     reconnectAttempt: 0,
@@ -209,10 +216,14 @@ export const useLiveStore = defineStore("live", {
       }
       session?.close();
       session = undefined;
+      broadcastAdapter?.close();
+      broadcastAdapter = undefined;
       this.mode = "off";
       this.status = "idle";
       this.code = "";
       this.viewerCount = 0;
+      this.broadcastMode = false;
+      this.broadcastServerUrl = "";
       this.error = "";
       this.disconnectReason = "";
       this.reconnectAttempt = 0;
@@ -367,7 +378,169 @@ export const useLiveStore = defineStore("live", {
 
     broadcast(msg: SyncMessage) {
       if (this.mode !== "host") return;
-      session?.send(msg);
+      if (this.broadcastMode) {
+        broadcastAdapter?.send(msg);
+      } else {
+        session?.send(msg);
+      }
+    },
+
+    /**
+     * Start an internet broadcast session using the DrawShare relay server.
+     * Unlike P2P, the snapshot is pushed once to the server which caches it
+     * for all current and future viewers — no per-viewer handshake required.
+     */
+    async startBroadcasting(
+      snapshot: () => {
+        project: Project;
+        pages: Page[];
+        currentPageId: string;
+        strokes: Stroke[];
+        shapes: Shape[];
+        notebookMode: NotebookMode;
+        notebookLayout: NotebookLayout;
+        allStrokes: Stroke[];
+        allShapes: Shape[];
+      },
+      serverUrl: string,
+    ) {
+      if (this.mode !== "off") return;
+      const activeAdapter = new BroadcastRelayAdapter();
+      broadcastAdapter = activeAdapter;
+      this.code = makeSessionCode();
+      this.mode = "host";
+      this.status = "connecting";
+      this.broadcastMode = true;
+      this.broadcastServerUrl = serverUrl;
+      this.viewerCount = 0;
+      this.error = "";
+
+      try {
+        await activeAdapter.host(serverUrl, this.code, {
+          onViewerJoin: () => {},
+          onViewerLeave: () => {},
+          onError: (err) => {
+            if (broadcastAdapter !== activeAdapter) return;
+            this.error = err.message;
+            this.status = "error";
+          },
+          onViewerCountChange: (count) => {
+            if (broadcastAdapter !== activeAdapter) return;
+            this.viewerCount = count;
+          },
+        });
+        if (broadcastAdapter !== activeAdapter) return;
+
+        // Push the initial snapshot to the server so it can replay it to
+        // viewers who join at any point during the session.
+        const snap = snapshot();
+        const notebook = snap.notebookMode !== "off";
+        this.broadcast({
+          t: "hello",
+          project: snap.project,
+          pages: snap.pages,
+          currentPageId: snap.currentPageId,
+          strokes: snap.strokes,
+          shapes: snap.shapes,
+          hostViewport: { ...this.hostViewport },
+          hostCamera: { ...this.hostCamera },
+          notebookMode: snap.notebookMode,
+          notebookLayout: snap.notebookLayout,
+          allStrokes: [],
+          allShapes: [],
+        });
+        if (notebook) {
+          for (let i = 0; i < snap.allStrokes.length; i += STROKE_CHUNK) {
+            this.broadcast({
+              t: "notebook-strokes",
+              strokes: snap.allStrokes.slice(i, i + STROKE_CHUNK),
+            });
+          }
+          for (let i = 0; i < snap.allShapes.length; i += SHAPE_CHUNK) {
+            this.broadcast({
+              t: "notebook-shapes",
+              shapes: snap.allShapes.slice(i, i + SHAPE_CHUNK),
+            });
+          }
+        }
+        this.status = "waiting";
+      } catch (err) {
+        if (broadcastAdapter === activeAdapter) {
+          this.error = (err as Error).message;
+          this.status = "error";
+          activeAdapter.close();
+          broadcastAdapter = undefined;
+          this.mode = "off";
+          this.broadcastMode = false;
+        }
+      }
+    },
+
+    /**
+     * Join an internet broadcast session as a read-only viewer.
+     * @param code   - the 6-character session code displayed by the host
+     * @param serverUrl - the broadcast relay server URL (wss:// or https://)
+     */
+    async joinBroadcast(code: string, serverUrl: string) {
+      if (this.mode !== "off") this.stop();
+      this.reconnectAttempt = 0;
+      this.disconnectReason = "";
+
+      const activeAdapter = new BroadcastRelayAdapter();
+      broadcastAdapter = activeAdapter;
+      this.mode = "viewer";
+      this.status = "connecting";
+      this.code = code.toUpperCase();
+      this.broadcastMode = true;
+      this.broadcastServerUrl = serverUrl;
+      this.error = "";
+
+      try {
+        await activeAdapter.join(serverUrl, code, {
+          onConnected: () => {
+            if (broadcastAdapter !== activeAdapter) return;
+            this.status = "connected";
+            this.reconnectAttempt = 0;
+            this.disconnectReason = "";
+          },
+          onMessage: (msg) => {
+            if (broadcastAdapter !== activeAdapter) return;
+            this.applyMessage(msg);
+          },
+          onDisconnect: (reason?: string) => {
+            if (broadcastAdapter !== activeAdapter) return;
+            this.disconnectReason = reason ?? "Connection lost";
+            if (this.reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
+              this.status = "reconnecting";
+              if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
+              reconnectTimer = setTimeout(() => {
+                reconnectTimer = undefined;
+                if (this.mode !== "viewer" || this.status !== "reconnecting") return;
+                this.reconnectAttempt += 1;
+                void this.joinBroadcast(this.code, this.broadcastServerUrl);
+              }, 2_000);
+            } else {
+              this.status = "disconnected";
+            }
+          },
+          onError: (err) => {
+            if (broadcastAdapter !== activeAdapter) return;
+            this.error = err.message;
+            this.status = "error";
+          },
+        });
+        if (broadcastAdapter !== activeAdapter) return;
+        if (this.status === "connecting") this.status = "waiting";
+      } catch (err) {
+        if (broadcastAdapter === activeAdapter) {
+          this.error = (err as Error).message;
+          this.status = "error";
+          activeAdapter.close();
+          broadcastAdapter = undefined;
+          this.mode = "off";
+          this.broadcastMode = false;
+        }
+      }
     },
 
     applyMessage(msg: SyncMessage) {

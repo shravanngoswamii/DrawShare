@@ -12,9 +12,16 @@ const copied = ref(false);
 const answerToken = ref("");
 const showFallback = ref(false);
 
+// Broadcast mode — share via internet relay instead of local P2P WebRTC.
+const useBroadcast = ref(false);
+const broadcastServerUrl = ref("");
+
 const relayJoinUrl = computed(() => {
   if (!live.code) return "";
   const base = window.location.origin + window.location.pathname;
+  if (live.broadcastMode && live.broadcastServerUrl) {
+    return `${base}#/v/${live.code}?server=${encodeURIComponent(live.broadcastServerUrl)}`;
+  }
   return `${base}#/v/${live.code}`;
 });
 
@@ -42,19 +49,24 @@ const statusLabel = computed(() => {
   return "";
 });
 
+const snapshot = () => ({
+  project: editor.project!,
+  pages: [...editor.pages],
+  currentPageId: editor.currentPageId!,
+  strokes: [...editor.strokes],
+  shapes: [...editor.shapes],
+  notebookMode: editor.notebookMode,
+  notebookLayout: editor.notebookLayout,
+  allStrokes: editor.notebookMode !== "off" ? [...editor.strokes] : [],
+  allShapes: editor.notebookMode !== "off" ? [...editor.shapes] : [],
+});
+
 async function start() {
-  await live.startHosting(() => ({
-    project: editor.project!,
-    pages: [...editor.pages],
-    currentPageId: editor.currentPageId!,
-    strokes: [...editor.strokes],
-    shapes: [...editor.shapes],
-    notebookMode: editor.notebookMode,
-    notebookLayout: editor.notebookLayout,
-    // In notebook mode editor.strokes/shapes already hold every sheet's page-local data.
-    allStrokes: editor.notebookMode !== "off" ? [...editor.strokes] : [],
-    allShapes: editor.notebookMode !== "off" ? [...editor.shapes] : [],
-  }));
+  if (useBroadcast.value && broadcastServerUrl.value.trim()) {
+    await live.startBroadcasting(snapshot, broadcastServerUrl.value.trim());
+  } else {
+    await live.startHosting(snapshot);
+  }
   answerToken.value = "";
   showFallback.value = false;
 }
@@ -111,16 +123,67 @@ async function connect() {
 
       <!-- ── Not hosting ── -->
       <div class="body" v-if="live.mode !== 'host'">
-        <p class="intro muted">
-          Start a session and share the code. Viewers enter it on the home
-          screen — no link copying needed. Works on any Wi-Fi or hotspot.
-        </p>
+        <!-- Sharing mode selector -->
+        <div class="mode-tabs" role="group" aria-label="Sharing mode">
+          <button
+            :class="['mode-tab', !useBroadcast && 'mode-tab-active']"
+            @click="useBroadcast = false"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+              <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>
+            </svg>
+            Local / LAN
+          </button>
+          <button
+            :class="['mode-tab', useBroadcast && 'mode-tab-active']"
+            @click="useBroadcast = true"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+            </svg>
+            Internet broadcast
+          </button>
+        </div>
+
+        <template v-if="!useBroadcast">
+          <p class="intro muted">
+            Start a session and share the code. Viewers enter it on the home
+            screen — no link copying needed. Works on any Wi-Fi or hotspot.
+          </p>
+        </template>
+        <template v-else>
+          <p class="intro muted">
+            Stream to unlimited read-only viewers over the internet via your own
+            <a href="https://github.com/shravanngoswamii/DrawShare/tree/main/server" target="_blank" rel="noopener" class="link">broadcast relay server</a>.
+            Viewers get a direct share link — no session code required.
+          </p>
+          <div class="field">
+            <label class="label" for="broadcast-server">Relay server URL</label>
+            <input
+              id="broadcast-server"
+              v-model="broadcastServerUrl"
+              class="input"
+              type="url"
+              placeholder="wss://your-relay.example.com"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <div class="muted url-hint">
+              Deploy <code>server/broadcast.ts</code> and paste its WebSocket URL above.
+            </div>
+          </div>
+        </template>
+
         <button
           class="btn btn-primary big"
           @click="start"
-          :disabled="live.status === 'connecting'"
+          :disabled="live.status === 'connecting' || (useBroadcast && !broadcastServerUrl.trim())"
         >
-          {{ live.status === "connecting" ? "Starting…" : "Start session" }}
+          {{ live.status === "connecting" ? "Starting…" : useBroadcast ? "Start broadcast" : "Start session" }}
         </button>
         <p v-if="live.error" class="error">{{ live.error }}</p>
       </div>
@@ -128,12 +191,15 @@ async function connect() {
       <!-- ── Hosting ── -->
       <div class="body" v-else>
         <!-- Status badge -->
-        <div class="status">
-          <span
-            :class="['dot', live.viewerCount > 0 ? 'dot-live' : live.status === 'error' ? 'dot-off' : 'dot-pending']"
-            aria-hidden="true"
-          ></span>
-          <span>{{ statusLabel }}</span>
+        <div class="status-row">
+          <div class="status">
+            <span
+              :class="['dot', live.viewerCount > 0 ? 'dot-live' : live.status === 'error' ? 'dot-off' : 'dot-pending']"
+              aria-hidden="true"
+            ></span>
+            <span>{{ statusLabel }}</span>
+          </div>
+          <span v-if="live.broadcastMode" class="badge-broadcast">Internet broadcast</span>
         </div>
 
         <!-- Loading: generating offer or connecting to relay -->
@@ -481,6 +547,66 @@ async function connect() {
   font-size: var(--text-sm);
   color: var(--color-danger);
   margin: 0;
+}
+
+/* ── Mode tabs ── */
+.mode-tabs {
+  display: flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.mode-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+
+.mode-tab + .mode-tab {
+  border-left: 1px solid var(--color-border);
+}
+
+.mode-tab-active {
+  background: var(--color-accent-soft, rgba(99, 102, 241, 0.1));
+  color: var(--color-accent);
+}
+
+/* ── Broadcast badge ── */
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.badge-broadcast {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  padding: 2px var(--space-2);
+  background: var(--color-accent-soft, rgba(99, 102, 241, 0.1));
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent-border, rgba(99, 102, 241, 0.3));
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.link {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 @media (max-width: 767px) {
