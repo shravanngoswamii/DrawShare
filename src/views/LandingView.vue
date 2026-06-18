@@ -656,6 +656,7 @@ onBeforeUnmount(() => {
           <a href="https://github.com/shravanngoswamii/DrawShare" target="_blank" rel="noopener" class="footer-link">GitHub</a>
           <a href="https://github.com/shravanngoswamii/DrawShare/issues" target="_blank" rel="noopener" class="footer-link">Issues</a>
           <a href="https://github.com/shravanngoswamii/DrawShare/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener" class="footer-link">Contributing</a>
+          <RouterLink :to="{ name: 'privacy' }" class="footer-link">Privacy</RouterLink>
         </nav>
         <div class="footer-divider" aria-hidden="true"></div>
         <p class="footer-meta mono">
