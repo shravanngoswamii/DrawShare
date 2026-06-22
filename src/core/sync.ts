@@ -100,6 +100,13 @@ export type SyncMessage =
   // Chat: any participant -> everyone else (relay-broadcast). `fromId`/`fromName`
   // are self-reported (no accounts); text is rendered as plain text.
   | { t: "chat"; id: string; fromId: string; fromName: string; text: string; ts: number }
+  // Chat backlog sent to a newly joined viewer so they see earlier messages.
+  | {
+      t: "chat-history";
+      messages: { id: string; fromId: string; fromName: string; text: string; ts: number }[];
+    }
+  // A viewer changed its display name (viewer -> host, to update the roster).
+  | { t: "viewer-rename"; vid: string; name: string }
   | { t: "viewer-stroke-begin"; vid: string; stroke: Stroke }
   | {
       t: "viewer-stroke-points";

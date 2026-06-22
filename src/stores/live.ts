@@ -81,6 +81,7 @@ interface LiveState {
   remoteLiveStrokes: Stroke[]; // host: in-progress strokes from viewers (live preview)
   viewerId: string; // viewer: my stable id this tab
   viewerName: string; // viewer: my display name
+  hostName: string; // host: my display name (used as the chat sender name)
   // Chat (host + viewers).
   chat: ChatMessage[];
   unreadChat: number;
@@ -120,6 +121,19 @@ const HOST_KEY = "drawshare:live-host";
 // Per-tab viewer identity, so a viewer reload keeps the same id + name (and any
 // draw permission the host re-grants on rejoin).
 const VIEWER_KEY = "drawshare:live-viewer";
+// The host's chosen display name (persists across sessions).
+const HOST_NAME_KEY = "drawshare:host-name";
+// Per-tab chat backlog so a host reload keeps the conversation (and can still
+// hand the history to new viewers).
+const CHAT_KEY = "drawshare:live-chat";
+
+function loadHostName(): string {
+  try {
+    return localStorage.getItem(HOST_NAME_KEY) || "Host";
+  } catch {
+    return "Host";
+  }
+}
 
 interface HostSession {
   code: string;
@@ -234,6 +248,7 @@ export const useLiveStore = defineStore("live", {
     remoteLiveStrokes: [],
     viewerId: "",
     viewerName: "",
+    hostName: "Host",
     chat: [],
     unreadChat: 0,
   }),
@@ -249,6 +264,10 @@ export const useLiveStore = defineStore("live", {
     },
     available(): boolean {
       return relayConfigured();
+    },
+    // The local participant's display name (host or viewer).
+    myName(state): string {
+      return state.mode === "host" ? state.hostName : state.viewerName;
     },
   },
   actions: {
@@ -268,6 +287,16 @@ export const useLiveStore = defineStore("live", {
       this.viewers = [];
       this.pendingViewerEdits = [];
       this.error = "";
+      this.hostName = loadHostName();
+      // Restore the chat backlog on a resume (so a reload keeps the conversation).
+      if (resumeCode) {
+        try {
+          const raw = sessionStorage.getItem(CHAT_KEY);
+          if (raw) this.chat = JSON.parse(raw) as ChatMessage[];
+        } catch {
+          /* ignore */
+        }
+      }
       // Restore granted viewers on a resume; start fresh otherwise.
       grantedVids = resumeCode ? new Set(readHostSession()?.granted ?? []) : new Set();
       // Remember the session for this tab so a reload resumes the same code.
@@ -311,6 +340,19 @@ export const useLiveStore = defineStore("live", {
             // Images aren't in the hello snapshot (they need downscaling); send
             // them to just this viewer.
             void this.sendImagesTo(id, snap.images);
+            // Hand the new viewer the chat backlog so they see earlier messages.
+            if (this.chat.length > 0) {
+              session?.sendTo(id, {
+                t: "chat-history",
+                messages: this.chat.map((m) => ({
+                  id: m.id,
+                  fromId: m.fromId,
+                  fromName: m.fromName,
+                  text: m.text,
+                  ts: m.ts,
+                })),
+              });
+            }
             // Restore a previously granted viewer's permission (e.g. after the
             // host reloaded, or the viewer reconnected).
             if (canEdit) session?.sendTo(id, { t: "grant-edit" });
@@ -324,6 +366,17 @@ export const useLiveStore = defineStore("live", {
             if (session !== activeSession) return;
             if (msg.t === "chat") {
               this.appendChat(msg);
+              return;
+            }
+            // A viewer renamed itself — update the roster (any connected viewer).
+            if (msg.t === "viewer-rename") {
+              const v = this.viewers.find((x) => x.id === msg.vid);
+              if (v) {
+                v.name = uniqueName(
+                  msg.name.trim().slice(0, 40) || "Guest",
+                  this.viewers.filter((x) => x.id !== msg.vid).map((x) => x.name),
+                );
+              }
               return;
             }
             // Everything below is a permitted-viewer-only action.
@@ -468,7 +521,7 @@ export const useLiveStore = defineStore("live", {
         t: "chat",
         id: newId(),
         fromId: this.mode === "host" ? HOST_CHAT_ID : this.viewerId,
-        fromName: this.mode === "host" ? "Host" : this.viewerName || "Guest",
+        fromName: this.myName || (this.mode === "host" ? "Host" : "Guest"),
         text: trimmed,
         ts: Date.now(),
       };
@@ -476,7 +529,7 @@ export const useLiveStore = defineStore("live", {
       session?.sendAll(msg);
     },
 
-    appendChat(msg: Extract<SyncMessage, { t: "chat" }>) {
+    appendChat(msg: { id: string; fromId: string; fromName: string; text: string; ts: number }) {
       if (this.chat.some((m) => m.id === msg.id)) return;
       const myId = this.mode === "host" ? HOST_CHAT_ID : this.viewerId;
       const mine = msg.fromId === myId;
@@ -490,10 +543,56 @@ export const useLiveStore = defineStore("live", {
       };
       this.chat = [...this.chat, entry].slice(-MAX_CHAT);
       if (!mine) this.unreadChat += 1;
+      this.persistChat();
+    },
+
+    // Merge a chat backlog (received on join) without bumping the unread count.
+    mergeChatHistory(
+      messages: { id: string; fromId: string; fromName: string; text: string; ts: number }[],
+    ) {
+      const myId = this.mode === "host" ? HOST_CHAT_ID : this.viewerId;
+      const seen = new Set(this.chat.map((m) => m.id));
+      const incoming = messages
+        .filter((m) => !seen.has(m.id))
+        .map((m) => ({ ...m, mine: m.fromId === myId }));
+      if (incoming.length === 0) return;
+      this.chat = [...incoming, ...this.chat].sort((a, b) => a.ts - b.ts).slice(-MAX_CHAT);
+    },
+
+    persistChat() {
+      if (this.mode !== "host") return;
+      try {
+        sessionStorage.setItem(CHAT_KEY, JSON.stringify(this.chat));
+      } catch {
+        /* ignore */
+      }
     },
 
     markChatRead() {
       this.unreadChat = 0;
+    },
+
+    // Change the local participant's display name (host or viewer).
+    setMyName(name: string) {
+      const clean = name.trim().slice(0, 40);
+      if (!clean) return;
+      if (this.mode === "host") {
+        this.hostName = clean;
+        try {
+          localStorage.setItem(HOST_NAME_KEY, clean);
+        } catch {
+          /* ignore */
+        }
+      } else if (this.mode === "viewer") {
+        this.viewerName = clean;
+        try {
+          sessionStorage.setItem(VIEWER_KEY, JSON.stringify({ id: this.viewerId, name: clean }));
+        } catch {
+          /* ignore */
+        }
+        // Tell the host so the roster shows the new name.
+        session?.send({ t: "viewer-rename", vid: this.viewerId, name: clean });
+      }
     },
 
     stop() {
@@ -505,6 +604,11 @@ export const useLiveStore = defineStore("live", {
       if (this.mode === "host") {
         forgetHostSession();
         grantedVids = new Set();
+        try {
+          sessionStorage.removeItem(CHAT_KEY);
+        } catch {
+          /* ignore */
+        }
       }
       if (reconnectTimer !== undefined) {
         clearTimeout(reconnectTimer);
@@ -896,6 +1000,10 @@ export const useLiveStore = defineStore("live", {
           this.appendChat(msg);
           break;
         }
+        case "chat-history": {
+          this.mergeChatHistory(msg.messages);
+          break;
+        }
         case "grant-edit": {
           this.viewerCanEdit = true;
           break;
@@ -916,6 +1024,7 @@ export const useLiveStore = defineStore("live", {
         case "viewer-erase-stroke":
         case "viewer-erase-shape":
         case "viewer-image-add":
+        case "viewer-rename":
         case "viewer-ready":
         case "session-ended":
           break;

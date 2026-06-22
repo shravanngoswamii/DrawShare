@@ -26,6 +26,20 @@ const full = ref(false);
 const draft = ref("");
 const listEl = ref<HTMLDivElement | null>(null);
 
+const editingName = ref(false);
+const nameDraft = ref("");
+const nameInput = ref<HTMLInputElement | null>(null);
+function startEditName() {
+  nameDraft.value = live.myName;
+  editingName.value = true;
+  nextTick(() => nameInput.value?.focus());
+}
+function saveName() {
+  if (!editingName.value) return;
+  if (nameDraft.value.trim()) live.setMyName(nameDraft.value);
+  editingName.value = false;
+}
+
 function scrollToBottom() {
   nextTick(() => {
     const el = listEl.value;
@@ -118,6 +132,24 @@ watch(open, (isOpen) => {
           </button>
         </div>
       </header>
+
+      <div class="chat-name-row">
+        <span class="chat-name-label">You:</span>
+        <button v-if="!editingName" class="chat-name" @click="startEditName" title="Change your name">
+          <span>{{ live.myName }}</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
+        </button>
+        <input
+          v-else
+          ref="nameInput"
+          class="input chat-name-input"
+          v-model="nameDraft"
+          :maxlength="40"
+          @keydown.enter="saveName"
+          @blur="saveName"
+          aria-label="Your name"
+        />
+      </div>
 
       <div class="chat-msgs" ref="listEl">
         <div v-if="!live.chat.length" class="chat-empty">No messages yet. Say hello!</div>
@@ -249,6 +281,46 @@ watch(open, (isOpen) => {
 .chat-icon-btn:hover {
   background: var(--color-surface-2);
   color: var(--color-text);
+}
+
+.chat-name-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-xs);
+  flex-shrink: 0;
+}
+
+.chat-name-label {
+  color: var(--color-text-muted);
+}
+
+.chat-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-weight: 600;
+}
+.chat-name:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.chat-name svg {
+  opacity: 0.6;
+}
+
+.chat-name-input {
+  height: 26px;
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
 }
 
 .chat-msgs {
