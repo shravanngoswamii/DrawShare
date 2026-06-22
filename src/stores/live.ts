@@ -289,9 +289,17 @@ export const useLiveStore = defineStore("live", {
       try {
         let resolvedOffer = offerToken.trim();
         if (!resolvedOffer) {
-          // Relay mode — fetch offer using the session code
-          const fetched = await relayFetchOffer(code).catch(() => null);
-          if (session !== activeSession) return;
+          // Relay mode — poll for the offer by code. ntfy.sh has a publish→poll
+          // propagation delay, and the viewer often enters the code before the
+          // host has published, so retry instead of failing on the first miss
+          // (the host already retries the answer poll the same way).
+          let fetched: string | null = null;
+          for (let i = 0; i < 30; i++) {
+            fetched = await relayFetchOffer(code).catch(() => null);
+            if (session !== activeSession) return;
+            if (fetched) break;
+            await new Promise((r) => setTimeout(r, 2_000));
+          }
           if (!fetched) {
             this.error = "Session not found. Make sure the host has started sharing.";
             this.status = "error";

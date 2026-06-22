@@ -127,7 +127,21 @@ export class WebRTCSession implements SessionAdapter {
 
   private createPeerConnection(): RTCPeerConnection {
     const peer = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        // Free public TURN, so peers behind symmetric NATs/firewalls that STUN
+        // alone can't traverse still connect. Stopgap — a server-side relay is
+        // the proper fix; if TURN is unreachable, ICE just falls back to STUN.
+        {
+          urls: [
+            "turn:openrelay.metered.ca:80",
+            "turn:openrelay.metered.ca:443",
+            "turns:openrelay.metered.ca:443?transport=tcp",
+          ],
+          username: "openrelayproject",
+          credential: "openrelayproject",
+        },
+      ],
     });
     peer.onconnectionstatechange = () => {
       const s = peer.connectionState;
