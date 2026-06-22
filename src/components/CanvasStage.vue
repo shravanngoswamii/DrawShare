@@ -968,6 +968,10 @@ function onEditPointerDown(e: PointerEvent) {
   const el = textInput.value;
   const ed = editing.value;
   if (!el || !ed) return;
+  // Only reposition the box when the Select (move) tool is active. While the
+  // text tool is active the box must stay put so the pen can write in it
+  // (otherwise writing near the edge keeps dragging the field).
+  if (editor.tool !== "select") return;
   const rect = el.getBoundingClientRect();
   const edge = 16;
   const nearBorder =

@@ -145,7 +145,8 @@ function setSpeed(v: ReplaySpeed) {
   bottom: 56px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 20;
+  /* Above the mobile toolbar pill (z-index 30). */
+  z-index: 40;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -288,12 +289,13 @@ function setSpeed(v: ReplaySpeed) {
   cursor: pointer;
 }
 
-/* Responsive: on narrow screens, shrink min-width */
-@media (max-width: 480px) {
+/* On phones the toolbar is a floating pill at the bottom (max-width 767px), so
+   lift the replay panel clear of it and the safe area; shrink it to fit too. */
+@media (max-width: 767px) {
   .replay-panel {
     min-width: 0;
     width: calc(100vw - 32px);
-    bottom: 72px;
+    bottom: calc(var(--safe-bottom, 0px) + 80px);
   }
 }
 </style>
