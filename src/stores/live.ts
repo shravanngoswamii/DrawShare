@@ -78,6 +78,7 @@ interface LiveState {
   viewerCanEdit: boolean; // viewer: has the host granted me drawing?
   viewerOwnLive: Stroke | undefined; // viewer: my own in-progress stroke (local preview)
   pendingViewerEdits: SyncMessage[]; // host: viewer edits awaiting persist + rebroadcast
+  remoteLiveStrokes: Stroke[]; // host: in-progress strokes from viewers (live preview)
   viewerId: string; // viewer: my stable id this tab
   viewerName: string; // viewer: my display name
   // Chat (host + viewers).
@@ -230,6 +231,7 @@ export const useLiveStore = defineStore("live", {
     viewerCanEdit: false,
     viewerOwnLive: undefined,
     pendingViewerEdits: [],
+    remoteLiveStrokes: [],
     viewerId: "",
     viewerName: "",
     chat: [],
@@ -324,17 +326,50 @@ export const useLiveStore = defineStore("live", {
               this.appendChat(msg);
               return;
             }
-            // An edit from a permitted viewer: queue it for the editor to apply,
-            // which persists it and re-broadcasts to everyone (the round-trip).
-            // Ignore edits from viewers that aren't currently granted.
-            const isViewerEdit =
+            // Everything below is a permitted-viewer-only action.
+            if (!("vid" in msg) || !grantedVids.has(msg.vid)) return;
+            // Live stroke preview: show it on the host's canvas and relay it to
+            // the other viewers so everyone sees it as it's drawn. The author
+            // skips its own echo (by stroke id).
+            if (msg.t === "viewer-stroke-begin") {
+              this.remoteLiveStrokes = [
+                ...this.remoteLiveStrokes.filter((s) => s.id !== msg.stroke.id),
+                msg.stroke,
+              ];
+              this.broadcast({ t: "stroke-begin", stroke: msg.stroke });
+              return;
+            }
+            if (msg.t === "viewer-stroke-points") {
+              this.remoteLiveStrokes = this.remoteLiveStrokes.map((s) =>
+                s.id === msg.strokeId ? { ...s, points: [...s.points, ...msg.points] } : s,
+              );
+              this.broadcast({
+                t: "stroke-points",
+                pageId: msg.pageId,
+                strokeId: msg.strokeId,
+                points: msg.points,
+                from: msg.from,
+              });
+              return;
+            }
+            if (msg.t === "viewer-stroke-cancel") {
+              this.remoteLiveStrokes = this.remoteLiveStrokes.filter((s) => s.id !== msg.strokeId);
+              this.broadcast({ t: "stroke-cancel", pageId: msg.pageId, strokeId: msg.strokeId });
+              return;
+            }
+            if (msg.t === "viewer-stroke-commit") {
+              this.remoteLiveStrokes = this.remoteLiveStrokes.filter((s) => s.id !== msg.stroke.id);
+            }
+            // Persisted edits (stroke/shape/text/erase/image commit): queue for the
+            // editor to apply, which persists + re-broadcasts to everyone.
+            const isPersistEdit =
               msg.t === "viewer-stroke-commit" ||
               msg.t === "viewer-shape-commit" ||
               msg.t === "viewer-text-commit" ||
               msg.t === "viewer-erase-stroke" ||
               msg.t === "viewer-erase-shape" ||
               msg.t === "viewer-image-add";
-            if (isViewerEdit && grantedVids.has((msg as { vid: string }).vid)) {
+            if (isPersistEdit) {
               this.pendingViewerEdits = [...this.pendingViewerEdits, msg];
             }
           },
@@ -507,6 +542,7 @@ export const useLiveStore = defineStore("live", {
       this.viewerCanEdit = false;
       this.viewerOwnLive = undefined;
       this.pendingViewerEdits = [];
+      this.remoteLiveStrokes = [];
       this.viewerId = "";
       this.viewerName = "";
       this.chat = [];
@@ -755,12 +791,15 @@ export const useLiveStore = defineStore("live", {
           break;
         }
         case "stroke-begin": {
+          // Skip the echo of our own in-progress stroke (the host relays it back).
+          if (this.viewerOwnLive && msg.stroke.id === this.viewerOwnLive.id) break;
           // Notebook renders the whole stack, so accept live strokes on any sheet.
           if (!this.viewerIsNotebook && msg.stroke.pageId !== this.viewerCurrentPageId) break;
           this.viewerLive = { ...msg.stroke };
           break;
         }
         case "stroke-points": {
+          if (this.viewerOwnLive && msg.strokeId === this.viewerOwnLive.id) break;
           if (!this.viewerIsNotebook && msg.pageId !== this.viewerCurrentPageId) break;
           const live = this.viewerLive;
           if (!live || live.id !== msg.strokeId) break;
@@ -781,6 +820,7 @@ export const useLiveStore = defineStore("live", {
           break;
         }
         case "stroke-cancel": {
+          if (this.viewerOwnLive && msg.strokeId === this.viewerOwnLive.id) break;
           if (this.viewerLive && this.viewerLive.id === msg.strokeId) {
             this.viewerLive = undefined;
           }

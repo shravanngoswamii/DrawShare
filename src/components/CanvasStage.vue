@@ -817,6 +817,15 @@ function render() {
       liveSendCursor = currentStroke.points.length;
     }
   }
+  // Live preview of strokes a permitted viewer is currently drawing (world coords).
+  if (live.remoteLiveStrokes.length > 0) {
+    liveRenderer.setCamera({ ...cam });
+    liveRenderer.beginFrame();
+    for (const s of live.remoteLiveStrokes) {
+      if (s.points.length > 0) liveRenderer.drawLive(s);
+    }
+    liveRenderer.endFrame();
+  }
 }
 
 // Screen sample → stored stroke point. In notebook mode this is page-local
@@ -1935,6 +1944,13 @@ watch(
 );
 
 watch([selectedImageId, selectedTextId, selectedShapeId], () => updateSelectionOverlays());
+
+// Repaint the live layer as permitted viewers draw (their in-progress strokes).
+watch(
+  () => live.remoteLiveStrokes,
+  () => schedule(),
+  { deep: true },
+);
 
 // Selection lives under the Select tool; drop it (ring/outline + Delete target)
 // the moment the user switches to any other tool.
