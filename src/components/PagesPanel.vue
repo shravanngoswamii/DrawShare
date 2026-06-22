@@ -354,6 +354,18 @@ function removeSnapshot() {
           <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9" /><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5" /><circle cx="12" cy="12" r="2" /><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5" /><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1" />
         </svg>
       </button>
+      <button
+        v-if="live.isHosting"
+        class="dock-btn dock-chat"
+        @click="emit('chat')"
+        title="Session chat"
+        aria-label="Open session chat"
+      >
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+        <span v-if="live.unreadChat > 0" class="dock-badge" aria-hidden="true"></span>
+      </button>
     </div>
 
     <aside v-if="!collapsed" class="panel" :class="{ quiet: editor.isDrawing }" aria-label="Pages and settings">
@@ -634,15 +646,6 @@ function removeSnapshot() {
               </li>
             </ul>
           </div>
-
-          <!-- Chat (host) -->
-          <button v-if="live.isHosting" class="share-btn chat-btn" @click="emit('chat')" title="Open session chat" aria-label="Open session chat">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-            <span class="share-label">Chat</span>
-            <span v-if="live.unreadChat > 0" class="chat-unread">{{ live.unreadChat > 99 ? '99+' : live.unreadChat }}</span>
-          </button>
 
           <!-- Export / clear -->
           <div class="page-tools">
@@ -1095,23 +1098,19 @@ function removeSnapshot() {
   background: var(--color-accent);
 }
 
-.chat-btn {
+/* Chat dock button: red dot when there are unread messages. */
+.dock-chat {
   position: relative;
-  margin-top: var(--space-2);
 }
-
-.chat-unread {
-  margin-left: auto;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
+.dock-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: var(--radius-pill);
   background: var(--color-danger);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 18px;
-  text-align: center;
+  border: 2px solid var(--color-surface);
 }
 
 /* ── Sections ── */

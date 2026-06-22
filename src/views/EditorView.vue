@@ -66,6 +66,18 @@ const shareOpen = ref(false);
 const helpOpen = ref(false);
 const chatOpen = ref(false);
 
+// Whether the collapsed mini-dock is showing (mirrors PagesPanel). When it is,
+// the chat icon lives in the dock; when not, it sits by the help button.
+const isMobile = ref(
+  typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
+);
+if (typeof window !== "undefined") {
+  window.matchMedia("(max-width: 767px)").addEventListener("change", (e) => {
+    isMobile.value = e.matches;
+  });
+}
+const dockVisible = computed(() => pagesCollapsed.value || (isMobile.value && !panelOpen.value));
+
 // The mini-dock's expand button means different things by viewport: on desktop
 // it un-collapses the docked panel in place; on mobile there's no docked panel,
 // so it slides the drawer in instead.
@@ -216,6 +228,22 @@ onBeforeUnmount(() => removeProbe?.());
       </button>
       <!-- Replay controls overlay (absolutely positioned inside .body) -->
       <ReplayControls v-if="replay.active" />
+      <!-- Chat sits in the dock when collapsed; by the help button when open. -->
+      <button
+        v-if="live.isHosting && !dockVisible"
+        class="chat-fab"
+        :class="{ quiet: editor.isDrawing, active: chatOpen, shifted: !pagesCollapsed }"
+        @click="chatOpen = !chatOpen"
+        title="Session chat"
+        aria-label="Open session chat"
+        :aria-expanded="chatOpen"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+        <span v-if="live.unreadChat > 0" class="chat-fab-badge" aria-hidden="true"></span>
+      </button>
       <button
         class="help-fab"
         :class="{ quiet: editor.isDrawing, active: helpOpen, shifted: !pagesCollapsed }"
@@ -421,10 +449,45 @@ onBeforeUnmount(() => removeProbe?.());
 .help-fab.active { background: var(--color-accent-soft); color: var(--color-accent); border-color: var(--color-accent); }
 .help-fab.quiet { opacity: 0.06; pointer-events: none; }
 
+/* Chat FAB: same glass pill as help, stacked just above it. */
+.chat-fab {
+  position: absolute;
+  bottom: 56px;
+  right: 16px;
+  z-index: 20;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--color-glass-bg-strong);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-glass-border);
+  box-shadow: 0 2px 8px var(--color-glass-shadow);
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: box-shadow 150ms, color 80ms, background 80ms, opacity 150ms, right 200ms ease;
+}
+.chat-fab:hover { box-shadow: var(--shadow-md); color: var(--color-text); }
+.chat-fab.active { background: var(--color-accent-soft); color: var(--color-accent); border-color: var(--color-accent); }
+.chat-fab.quiet { opacity: 0.06; pointer-events: none; }
+.chat-fab-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-danger);
+  border: 2px solid var(--color-surface);
+}
+
 /* When the pages panel is open on desktop it owns the right edge, so slide the
    corner FABs left to sit just clear of it. (Mobile panel is a drawer — no shift.) */
 @media (min-width: 768px) {
   .help-fab.shifted { right: calc(var(--sidepanel-w) + 20px); }
+  .chat-fab.shifted { right: calc(var(--sidepanel-w) + 20px); }
   .replay-fab.shifted { right: calc(var(--sidepanel-w) + 16px); }
 }
 
@@ -445,10 +508,14 @@ onBeforeUnmount(() => removeProbe?.());
   .help-fab {
     bottom: calc(var(--safe-bottom, 0px) + 72px);
   }
+  .chat-fab {
+    bottom: calc(var(--safe-bottom, 0px) + 116px);
+  }
   .replay-fab {
     bottom: calc(var(--safe-bottom, 0px) + 118px);
   }
   .help-fab.shifted,
+  .chat-fab.shifted,
   .replay-fab.shifted {
     right: 12px;
   }
