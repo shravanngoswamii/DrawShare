@@ -168,7 +168,11 @@ function saveDockPositions() {
 function onGripDown(e: PointerEvent) {
   e.preventDefault();
   popover.value = null;
-  const aside = (e.currentTarget as HTMLElement).closest(".toolbar") as HTMLElement | null;
+  const grip = e.currentTarget as HTMLElement;
+  // Own the pointer for the whole drag so its moves can't be mistaken for a
+  // canvas stroke (belt-and-suspenders alongside the canvas over-target gate).
+  grip.setPointerCapture?.(e.pointerId);
+  const aside = grip.closest(".toolbar") as HTMLElement | null;
   if (!aside) return;
   // Capture toolbar size at drag-start (before position: fixed takes over).
   const rect = aside.getBoundingClientRect();
@@ -199,6 +203,7 @@ function onGripDown(e: PointerEvent) {
   const up = (ev: PointerEvent) => {
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", up);
+    grip.releasePointerCapture?.(ev.pointerId);
     if (!moved) {
       emit("toggle");
       return;

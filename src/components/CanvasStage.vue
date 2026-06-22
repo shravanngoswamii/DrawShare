@@ -1377,12 +1377,14 @@ function handleMove(samples: InputSample[]) {
     return;
   }
   if (isErasing) {
+    // Stamp only the latest sample, not every coalesced one: eraseStamp already
+    // interpolates from the previous point, so the swept area is identical, but
+    // we avoid running full-page hit-testing per coalesced sample (the Pencil
+    // reports many per move at 120 Hz, which is what made erasing lag).
     const last = samples[samples.length - 1];
     eraseCursor.value = { x: last.x, y: last.y };
-    for (const s of samples) {
-      const w = toWorld(s.x, s.y);
-      eraseStamp(w.x, w.y);
-    }
+    const w = toWorld(last.x, last.y);
+    eraseStamp(w.x, w.y);
     return;
   }
   if (currentShape) {
