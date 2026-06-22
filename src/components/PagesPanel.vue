@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import CloudSyncMenu from "@/components/CloudSyncMenu.vue";
 import ThemeMenu from "@/components/ThemeMenu.vue";
 import { confirmDialog } from "@/composables/useDialog";
 import {
@@ -369,7 +368,6 @@ function removeSnapshot() {
           :placeholder="editor.project?.name ?? 'Untitled'"
         />
         <span class="save-chip" :class="{ saving: editor.saving > 0 }" role="status" aria-live="polite">{{ saveStatus }}</span>
-        <CloudSyncMenu />
         <ThemeMenu />
         <div class="head-menu-wrap">
           <button class="head-icon" @click="menuOpen = !menuOpen" :aria-expanded="menuOpen" aria-haspopup="true" title="More" aria-label="More options">

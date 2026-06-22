@@ -69,22 +69,11 @@
         people you trust.
       </p>
 
-      <h2>Cloud backup (optional)</h2>
-      <p>
-        If you connect cloud backup, DrawShare signs in to <strong>your own</strong> Google
-        Drive and stores each board as a file in a "DrawShare" folder there. DrawShare can only
-        access the files it creates in your Drive — it cannot read the rest of your Drive. Your
-        boards go to your Google account, not to us; we never receive or store them. This use of
-        Google Drive is governed by Google's privacy policy, and you can disconnect at any time,
-        or revoke access from your Google Account's security settings.
-      </p>
-
       <h2>Your control over your data</h2>
       <p>
         You can export your projects as a JSON file, import them back, and delete projects at
         any time (deleted projects sit in Trash for 30 days, then go for good). Clearing your
-        browser's site data for DrawShare removes everything stored locally. If you used cloud
-        backup, deleting the files from your Drive removes the cloud copy.
+        browser's site data for DrawShare removes everything stored locally.
       </p>
 
       <h2>Children</h2>

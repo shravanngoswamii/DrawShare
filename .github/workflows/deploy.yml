@@ -29,8 +29,6 @@ jobs:
       - name: Build
         env:
           BASE_PATH: /${{ github.event.repository.name }}/
-          # Public OAuth client id for cloud backup; feature stays hidden if unset.
-          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
         run: npm run build
 
       - name: Add SPA fallback

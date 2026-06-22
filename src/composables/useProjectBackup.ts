@@ -3,22 +3,20 @@ import type { ImageItem, Page, Project, Shape, Stroke } from "@/core/types";
 
 // v2 adds shapes + images per page. Older (v1, strokes-only) backups still import
 // — the missing arrays just default to empty.
-export const FORMAT_VERSION = 2;
+const FORMAT_VERSION = 2;
 
-export interface BackupEntry {
+interface BackupEntry {
   project: Project;
   pages: Array<{ page: Page; strokes: Stroke[]; shapes?: Shape[]; images?: ImageItem[] }>;
 }
 
-export interface BackupFile {
+interface BackupFile {
   version: number;
   exportedAt: number;
   projects: BackupEntry[];
 }
 
-// Serialize a single project (used by file export *and* cloud sync, so both
-// speak the exact same format and a cloud file is just a one-project backup).
-export async function buildBackupEntry(project: Project): Promise<BackupEntry> {
+async function buildBackupEntry(project: Project): Promise<BackupEntry> {
   const pages = await storage.listPages(project.id);
   const pagesWithContent = await Promise.all(
     pages.map(async (page) => ({
@@ -31,11 +29,11 @@ export async function buildBackupEntry(project: Project): Promise<BackupEntry> {
   return { project, pages: pagesWithContent };
 }
 
-export function backupFileOf(entries: BackupEntry[]): BackupFile {
+function backupFileOf(entries: BackupEntry[]): BackupFile {
   return { version: FORMAT_VERSION, exportedAt: Date.now(), projects: entries };
 }
 
-export function parseBackupFile(text: string): BackupFile {
+function parseBackupFile(text: string): BackupFile {
   let data: BackupFile;
   try {
     data = JSON.parse(text) as BackupFile;
@@ -49,7 +47,7 @@ export function parseBackupFile(text: string): BackupFile {
 }
 
 // Write the backup's projects into storage. Returns how many were applied.
-export async function applyBackup(data: BackupFile): Promise<number> {
+async function applyBackup(data: BackupFile): Promise<number> {
   let count = 0;
   for (const entry of data.projects) {
     await storage.putProject(entry.project);

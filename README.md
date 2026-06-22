@@ -46,8 +46,6 @@ Output goes to `dist/`. The base path can be set with the `BASE_PATH` env var so
 
 Pushing to `main` runs `.github/workflows/deploy.yml`, which builds and publishes `dist/` to the `gh-pages` branch. Pull requests get their own preview deploy via `.github/workflows/preview.yml`.
 
-Optional cloud backup (to each user's own Google Drive) is off unless `VITE_GOOGLE_CLIENT_ID` is set — see `.env.example` for the one-time setup.
-
 ## Data model
 
 | Type    | IndexedDB store      | Notes                        |
