@@ -150,6 +150,20 @@ function cancelCompose() {
   draft.value = "";
 }
 
+// Clicking a reply preview jumps to the original message and flashes it.
+const highlightedId = ref<string | null>(null);
+let highlightTimer: ReturnType<typeof setTimeout> | undefined;
+function jumpToMessage(id: string) {
+  const el = listEl.value?.querySelector<HTMLElement>(`[data-mid="${CSS.escape(id)}"]`);
+  if (!el) return; // message scrolled out of the kept history
+  el.scrollIntoView({ block: "center", behavior: "smooth" });
+  highlightedId.value = id;
+  if (highlightTimer) clearTimeout(highlightTimer);
+  highlightTimer = setTimeout(() => {
+    highlightedId.value = null;
+  }, 1400);
+}
+
 const editingName = ref(false);
 const nameDraft = ref("");
 const nameInput = ref<HTMLInputElement | null>(null);
@@ -321,14 +335,24 @@ watch(open, (isOpen) => {
       <div class="chat-msgs" ref="listEl">
         <div v-if="!live.chat.length" class="chat-empty">No messages yet. Say hello!</div>
         <template v-for="m in live.chat" :key="m.id">
-          <div class="chat-msg" :class="{ mine: m.mine }">
+          <div
+            class="chat-msg"
+            :class="{ mine: m.mine, highlight: m.id === highlightedId }"
+            :data-mid="m.id"
+          >
             <div v-if="!m.mine" class="chat-who">{{ m.fromName }}</div>
             <div class="chat-row">
               <div class="chat-bubble" :class="{ 'has-image': m.image }">
-                <div v-if="m.replyTo" class="chat-quote">
+                <button
+                  v-if="m.replyTo"
+                  type="button"
+                  class="chat-quote"
+                  @click="jumpToMessage(m.replyTo.id)"
+                  title="Go to replied message"
+                >
                   <span class="chat-quote-name">{{ m.replyTo.fromName }}</span>
                   <span class="chat-quote-text">{{ m.replyTo.text }}</span>
-                </div>
+                </button>
                 <img v-if="m.image" :src="m.image" class="chat-img" alt="shared image" loading="lazy" />
                 <span v-if="m.text" class="chat-text">{{ m.text }}</span>
                 <span v-if="m.editedTs" class="chat-edited">edited</span>
@@ -652,14 +676,36 @@ watch(open, (isOpen) => {
 .chat-quote {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 1px;
+  width: 100%;
+  text-align: left;
   padding: 2px var(--space-2);
   margin-bottom: 4px;
+  border: none;
   border-left: 3px solid var(--color-accent);
   background: var(--color-surface-3, rgba(127, 127, 127, 0.1));
   border-radius: 4px;
   font-size: var(--text-xs);
   opacity: 0.9;
+  cursor: pointer;
+}
+.chat-quote:hover {
+  opacity: 1;
+}
+
+/* Flash the target message when reached from a reply preview. */
+.chat-msg.highlight .chat-bubble {
+  animation: chat-flash 1.4s ease;
+}
+@keyframes chat-flash {
+  0%,
+  60% {
+    box-shadow: 0 0 0 2px var(--color-accent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
 }
 .chat-msg.mine .chat-quote {
   border-left-color: var(--color-accent-text);
