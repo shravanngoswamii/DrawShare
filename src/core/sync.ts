@@ -89,11 +89,31 @@ export type SyncMessage =
   | { t: "session-ended" }
   | { t: "layer-add"; layer: Layer }
   | { t: "layer-delete"; layerId: ID }
-  | { t: "layer-update"; layer: Layer };
+  | { t: "layer-update"; layer: Layer }
+  // Collaborative editing. The host grants/revokes a specific viewer's draw
+  // permission (relay-targeted to that viewer); a permitted viewer streams its
+  // own strokes back to the host, tagged with its viewer id so the host can
+  // check the grant and attribute them.
+  | { t: "grant-edit" }
+  | { t: "revoke-edit" }
+  | { t: "viewer-stroke-begin"; vid: string; stroke: Stroke }
+  | {
+      t: "viewer-stroke-points";
+      vid: string;
+      pageId: string;
+      strokeId: string;
+      points: StrokePoint[];
+      from: number;
+    }
+  | { t: "viewer-stroke-commit"; vid: string; stroke: Stroke }
+  | { t: "viewer-stroke-cancel"; vid: string; pageId: string; strokeId: string };
 
 export interface SessionHostHandlers {
-  onViewerJoin(viewerId: string): void;
+  onViewerJoin(viewerId: string, name: string): void;
   onViewerLeave(viewerId: string): void;
+  // A message from a permitted viewer (viewer-stroke-*). Optional so non-collab
+  // adapters needn't implement it.
+  onViewerMessage?(msg: SyncMessage): void;
   onError(err: Error): void;
 }
 
@@ -104,10 +124,17 @@ export interface SessionViewerHandlers {
   onError(err: Error): void;
 }
 
+export interface ViewerIdentity {
+  id: string;
+  name: string;
+}
+
 export interface SessionAdapter {
   host(sessionId: string, handlers: SessionHostHandlers): Promise<void>;
-  join(sessionId: string, handlers: SessionViewerHandlers): Promise<void>;
+  join(sessionId: string, identity: ViewerIdentity, handlers: SessionViewerHandlers): Promise<void>;
   send(msg: SyncMessage): void;
+  // Send a message to one viewer only (host -> viewer), by viewer id.
+  sendTo(viewerId: string, msg: SyncMessage): void;
   close(): void;
   isOpen(): boolean;
 }

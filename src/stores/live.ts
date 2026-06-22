@@ -1,8 +1,16 @@
 import { defineStore } from "pinia";
 import { HOST_LEFT_REASON, relayConfigured, WebSocketSession } from "@/adapters/sync/websocket";
-import type { SyncMessage } from "@/core/sync";
+import { makeViewerName } from "@/core/names";
+import type { SyncMessage, ViewerIdentity } from "@/core/sync";
 import { makeSessionCode } from "@/core/sync";
 import type { NotebookLayout, NotebookMode, Page, Project, Shape, Stroke } from "@/core/types";
+
+// A connected viewer as the host sees them.
+interface RosterViewer {
+  id: string;
+  name: string;
+  canEdit: boolean;
+}
 
 type Mode = "off" | "host" | "viewer";
 type Status =
@@ -40,6 +48,13 @@ interface LiveState {
   viewerAllShapes: Shape[];
   // Theme id the host is broadcasting; the viewer mirrors it unless overridden.
   viewerHostTheme: string;
+  // Collaborative editing.
+  viewers: RosterViewer[]; // host: connected viewers + their draw permission
+  viewerCanEdit: boolean; // viewer: has the host granted me drawing?
+  viewerOwnLive: Stroke | undefined; // viewer: my own in-progress stroke (local preview)
+  pendingViewerStrokes: Stroke[]; // host: viewer-committed strokes awaiting persist
+  viewerId: string; // viewer: my stable id this tab
+  viewerName: string; // viewer: my display name
 }
 
 // Point-in-time host snapshot sent to a joining viewer.
@@ -59,18 +74,41 @@ type HostSnapshot = {
 let session: WebSocketSession | undefined;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let hostAwayTimer: ReturnType<typeof setTimeout> | undefined;
+// Viewer ids the host has granted drawing to. Source of truth for both
+// restoring permission when a viewer (re)joins and validating viewer strokes.
+let grantedVids = new Set<string>();
 const MAX_RECONNECT_ATTEMPTS = 3;
 // How long a viewer waits for the host to come back (e.g. after a page reload)
 // before showing "disconnected". The relay connection stays open meanwhile, so
 // recovery is automatic if the host returns sooner.
 const HOST_AWAY_GRACE_MS = 45_000;
 // Per-tab key remembering an active host session, so a page reload can resume
-// the same code instead of minting a new one and dropping every viewer.
+// the same code instead of minting a new one and dropping every viewer. Also
+// keeps the set of viewers that were granted drawing, so a host reload restores
+// their permissions.
 const HOST_KEY = "drawshare:live-host";
+// Per-tab viewer identity, so a viewer reload keeps the same id + name (and any
+// draw permission the host re-grants on rejoin).
+const VIEWER_KEY = "drawshare:live-viewer";
 
-function rememberHostSession(code: string, projectId: string): void {
+interface HostSession {
+  code: string;
+  projectId: string;
+  granted: string[];
+}
+
+function readHostSession(): HostSession | null {
   try {
-    sessionStorage.setItem(HOST_KEY, JSON.stringify({ code, projectId }));
+    const raw = sessionStorage.getItem(HOST_KEY);
+    return raw ? (JSON.parse(raw) as HostSession) : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberHostSession(code: string, projectId: string, granted: string[]): void {
+  try {
+    sessionStorage.setItem(HOST_KEY, JSON.stringify({ code, projectId, granted }));
   } catch {
     /* sessionStorage unavailable; resume-on-reload simply won't work */
   }
@@ -82,6 +120,40 @@ function forgetHostSession(): void {
   } catch {
     /* noop */
   }
+}
+
+function loadOrCreateViewerIdentity(): ViewerIdentity {
+  try {
+    const raw = sessionStorage.getItem(VIEWER_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as ViewerIdentity;
+      if (parsed?.id && parsed?.name) return parsed;
+    }
+  } catch {
+    /* fall through to create */
+  }
+  const identity: ViewerIdentity = { id: crypto.randomUUID(), name: makeViewerName() };
+  try {
+    sessionStorage.setItem(VIEWER_KEY, JSON.stringify(identity));
+  } catch {
+    /* non-persistent identity is fine */
+  }
+  return identity;
+}
+
+// Persist the current granted set against the stored host session (keeps grants
+// across a host reload).
+function persistGranted(): void {
+  const s = readHostSession();
+  if (s) rememberHostSession(s.code, s.projectId, [...grantedVids]);
+}
+
+// Ensure a roster display name is unique by appending a counter on collisions.
+function uniqueName(name: string, taken: string[]): string {
+  if (!taken.includes(name)) return name;
+  let n = 2;
+  while (taken.includes(`${name} ${n}`)) n += 1;
+  return `${name} ${n}`;
 }
 
 // Send a notebook's strokes as several batches so no single relay message
@@ -124,6 +196,12 @@ export const useLiveStore = defineStore("live", {
     viewerAllStrokes: [],
     viewerAllShapes: [],
     viewerHostTheme: "",
+    viewers: [],
+    viewerCanEdit: false,
+    viewerOwnLive: undefined,
+    pendingViewerStrokes: [],
+    viewerId: "",
+    viewerName: "",
   }),
   getters: {
     viewerCurrentPage(state): Page | undefined {
@@ -153,14 +231,25 @@ export const useLiveStore = defineStore("live", {
       this.mode = "host";
       this.status = "connecting";
       this.viewerCount = 0;
+      this.viewers = [];
+      this.pendingViewerStrokes = [];
       this.error = "";
+      // Restore granted viewers on a resume; start fresh otherwise.
+      grantedVids = resumeCode ? new Set(readHostSession()?.granted ?? []) : new Set();
       // Remember the session for this tab so a reload resumes the same code.
-      rememberHostSession(this.code, snapshot().project.id);
+      rememberHostSession(this.code, snapshot().project.id, [...grantedVids]);
       try {
         await activeSession.host(this.code, {
-          onViewerJoin: () => {
+          onViewerJoin: (id, name) => {
             if (session !== activeSession) return;
-            this.viewerCount = this.viewerCount + 1;
+            const canEdit = grantedVids.has(id);
+            const others = this.viewers.filter((v) => v.id !== id);
+            const display = uniqueName(
+              name,
+              others.map((v) => v.name),
+            );
+            this.viewers = [...others, { id, name: display, canEdit }];
+            this.viewerCount = this.viewers.length;
             const snap = snapshot();
             const notebook = snap.notebookMode !== "off";
             const msg: SyncMessage = {
@@ -185,10 +274,23 @@ export const useLiveStore = defineStore("live", {
               sendStrokesChunked(snap.allStrokes);
               sendShapesChunked(snap.allShapes);
             }
+            // Restore a previously granted viewer's permission (e.g. after the
+            // host reloaded, or the viewer reconnected).
+            if (canEdit) session?.sendTo(id, { t: "grant-edit" });
           },
-          onViewerLeave: () => {
+          onViewerLeave: (id) => {
             if (session !== activeSession) return;
-            this.viewerCount = Math.max(0, this.viewerCount - 1);
+            this.viewers = this.viewers.filter((v) => v.id !== id);
+            this.viewerCount = this.viewers.length;
+          },
+          onViewerMessage: (msg) => {
+            if (session !== activeSession) return;
+            // A permitted viewer committed a stroke: queue it for the editor to
+            // persist + re-broadcast (completing the round-trip). Ignore strokes
+            // from viewers that aren't currently granted.
+            if (msg.t === "viewer-stroke-commit" && grantedVids.has(msg.vid)) {
+              this.pendingViewerStrokes = [...this.pendingViewerStrokes, msg.stroke];
+            }
           },
           onError: (err) => {
             if (session !== activeSession) return;
@@ -215,13 +317,7 @@ export const useLiveStore = defineStore("live", {
     // automatically once the host reconnects.
     resumeHostingIfPending(snapshot: () => HostSnapshot) {
       if (this.mode !== "off" || !relayConfigured()) return;
-      let saved: { code?: string; projectId?: string } | null = null;
-      try {
-        const raw = sessionStorage.getItem(HOST_KEY);
-        saved = raw ? JSON.parse(raw) : null;
-      } catch {
-        saved = null;
-      }
+      const saved = readHostSession();
       if (!saved?.code || saved.projectId !== snapshot().project.id) return;
       void this.startHosting(snapshot, saved.code);
     },
@@ -230,13 +326,51 @@ export const useLiveStore = defineStore("live", {
       this.broadcast({ t: "theme", themeId });
     },
 
+    // ── Collaborative editing ──
+    grantEdit(viewerId: string) {
+      if (this.mode !== "host") return;
+      const v = this.viewers.find((x) => x.id === viewerId);
+      if (!v) return;
+      v.canEdit = true;
+      grantedVids.add(viewerId);
+      persistGranted();
+      session?.sendTo(viewerId, { t: "grant-edit" });
+    },
+
+    revokeEdit(viewerId: string) {
+      if (this.mode !== "host") return;
+      const v = this.viewers.find((x) => x.id === viewerId);
+      if (v) v.canEdit = false;
+      grantedVids.delete(viewerId);
+      persistGranted();
+      session?.sendTo(viewerId, { t: "revoke-edit" });
+    },
+
+    setViewerOwnLive(stroke: Stroke | undefined) {
+      this.viewerOwnLive = stroke;
+    },
+
+    sendViewerStroke(msg: SyncMessage) {
+      if (this.mode !== "viewer") return;
+      session?.send(msg);
+    },
+
+    clearPendingViewerStrokes(): Stroke[] {
+      const pending = this.pendingViewerStrokes;
+      this.pendingViewerStrokes = [];
+      return pending;
+    },
+
     stop() {
       // Tell viewers the session is over so they end cleanly rather than waiting
       // for the host to return (which a plain disconnect can't distinguish).
       if (this.mode === "host" && this.viewerCount > 0) {
         session?.send({ t: "session-ended" });
       }
-      if (this.mode === "host") forgetHostSession();
+      if (this.mode === "host") {
+        forgetHostSession();
+        grantedVids = new Set();
+      }
       if (reconnectTimer !== undefined) {
         clearTimeout(reconnectTimer);
         reconnectTimer = undefined;
@@ -268,6 +402,12 @@ export const useLiveStore = defineStore("live", {
       this.viewerAllStrokes = [];
       this.viewerAllShapes = [];
       this.viewerHostTheme = "";
+      this.viewers = [];
+      this.viewerCanEdit = false;
+      this.viewerOwnLive = undefined;
+      this.pendingViewerStrokes = [];
+      this.viewerId = "";
+      this.viewerName = "";
     },
 
     setHostViewport(width: number, height: number) {
@@ -313,8 +453,11 @@ export const useLiveStore = defineStore("live", {
       this.status = "connecting";
       this.code = code.toUpperCase();
       this.error = "";
+      const identity = loadOrCreateViewerIdentity();
+      this.viewerId = identity.id;
+      this.viewerName = identity.name;
       try {
-        await activeSession.join(this.code, {
+        await activeSession.join(this.code, identity, {
           onConnected: () => {
             if (session !== activeSession) return;
             this.status = "connected";
@@ -601,6 +744,21 @@ export const useLiveStore = defineStore("live", {
           this.viewerHostTheme = msg.themeId;
           break;
         }
+        case "grant-edit": {
+          this.viewerCanEdit = true;
+          break;
+        }
+        case "revoke-edit": {
+          this.viewerCanEdit = false;
+          this.viewerOwnLive = undefined;
+          break;
+        }
+        // Viewer-origin strokes are consumed by the host via onViewerMessage and
+        // never reach a viewer's applyMessage.
+        case "viewer-stroke-begin":
+        case "viewer-stroke-points":
+        case "viewer-stroke-commit":
+        case "viewer-stroke-cancel":
         case "viewer-ready":
         case "session-ended":
           break;

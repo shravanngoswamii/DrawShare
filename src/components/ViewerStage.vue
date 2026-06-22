@@ -3,14 +3,19 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Canvas2DRenderer } from "@/adapters/render/canvas2d";
 import { drawStack, resolveSheetColors, type SheetColors } from "@/composables/useStackRenderer";
 import { useTheme } from "@/composables/useTheme";
+import { newId } from "@/core/ids";
 import { adaptInk } from "@/core/ink";
 import { PAGE_H, PAGE_W, sheetWorldPos } from "@/core/layout";
-import type { Page } from "@/core/types";
+import type { Page, Stroke, StrokePoint } from "@/core/types";
 import { useLiveStore } from "@/stores/live";
 
-const props = defineProps<{ page: Page }>();
+const props = defineProps<{ page: Page; color?: string; size?: number }>();
 const live = useLiveStore();
 const { isDark } = useTheme();
+
+// The viewer can draw only when the host has granted it, and only in free mode
+// (notebook stroke coordinates are page-local and not yet supported here).
+const canDraw = computed(() => live.viewerCanEdit && !live.viewerIsNotebook);
 
 // World camera reconstructed from the host (used to offset the notebook live stroke).
 const cam = { x: 0, y: 0, zoom: 1 };
@@ -144,22 +149,26 @@ function render() {
     dirtyBase = false;
   }
   liveRenderer.clear();
-  if (live.viewerLive && live.viewerLive.points.length > 0) {
-    if (live.viewerIsNotebook) {
+  const hostLive = live.viewerLive;
+  const ownLive = live.viewerOwnLive;
+  if (live.viewerIsNotebook) {
+    if (hostLive && hostLive.points.length > 0) {
       // The live stroke is page-local; shift the camera by its sheet origin.
       const off = liveSheetOffset();
       const clipLive = live.viewerNotebookMode === "strict";
       liveRenderer.setCamera({ x: cam.x - off.x, y: cam.y - off.y, zoom: cam.zoom });
       liveRenderer.beginFrame();
       if (clipLive) liveRenderer.pushClip(PAGE_W, PAGE_H);
-      liveRenderer.drawLive(live.viewerLive);
+      liveRenderer.drawLive(hostLive);
       if (clipLive) liveRenderer.popClip();
       liveRenderer.endFrame();
-    } else {
-      liveRenderer.beginFrame();
-      liveRenderer.drawLive(live.viewerLive);
-      liveRenderer.endFrame();
     }
+  } else if ((hostLive && hostLive.points.length > 0) || (ownLive && ownLive.points.length > 0)) {
+    // Both the host's and this viewer's in-progress strokes share the world camera.
+    liveRenderer.beginFrame();
+    if (hostLive && hostLive.points.length > 0) liveRenderer.drawLive(hostLive);
+    if (ownLive && ownLive.points.length > 0) liveRenderer.drawLive(ownLive);
+    liveRenderer.endFrame();
   }
 }
 
@@ -198,6 +207,105 @@ watch(
   () => schedule(),
   { deep: true },
 );
+
+// ── Viewer drawing (only while the host has granted permission) ──
+function screenToWorld(sx: number, sy: number): { x: number; y: number } {
+  const { x, y, zoom } = screenCam.value;
+  return { x: sx / zoom + x, y: sy / zoom + y };
+}
+
+let drawing: Stroke | undefined;
+let activePointer: number | undefined;
+
+function onPointerDown(ev: PointerEvent) {
+  if (!canDraw.value || activePointer !== undefined || !wrap.value) return;
+  ev.preventDefault();
+  wrap.value.setPointerCapture(ev.pointerId);
+  activePointer = ev.pointerId;
+  const rect = wrap.value.getBoundingClientRect();
+  const wp = screenToWorld(ev.clientX - rect.left, ev.clientY - rect.top);
+  const now = Date.now();
+  drawing = {
+    id: newId(),
+    pageId: props.page.id,
+    tool: "pen",
+    penType: "ballpoint",
+    color: props.color ?? "#0f172a",
+    size: props.size ?? 4,
+    opacity: 1,
+    points: [{ x: wp.x, y: wp.y, p: ev.pressure || 0.5, t: now }],
+    createdAt: now,
+  };
+  live.setViewerOwnLive({ ...drawing });
+  live.sendViewerStroke({ t: "viewer-stroke-begin", vid: live.viewerId, stroke: { ...drawing } });
+  schedule();
+}
+
+function onPointerMove(ev: PointerEvent) {
+  if (activePointer !== ev.pointerId || !drawing || !wrap.value) return;
+  ev.preventDefault();
+  const rect = wrap.value.getBoundingClientRect();
+  const wp = screenToWorld(ev.clientX - rect.left, ev.clientY - rect.top);
+  const point: StrokePoint = { x: wp.x, y: wp.y, p: ev.pressure || 0.5, t: Date.now() };
+  const from = drawing.points.length;
+  drawing.points = [...drawing.points, point];
+  live.setViewerOwnLive({ ...drawing });
+  live.sendViewerStroke({
+    t: "viewer-stroke-points",
+    vid: live.viewerId,
+    pageId: drawing.pageId,
+    strokeId: drawing.id,
+    points: [point],
+    from,
+  });
+  schedule();
+}
+
+function onPointerUp(ev: PointerEvent) {
+  if (activePointer !== ev.pointerId) return;
+  activePointer = undefined;
+  if (!drawing) return;
+  const finalized = { ...drawing };
+  drawing = undefined;
+  // Optimistic local commit; the host persists it and echoes a stroke-commit,
+  // which the base-layer dedupe (by id) drops, so it isn't drawn twice.
+  live.viewerStrokes = [...live.viewerStrokes, finalized];
+  dirtyBase = true;
+  live.setViewerOwnLive(undefined);
+  live.sendViewerStroke({ t: "viewer-stroke-commit", vid: live.viewerId, stroke: finalized });
+  schedule();
+}
+
+function onPointerCancel(ev: PointerEvent) {
+  if (activePointer !== ev.pointerId) return;
+  activePointer = undefined;
+  if (drawing) {
+    live.sendViewerStroke({
+      t: "viewer-stroke-cancel",
+      vid: live.viewerId,
+      pageId: drawing.pageId,
+      strokeId: drawing.id,
+    });
+  }
+  drawing = undefined;
+  live.setViewerOwnLive(undefined);
+  schedule();
+}
+
+watch(
+  () => live.viewerOwnLive,
+  () => schedule(),
+  { deep: true },
+);
+// If permission is revoked mid-stroke, drop the in-progress stroke.
+watch(canDraw, (allowed) => {
+  if (!allowed && drawing) {
+    drawing = undefined;
+    activePointer = undefined;
+    live.setViewerOwnLive(undefined);
+    schedule();
+  }
+});
 
 watch(
   () => props.page.id,
@@ -298,7 +406,15 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="stage" ref="wrap" :class="{ 'is-notebook': live.viewerIsNotebook }">
+  <div
+    class="stage"
+    ref="wrap"
+    :class="{ 'is-notebook': live.viewerIsNotebook, drawable: canDraw }"
+    @pointerdown="onPointerDown"
+    @pointermove="onPointerMove"
+    @pointerup="onPointerUp"
+    @pointercancel="onPointerCancel"
+  >
     <div v-if="!live.viewerIsNotebook" class="page-bg" :class="`bg-${props.page.background}`" :style="pageBgStyle" aria-hidden="true"></div>
     <canvas ref="baseEl" class="layer"></canvas>
     <canvas ref="liveEl" class="layer"></canvas>
@@ -336,6 +452,12 @@ onBeforeUnmount(() => {
 /* Notebook mode: neutral desk backdrop behind the white A4 sheets. */
 .stage.is-notebook {
   background: var(--color-bg);
+}
+
+/* When the host has granted drawing, the stage takes pointer input. */
+.stage.drawable {
+  cursor: crosshair;
+  touch-action: none;
 }
 
 .page-bg {

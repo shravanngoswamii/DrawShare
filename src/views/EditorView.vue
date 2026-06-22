@@ -106,6 +106,19 @@ watch(activeThemeId, (id) => {
   if (live.isHosting) live.broadcastTheme(id);
 });
 
+// Persist strokes drawn by permitted viewers. commitStroke saves them and
+// re-broadcasts a stroke-commit to everyone (the author dedupes its optimistic
+// copy by id), completing the round-trip.
+watch(
+  () => live.pendingViewerStrokes.length,
+  (n) => {
+    if (n === 0) return;
+    for (const stroke of live.clearPendingViewerStrokes()) {
+      void editor.commitStroke(stroke);
+    }
+  },
+);
+
 watch(
   () => props.id,
   async (next, prev) => {

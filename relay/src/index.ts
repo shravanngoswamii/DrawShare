@@ -7,6 +7,12 @@
 // nothing (purely a live relay) and uses the WebSocket Hibernation API, so an
 // idle room costs no compute.
 //
+// Each viewer has an id and a display name (sent as query params on connect),
+// so the host can address one viewer in particular — used to grant drawing
+// permission to specific viewers. A host message whose JSON begins with a
+// `__to` field is routed to just that viewer; every other host message is
+// broadcast to all viewers.
+//
 // Security model: there are no secrets in this worker and none in the repo.
 // The session code in the URL is the only access control — anyone who has the
 // code can join that room, so treat a code like a shared password and only
@@ -57,7 +63,28 @@ export default {
 };
 
 // Relay-control frames (distinct from app messages, which carry a `t` field).
-type RelayFrame = { __relay: "viewer-join" | "viewer-leave" | "host-left" };
+type RelayFrame =
+  | { __relay: "viewer-join"; id: string; name: string }
+  | { __relay: "viewer-leave"; id: string }
+  | { __relay: "host-left" };
+
+// Per-viewer identity carried on the socket (survives hibernation).
+interface ViewerInfo {
+  vid: string;
+  name: string;
+}
+
+function sanitizeId(raw: string | null): string {
+  return (raw ?? "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64);
+}
+
+function sanitizeName(raw: string | null): string {
+  // Strip control chars and cap the length; names are display-only.
+  return (raw ?? "")
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .trim()
+    .slice(0, 40);
+}
 
 export class LiveRoom {
   private state: DurableObjectState;
@@ -70,21 +97,36 @@ export class LiveRoom {
     if (this.state.getWebSockets().length >= MAX_SOCKETS_PER_ROOM) {
       return new Response("Room is full", { status: 503 });
     }
-    const role = new URL(request.url).searchParams.get("role") === "host" ? "host" : "viewer";
+    const params = new URL(request.url).searchParams;
+    const role = params.get("role") === "host" ? "host" : "viewer";
     const { 0: client, 1: server } = new WebSocketPair();
-    // Tag the socket with its role; the Hibernation API restores tags after an
-    // idle period, so routing needs no in-memory connection list.
-    this.state.acceptWebSocket(server, [role]);
+
     if (role === "viewer") {
-      this.send("host", { __relay: "viewer-join" });
+      const info: ViewerInfo = {
+        vid: sanitizeId(params.get("vid")) || crypto.randomUUID(),
+        name: sanitizeName(params.get("name")) || "Guest",
+      };
+      // Tag with the role and the viewer id so the host can target this socket.
+      // The Hibernation API restores tags + attachment after an idle period.
+      this.state.acceptWebSocket(server, ["viewer", `v:${info.vid}`]);
+      server.serializeAttachment(info);
+      this.send("host", { __relay: "viewer-join", id: info.vid, name: info.name });
     } else {
+      this.state.acceptWebSocket(server, ["host"]);
       // A (re)joining host needs to learn about viewers already in the room —
-      // e.g. after the host reloads the page — so it re-sends its snapshot and
-      // its viewer count is correct. Re-announce each existing viewer to it.
-      const frame = JSON.stringify({ __relay: "viewer-join" } satisfies RelayFrame);
-      for (const _ of this.state.getWebSockets("viewer")) {
+      // e.g. after the host reloads the page — so it re-sends its snapshot,
+      // rebuilds its roster, and restores any granted permissions.
+      for (const viewer of this.state.getWebSockets("viewer")) {
+        const info = viewer.deserializeAttachment() as ViewerInfo | null;
+        if (!info) continue;
         try {
-          server.send(frame);
+          server.send(
+            JSON.stringify({
+              __relay: "viewer-join",
+              id: info.vid,
+              name: info.name,
+            } satisfies RelayFrame),
+          );
         } catch {
           /* skip */
         }
@@ -95,14 +137,14 @@ export class LiveRoom {
 
   webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void {
     const isHost = this.state.getTags(ws).includes("host");
-    // Forward to the other side: a host's strokes go to viewers; anything a
-    // viewer sends goes to the host(s).
-    for (const target of this.state.getWebSockets(isHost ? "viewer" : "host")) {
-      try {
-        target.send(message);
-      } catch {
-        /* socket closing; skip */
-      }
+    if (isHost) {
+      // A host message addressed to one viewer (`{"__to":"<id>",...}`) goes only
+      // to that viewer; everything else is broadcast to all viewers.
+      const target = typeof message === "string" ? targetedRecipient(message) : null;
+      this.forward(target ? `v:${target}` : "viewer", message);
+    } else {
+      // Anything a viewer sends goes to the host(s).
+      this.forward("host", message);
     }
   }
 
@@ -115,20 +157,36 @@ export class LiveRoom {
       const otherHosts = this.state.getWebSockets("host").filter((s) => s !== ws);
       if (otherHosts.length === 0) this.send("viewer", { __relay: "host-left" });
     } else {
-      this.send("host", { __relay: "viewer-leave" });
+      const info = ws.deserializeAttachment() as ViewerInfo | null;
+      if (info) this.send("host", { __relay: "viewer-leave", id: info.vid });
     }
   }
 
   webSocketError(): void {}
 
-  private send(tag: "host" | "viewer", frame: RelayFrame): void {
-    const data = JSON.stringify(frame);
+  private forward(tag: string, message: string | ArrayBuffer): void {
     for (const target of this.state.getWebSockets(tag)) {
       try {
-        target.send(data);
+        target.send(message);
       } catch {
         /* socket closing; skip */
       }
     }
+  }
+
+  private send(tag: string, frame: RelayFrame): void {
+    this.forward(tag, JSON.stringify(frame));
+  }
+}
+
+// Cheap check + parse: only messages that start with `{"__to":` are targeted, so
+// stroke/viewport traffic isn't parsed. Returns the recipient viewer id or null.
+function targetedRecipient(message: string): string | null {
+  if (!message.startsWith('{"__to":')) return null;
+  try {
+    const parsed = JSON.parse(message) as { __to?: unknown };
+    return typeof parsed.__to === "string" ? parsed.__to : null;
+  } catch {
+    return null;
   }
 }

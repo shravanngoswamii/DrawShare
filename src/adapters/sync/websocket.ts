@@ -3,14 +3,19 @@ import type {
   SessionHostHandlers,
   SessionViewerHandlers,
   SyncMessage,
+  ViewerIdentity,
 } from "@/core/sync";
 
 // Talks to the Cloudflare relay (a Durable Object per session code). The host
-// connects as `host`, viewers as `viewer`; the relay fans messages out between
-// them. Control frames carry `__relay`; app messages carry `t`.
+// connects as `host`, viewers as `viewer` (carrying their id + name); the relay
+// fans messages out between them. Control frames carry `__relay`; app messages
+// carry `t`. A host message addressed to one viewer is wrapped with `__to`.
 
 type Role = "host" | "viewer";
-type RelayFrame = { __relay: "viewer-join" | "viewer-leave" | "host-left" };
+type RelayFrame =
+  | { __relay: "viewer-join"; id: string; name: string }
+  | { __relay: "viewer-leave"; id: string }
+  | { __relay: "host-left" };
 
 // Disconnect reason for when the host intentionally leaves. The relay stays up,
 // so a reconnect would succeed but never find a host — the store treats this as
@@ -23,14 +28,19 @@ export function relayConfigured(): boolean {
   return typeof RELAY_URL === "string" && RELAY_URL.trim().length > 0;
 }
 
-function roomUrl(code: string, role: Role): string {
+function roomUrl(code: string, role: Role, identity?: ViewerIdentity): string {
   const base = (RELAY_URL ?? "").trim().replace(/\/$/, "");
-  return `${base}/room/${encodeURIComponent(code)}?role=${role}`;
+  let url = `${base}/room/${encodeURIComponent(code)}?role=${role}`;
+  if (role === "viewer" && identity) {
+    url += `&vid=${encodeURIComponent(identity.id)}&name=${encodeURIComponent(identity.name)}`;
+  }
+  return url;
 }
 
 export class WebSocketSession implements SessionAdapter {
   private ws: WebSocket | undefined;
   private role: Role | undefined;
+  private identity: ViewerIdentity | undefined;
   private hostHandlers: SessionHostHandlers | undefined;
   private viewerHandlers: SessionViewerHandlers | undefined;
   private pending: SyncMessage[] = [];
@@ -48,8 +58,13 @@ export class WebSocketSession implements SessionAdapter {
     return this.connect(sessionId, "host");
   }
 
-  join(sessionId: string, handlers: SessionViewerHandlers): Promise<void> {
+  join(
+    sessionId: string,
+    identity: ViewerIdentity,
+    handlers: SessionViewerHandlers,
+  ): Promise<void> {
     this.role = "viewer";
+    this.identity = identity;
     this.viewerHandlers = handlers;
     return this.connect(sessionId, "viewer");
   }
@@ -61,6 +76,14 @@ export class WebSocketSession implements SessionAdapter {
       return;
     }
     this.pending.push(msg);
+  }
+
+  // Host -> single viewer. `__to` must be the first key so the relay's cheap
+  // prefix check routes it without parsing every message.
+  sendTo(viewerId: string, msg: SyncMessage): void {
+    const ws = this.ws;
+    if (ws?.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ __to: viewerId, ...msg }));
   }
 
   close(): void {
@@ -91,7 +114,7 @@ export class WebSocketSession implements SessionAdapter {
       let settled = false;
       let ws: WebSocket;
       try {
-        ws = new WebSocket(roomUrl(code, role));
+        ws = new WebSocket(roomUrl(code, role, this.identity));
       } catch (err) {
         reject(err instanceof Error ? err : new Error("Could not reach the relay."));
         return;
@@ -134,10 +157,15 @@ export class WebSocketSession implements SessionAdapter {
       return;
     }
     if (parsed && typeof parsed === "object" && "__relay" in parsed) {
-      this.onRelayFrame((parsed as RelayFrame).__relay);
+      this.onRelayFrame(parsed as RelayFrame);
       return;
     }
-    if (this.role !== "viewer") return;
+    // App message. A host receives these only from permitted viewers; a viewer
+    // receives them from the host.
+    if (this.role === "host") {
+      this.hostHandlers?.onViewerMessage?.(parsed as SyncMessage);
+      return;
+    }
     if (!this.gotMessage) {
       this.gotMessage = true;
       this.viewerHandlers?.onConnected();
@@ -145,11 +173,11 @@ export class WebSocketSession implements SessionAdapter {
     this.viewerHandlers?.onMessage(parsed as SyncMessage);
   }
 
-  private onRelayFrame(kind: RelayFrame["__relay"]): void {
+  private onRelayFrame(frame: RelayFrame): void {
     if (this.role === "host") {
-      if (kind === "viewer-join") this.hostHandlers?.onViewerJoin("viewer");
-      else if (kind === "viewer-leave") this.hostHandlers?.onViewerLeave("viewer");
-    } else if (kind === "host-left") {
+      if (frame.__relay === "viewer-join") this.hostHandlers?.onViewerJoin(frame.id, frame.name);
+      else if (frame.__relay === "viewer-leave") this.hostHandlers?.onViewerLeave(frame.id);
+    } else if (frame.__relay === "host-left") {
       this.viewerHandlers?.onDisconnect(HOST_LEFT_REASON);
     }
   }

@@ -614,6 +614,27 @@ function removeSnapshot() {
             <span class="share-label">{{ live.isHosting ? `Live · ${live.code}` : 'Share live session' }}</span>
           </button>
 
+          <!-- Collaboration: grant drawing to specific viewers -->
+          <div v-if="live.isHosting && live.viewers.length > 0" class="collab">
+            <div class="collab-head">Let viewers draw</div>
+            <ul class="collab-list">
+              <li v-for="v in live.viewers" :key="v.id" class="collab-row">
+                <span class="collab-name" :title="v.name">{{ v.name }}</span>
+                <button
+                  class="collab-toggle"
+                  :class="{ on: v.canEdit }"
+                  role="switch"
+                  :aria-checked="v.canEdit"
+                  @click="v.canEdit ? live.revokeEdit(v.id) : live.grantEdit(v.id)"
+                  :title="v.canEdit ? `Stop ${v.name} drawing` : `Let ${v.name} draw`"
+                >
+                  <span class="knob" aria-hidden="true"></span>
+                  <span class="collab-state">{{ v.canEdit ? 'On' : 'Off' }}</span>
+                </button>
+              </li>
+            </ul>
+          </div>
+
           <!-- Export / clear -->
           <div class="page-tools">
             <button class="tool-btn" @click="exportCurrentPage" title="Export page as PNG" aria-label="Export page as PNG">
@@ -989,6 +1010,80 @@ function removeSnapshot() {
   background: var(--color-success);
   box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.2);
   flex-shrink: 0;
+}
+
+/* ── Collaboration roster ── */
+.collab {
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+}
+
+.collab-head {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-2);
+}
+
+.collab-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.collab-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.collab-name {
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collab-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  height: 26px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.collab-toggle .knob {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-pill);
+  background: var(--color-text-subtle);
+}
+
+.collab-toggle.on {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.collab-toggle.on .knob {
+  background: var(--color-accent);
 }
 
 /* ── Sections ── */

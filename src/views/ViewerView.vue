@@ -16,6 +16,12 @@ const fullscreen = ref(false);
 // Follow the host's theme until the viewer picks their own from the menu.
 const followHostTheme = ref(true);
 
+// Drawing tools, shown only while the host has granted this viewer permission.
+const PEN_COLORS = ["#0f172a", "#dc2626", "#2563eb", "#16a34a", "#f59e0b"];
+const drawColor = ref(PEN_COLORS[0]);
+const drawSize = ref(4);
+const canDraw = computed(() => live.viewerCanEdit && !live.viewerIsNotebook);
+
 const statusLabel = computed(() => {
   switch (live.status) {
     case "connecting":
@@ -99,6 +105,9 @@ async function toggleFullscreen() {
         <span class="project-name">
           {{ live.viewerProject?.name ?? "Connecting." }}
         </span>
+        <span v-if="live.viewerName" class="viewer-name" :title="`You are ${live.viewerName}`">
+          {{ live.viewerName }}
+        </span>
       </div>
       <div class="right">
         <button
@@ -136,6 +145,8 @@ async function toggleFullscreen() {
       <ViewerStage
         v-if="live.viewerCurrentPage || (live.viewerIsNotebook && live.viewerPages.length)"
         :page="live.viewerCurrentPage ?? live.viewerPages[0]"
+        :color="drawColor"
+        :size="drawSize"
       />
       <div v-else class="state">
         <div v-if="live.status === 'error'" class="error-state">
@@ -180,6 +191,32 @@ async function toggleFullscreen() {
           <div class="strip-thumb"></div>
           <span class="strip-label">{{ p.name }}</span>
         </button>
+      </div>
+
+      <!-- Drawing toolbar: only when the host has granted this viewer -->
+      <div v-if="canDraw" class="draw-bar" role="toolbar" aria-label="Drawing tools">
+        <span class="draw-hint">You can draw</span>
+        <div class="swatches">
+          <button
+            v-for="c in PEN_COLORS"
+            :key="c"
+            class="swatch"
+            :class="{ active: drawColor === c }"
+            :style="{ background: c }"
+            @click="drawColor = c"
+            :aria-label="`Use colour ${c}`"
+            :aria-pressed="drawColor === c"
+          ></button>
+        </div>
+        <input
+          class="size"
+          type="range"
+          min="2"
+          max="14"
+          step="1"
+          v-model.number="drawSize"
+          aria-label="Pen size"
+        />
       </div>
 
       <button v-if="fullscreen" class="exit-fs btn" @click="toggleFullscreen">
@@ -296,6 +333,66 @@ async function toggleFullscreen() {
   flex-direction: column;
   align-items: center;
   gap: var(--space-3);
+}
+
+.viewer-name {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: 2px var(--space-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40vw;
+}
+
+.draw-bar {
+  position: absolute;
+  bottom: calc(var(--space-4) + var(--safe-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-md);
+  max-width: calc(100vw - var(--space-4) * 2);
+}
+
+.draw-hint {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-success);
+  white-space: nowrap;
+}
+
+.swatches {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  box-shadow: 0 0 0 1px var(--color-border);
+}
+
+.swatch.active {
+  border-color: var(--color-surface);
+  box-shadow: 0 0 0 2px var(--color-accent);
+}
+
+.size {
+  width: 90px;
+  accent-color: var(--color-accent);
 }
 
 .connecting-spinner {
