@@ -33,11 +33,21 @@ const systemDark = ref(
 if (typeof window !== "undefined") {
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
     systemDark.value = e.matches;
-    if (preference.value === "system") apply("system");
+    if (transient.value === null && preference.value === "system") applyEffective();
   });
 }
 
 const preference = ref<string>(stored());
+
+// A transient theme that overrides the saved preference for the current view
+// without persisting it — the live viewer uses this to mirror the host. null
+// means "fall back to the saved preference". An explicit pick (persist) clears
+// it, so the user's own choice always wins and sticks.
+const transient = ref<string | null>(null);
+
+function effective(): string {
+  return transient.value ?? preference.value;
+}
 
 // Inject the generated theme stylesheet once (covers every non-default theme).
 function ensureThemeStyles() {
@@ -60,38 +70,58 @@ function apply(pref: string) {
   el.setAttribute("data-theme", pref);
 }
 
+function applyEffective() {
+  apply(effective());
+}
+
 ensureThemeStyles();
-apply(preference.value);
+applyEffective();
+
+// Increments on every explicit user pick (not on mirroring). The live viewer
+// watches this to stop following the host once the user chooses their own.
+const pickCount = ref(0);
 
 function persist(pref: string) {
+  transient.value = null; // an explicit choice overrides any mirrored theme
   preference.value = pref;
+  pickCount.value += 1;
   try {
     localStorage.setItem(KEY, pref);
   } catch {}
-  apply(pref);
+  applyEffective();
+}
+
+// Apply a theme for this view only, without saving it. Passing null restores
+// the saved preference.
+function mirrorTheme(id: string | null) {
+  transient.value = id;
+  applyEffective();
 }
 
 export function useTheme() {
   const isDark = computed(() =>
-    preference.value === "system" ? systemDark.value : modeOf(preference.value) === "dark",
+    effective() === "system" ? systemDark.value : modeOf(effective()) === "dark",
   );
-  const isSystem = computed(() => preference.value === "system");
+  const isSystem = computed(() => effective() === "system");
   // The concrete theme in effect (used to highlight the active swatch).
   const activeThemeId = computed(() =>
-    preference.value === "system"
+    effective() === "system"
       ? systemDark.value
         ? DEFAULT_DARK_ID
         : DEFAULT_LIGHT_ID
-      : preference.value,
+      : effective(),
   );
 
   // Quick light/dark flip used by the sun/moon buttons: keep the palette family,
-  // just swap its mode. From "system" it commits to an explicit slate.
+  // just swap its mode. Operates on the theme actually in effect (so it flips
+  // the mirrored theme on the viewer, not the hidden saved one). From "system"
+  // it commits to an explicit slate.
   function toggleTheme() {
-    if (preference.value === "system") {
+    const current = effective();
+    if (current === "system") {
       persist(systemDark.value ? DEFAULT_LIGHT_ID : DEFAULT_DARK_ID);
     } else {
-      persist(oppositeMode(preference.value));
+      persist(oppositeMode(current));
     }
   }
 
@@ -102,5 +132,15 @@ export function useTheme() {
     persist("system");
   }
 
-  return { isDark, isSystem, activeThemeId, themes: THEMES, toggleTheme, setTheme, useSystemTheme };
+  return {
+    isDark,
+    isSystem,
+    activeThemeId,
+    pickCount,
+    themes: THEMES,
+    toggleTheme,
+    setTheme,
+    useSystemTheme,
+    mirrorTheme,
+  };
 }

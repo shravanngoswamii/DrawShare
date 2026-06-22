@@ -1,15 +1,20 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import ThemeMenu from "@/components/ThemeMenu.vue";
 import ViewerStage from "@/components/ViewerStage.vue";
+import { useTheme } from "@/composables/useTheme";
 import { useLiveStore } from "@/stores/live";
 
 const props = defineProps<{ code: string }>();
 const live = useLiveStore();
 const router = useRouter();
+const { mirrorTheme, pickCount } = useTheme();
 
 const showThumbs = ref(false);
 const fullscreen = ref(false);
+// Follow the host's theme until the viewer picks their own from the menu.
+const followHostTheme = ref(true);
 
 const statusLabel = computed(() => {
   switch (live.status) {
@@ -20,7 +25,7 @@ const statusLabel = computed(() => {
     case "connected":
       return "Live";
     case "reconnecting":
-      return `Reconnecting… (${live.reconnectAttempt + 1}/${3})`;
+      return live.disconnectReason || "Reconnecting…";
     case "disconnected":
       return "Disconnected";
     case "error":
@@ -28,6 +33,21 @@ const statusLabel = computed(() => {
     default:
       return "";
   }
+});
+
+// Mirror the host's theme (applied transiently, so the viewer's saved theme is
+// untouched) until they override it.
+watch(
+  () => live.viewerHostTheme,
+  (id) => {
+    if (id && followHostTheme.value) mirrorTheme(id);
+  },
+  { immediate: true },
+);
+// Any explicit pick from the theme menu means the viewer wants their own theme;
+// stop following the host from then on.
+watch(pickCount, () => {
+  followHostTheme.value = false;
 });
 
 const dotClass = computed(() => {
@@ -41,6 +61,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  mirrorTheme(null); // restore the viewer's own saved theme on the way out
   live.stop();
 });
 
@@ -103,6 +124,7 @@ async function toggleFullscreen() {
           </svg>
           <span class="btn-label">Fullscreen</span>
         </button>
+        <ThemeMenu />
         <div class="status">
           <span :class="dotClass" aria-hidden="true"></span>
           <span class="status-label">{{ statusLabel }}</span>
@@ -136,8 +158,7 @@ async function toggleFullscreen() {
           <div class="connecting-spinner" aria-hidden="true"></div>
           <div class="muted">
             <template v-if="live.status === 'reconnecting'">
-              Reconnecting… (attempt {{ live.reconnectAttempt + 1 }} of 3)
-              <div v-if="live.disconnectReason" class="reconnect-reason">{{ live.disconnectReason }}</div>
+              {{ live.disconnectReason || "Reconnecting…" }}
             </template>
             <template v-else>
               {{ live.status === "connecting" ? "Connecting to " + props.code + "…" : "Waiting for the host to start…" }}
@@ -275,13 +296,6 @@ async function toggleFullscreen() {
   flex-direction: column;
   align-items: center;
   gap: var(--space-3);
-}
-
-.reconnect-reason {
-  font-size: var(--text-xs);
-  color: var(--color-text-subtle);
-  margin-top: 4px;
-  text-align: center;
 }
 
 .connecting-spinner {

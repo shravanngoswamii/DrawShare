@@ -29,6 +29,8 @@ export type SyncMessage =
       notebookLayout?: NotebookLayout;
       allStrokes?: Stroke[];
       allShapes?: Shape[];
+      // Host's current theme id, so a joiner can mirror it by default.
+      themeId?: string;
     }
   | {
       t: "viewport";
@@ -83,6 +85,8 @@ export type SyncMessage =
   | { t: "shape-delete"; pageId: string; shapeId: string }
   | { t: "presenter"; mode: "laser" | "spotlight"; x: number; y: number }
   | { t: "presenter-off" }
+  | { t: "theme"; themeId: string }
+  | { t: "session-ended" }
   | { t: "layer-add"; layer: Layer }
   | { t: "layer-delete"; layerId: ID }
   | { t: "layer-update"; layer: Layer };

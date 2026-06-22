@@ -11,7 +11,9 @@ import PagesPanel from "@/components/PagesPanel.vue";
 import ReplayControls from "@/components/ReplayControls.vue";
 import ShareSessionModal from "@/components/ShareSessionModal.vue";
 import Toolbar from "@/components/Toolbar.vue";
+import { useLiveSnapshot } from "@/composables/useLiveSnapshot";
 import { useOnboarding } from "@/composables/useOnboarding";
+import { useTheme } from "@/composables/useTheme";
 import { devMode } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
@@ -27,6 +29,8 @@ const projects = useProjectsStore();
 const replay = useReplayStore();
 const router = useRouter();
 const { maybeStart } = useOnboarding();
+const { activeThemeId } = useTheme();
+const liveSnapshot = useLiveSnapshot();
 
 // Replay is offered whenever the project has anything to replay (any content type).
 const hasContent = computed(
@@ -86,12 +90,20 @@ onMounted(async () => {
   if (!projects.loaded) await projects.load();
   try {
     await editor.open(props.id);
+    // Resume a live session this tab was hosting before a page reload, reusing
+    // the same code so viewers reconnect instead of needing a fresh one.
+    live.resumeHostingIfPending(liveSnapshot);
     // First-board feature tour, once the open animation has settled so intro.js
     // measures the tools/panel at their final positions.
     maybeStart("editor", 700);
   } catch {
     router.replace({ name: "projects" });
   }
+});
+
+// While hosting, mirror the host's theme changes to viewers.
+watch(activeThemeId, (id) => {
+  if (live.isHosting) live.broadcastTheme(id);
 });
 
 watch(

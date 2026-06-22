@@ -38,11 +38,51 @@ interface LiveState {
   viewerNotebookLayout: NotebookLayout;
   viewerAllStrokes: Stroke[];
   viewerAllShapes: Shape[];
+  // Theme id the host is broadcasting; the viewer mirrors it unless overridden.
+  viewerHostTheme: string;
 }
+
+// Point-in-time host snapshot sent to a joining viewer.
+type HostSnapshot = {
+  project: Project;
+  pages: Page[];
+  currentPageId: string;
+  strokes: Stroke[];
+  shapes: Shape[];
+  notebookMode: NotebookMode;
+  notebookLayout: NotebookLayout;
+  allStrokes: Stroke[];
+  allShapes: Shape[];
+  themeId: string;
+};
 
 let session: WebSocketSession | undefined;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+let hostAwayTimer: ReturnType<typeof setTimeout> | undefined;
 const MAX_RECONNECT_ATTEMPTS = 3;
+// How long a viewer waits for the host to come back (e.g. after a page reload)
+// before showing "disconnected". The relay connection stays open meanwhile, so
+// recovery is automatic if the host returns sooner.
+const HOST_AWAY_GRACE_MS = 45_000;
+// Per-tab key remembering an active host session, so a page reload can resume
+// the same code instead of minting a new one and dropping every viewer.
+const HOST_KEY = "drawshare:live-host";
+
+function rememberHostSession(code: string, projectId: string): void {
+  try {
+    sessionStorage.setItem(HOST_KEY, JSON.stringify({ code, projectId }));
+  } catch {
+    /* sessionStorage unavailable; resume-on-reload simply won't work */
+  }
+}
+
+function forgetHostSession(): void {
+  try {
+    sessionStorage.removeItem(HOST_KEY);
+  } catch {
+    /* noop */
+  }
+}
 
 // Send a notebook's strokes as several batches so no single relay message
 // exceeds the size cap on large notebooks.
@@ -83,6 +123,7 @@ export const useLiveStore = defineStore("live", {
     viewerNotebookLayout: "vertical",
     viewerAllStrokes: [],
     viewerAllShapes: [],
+    viewerHostTheme: "",
   }),
   getters: {
     viewerCurrentPage(state): Page | undefined {
@@ -99,19 +140,7 @@ export const useLiveStore = defineStore("live", {
     },
   },
   actions: {
-    async startHosting(
-      snapshot: () => {
-        project: Project;
-        pages: Page[];
-        currentPageId: string;
-        strokes: Stroke[];
-        shapes: Shape[];
-        notebookMode: NotebookMode;
-        notebookLayout: NotebookLayout;
-        allStrokes: Stroke[];
-        allShapes: Shape[];
-      },
-    ) {
+    async startHosting(snapshot: () => HostSnapshot, resumeCode?: string) {
       if (this.mode !== "off") return;
       if (!relayConfigured()) {
         this.error = "Live sharing is not configured.";
@@ -120,11 +149,13 @@ export const useLiveStore = defineStore("live", {
       }
       const activeSession = new WebSocketSession();
       session = activeSession;
-      this.code = makeSessionCode();
+      this.code = resumeCode ?? makeSessionCode();
       this.mode = "host";
       this.status = "connecting";
       this.viewerCount = 0;
       this.error = "";
+      // Remember the session for this tab so a reload resumes the same code.
+      rememberHostSession(this.code, snapshot().project.id);
       try {
         await activeSession.host(this.code, {
           onViewerJoin: () => {
@@ -147,6 +178,7 @@ export const useLiveStore = defineStore("live", {
               // oversized relay send.
               allStrokes: [],
               allShapes: [],
+              themeId: snap.themeId,
             };
             session?.send(msg);
             if (notebook) {
@@ -173,14 +205,45 @@ export const useLiveStore = defineStore("live", {
           session.close();
           session = undefined;
           this.mode = "off";
+          forgetHostSession();
         }
       }
     },
 
+    // Re-host with the same code after a page reload, if this tab had an active
+    // session for the project now open. Viewers waiting on the relay recover
+    // automatically once the host reconnects.
+    resumeHostingIfPending(snapshot: () => HostSnapshot) {
+      if (this.mode !== "off" || !relayConfigured()) return;
+      let saved: { code?: string; projectId?: string } | null = null;
+      try {
+        const raw = sessionStorage.getItem(HOST_KEY);
+        saved = raw ? JSON.parse(raw) : null;
+      } catch {
+        saved = null;
+      }
+      if (!saved?.code || saved.projectId !== snapshot().project.id) return;
+      void this.startHosting(snapshot, saved.code);
+    },
+
+    broadcastTheme(themeId: string) {
+      this.broadcast({ t: "theme", themeId });
+    },
+
     stop() {
+      // Tell viewers the session is over so they end cleanly rather than waiting
+      // for the host to return (which a plain disconnect can't distinguish).
+      if (this.mode === "host" && this.viewerCount > 0) {
+        session?.send({ t: "session-ended" });
+      }
+      if (this.mode === "host") forgetHostSession();
       if (reconnectTimer !== undefined) {
         clearTimeout(reconnectTimer);
         reconnectTimer = undefined;
+      }
+      if (hostAwayTimer !== undefined) {
+        clearTimeout(hostAwayTimer);
+        hostAwayTimer = undefined;
       }
       session?.close();
       session = undefined;
@@ -204,6 +267,7 @@ export const useLiveStore = defineStore("live", {
       this.viewerNotebookLayout = "vertical";
       this.viewerAllStrokes = [];
       this.viewerAllShapes = [];
+      this.viewerHostTheme = "";
     },
 
     setHostViewport(width: number, height: number) {
@@ -259,17 +323,54 @@ export const useLiveStore = defineStore("live", {
           },
           onMessage: (msg) => {
             if (session !== activeSession) return;
+            if (msg.t === "session-ended") {
+              // Host ended the session deliberately — terminal.
+              if (hostAwayTimer !== undefined) {
+                clearTimeout(hostAwayTimer);
+                hostAwayTimer = undefined;
+              }
+              this.disconnectReason = "The host ended the session.";
+              this.status = "disconnected";
+              session?.close();
+              session = undefined;
+              return;
+            }
+            // Any host message means we're live again — recovers from a host
+            // reload, where the relay re-announces us over the same socket so
+            // onConnected (first-message-only) won't fire a second time.
+            if (this.status !== "connected") {
+              this.status = "connected";
+              this.reconnectAttempt = 0;
+              this.disconnectReason = "";
+              if (hostAwayTimer !== undefined) {
+                clearTimeout(hostAwayTimer);
+                hostAwayTimer = undefined;
+              }
+            }
             this.applyMessage(msg);
           },
           onDisconnect: (reason?: string) => {
             if (session !== activeSession) return;
-            this.disconnectReason = reason ?? "Connection lost";
-            // The host leaving is terminal — the relay would accept a reconnect
-            // but no host would ever answer it.
+            // Host dropped (likely reloading): the relay connection is still
+            // open, so keep waiting — the relay re-announces us when the host
+            // returns and we recover on the next message. Give up after a grace
+            // window if they never come back.
             if (reason === HOST_LEFT_REASON) {
-              this.status = "disconnected";
+              this.disconnectReason = "The host disconnected — waiting for them to return.";
+              this.status = "reconnecting";
+              if (hostAwayTimer !== undefined) clearTimeout(hostAwayTimer);
+              hostAwayTimer = setTimeout(() => {
+                hostAwayTimer = undefined;
+                if (session !== activeSession || this.status === "connected") return;
+                this.status = "disconnected";
+                this.disconnectReason = "The host did not return.";
+                session?.close();
+                session = undefined;
+              }, HOST_AWAY_GRACE_MS);
               return;
             }
+            // Genuine connection loss (relay/socket gone): reconnect by reopening.
+            this.disconnectReason = reason ?? "Connection lost";
             if (this.reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
               this.status = "reconnecting";
               if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
@@ -325,6 +426,7 @@ export const useLiveStore = defineStore("live", {
           this.viewerNotebookLayout = msg.notebookLayout ?? "vertical";
           this.viewerAllStrokes = msg.allStrokes ?? [];
           this.viewerAllShapes = msg.allShapes ?? [];
+          this.viewerHostTheme = msg.themeId ?? "";
           break;
         }
         case "notebook-sync": {
@@ -495,7 +597,12 @@ export const useLiveStore = defineStore("live", {
           this.viewerPresenter = null;
           break;
         }
+        case "theme": {
+          this.viewerHostTheme = msg.themeId;
+          break;
+        }
         case "viewer-ready":
+        case "session-ended":
           break;
       }
     },

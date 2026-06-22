@@ -75,7 +75,21 @@ export class LiveRoom {
     // Tag the socket with its role; the Hibernation API restores tags after an
     // idle period, so routing needs no in-memory connection list.
     this.state.acceptWebSocket(server, [role]);
-    if (role === "viewer") this.send("host", { __relay: "viewer-join" });
+    if (role === "viewer") {
+      this.send("host", { __relay: "viewer-join" });
+    } else {
+      // A (re)joining host needs to learn about viewers already in the room —
+      // e.g. after the host reloads the page — so it re-sends its snapshot and
+      // its viewer count is correct. Re-announce each existing viewer to it.
+      const frame = JSON.stringify({ __relay: "viewer-join" } satisfies RelayFrame);
+      for (const _ of this.state.getWebSockets("viewer")) {
+        try {
+          server.send(frame);
+        } catch {
+          /* skip */
+        }
+      }
+    }
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -94,7 +108,15 @@ export class LiveRoom {
 
   webSocketClose(ws: WebSocket): void {
     const isHost = this.state.getTags(ws).includes("host");
-    this.send(isHost ? "viewer" : "host", { __relay: isHost ? "host-left" : "viewer-leave" });
+    if (isHost) {
+      // Only tell viewers the host left once no host remains. During a host
+      // reload the new socket can connect before the old one's close fires, and
+      // we must not knock the recovered viewers back into the "host left" state.
+      const otherHosts = this.state.getWebSockets("host").filter((s) => s !== ws);
+      if (otherHosts.length === 0) this.send("viewer", { __relay: "host-left" });
+    } else {
+      this.send("host", { __relay: "viewer-leave" });
+    }
   }
 
   webSocketError(): void {}

@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { useLiveSnapshot } from "@/composables/useLiveSnapshot";
 import { buildShareUrl } from "@/core/shareLinks";
-import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
 
 const props = defineProps<{ open: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
-const editor = useEditorStore();
 const live = useLiveStore();
+const snapshot = useLiveSnapshot();
 const copied = ref(false);
 
 const joinUrl = computed(() => (live.code ? buildShareUrl(`v/${live.code}`) : ""));
@@ -29,18 +29,7 @@ const statusLabel = computed(() => {
 });
 
 async function start() {
-  await live.startHosting(() => ({
-    project: editor.project!,
-    pages: [...editor.pages],
-    currentPageId: editor.currentPageId!,
-    strokes: [...editor.strokes],
-    shapes: [...editor.shapes],
-    notebookMode: editor.notebookMode,
-    notebookLayout: editor.notebookLayout,
-    // In notebook mode editor.strokes/shapes already hold every sheet's page-local data.
-    allStrokes: editor.notebookMode !== "off" ? [...editor.strokes] : [],
-    allShapes: editor.notebookMode !== "off" ? [...editor.shapes] : [],
-  }));
+  await live.startHosting(snapshot);
 }
 
 function stop() {
