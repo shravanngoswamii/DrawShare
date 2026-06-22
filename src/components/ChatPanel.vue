@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, ref, watch } from "vue";
 import { fileToSyncSrc } from "@/core/imageSync";
 import { useLiveStore } from "@/stores/live";
+
+// Lazy-load the emoji picker (and its data) only when first opened.
+const EmojiPicker = defineAsyncComponent(() => import("@/components/EmojiPicker.vue"));
 
 // `fab` shows a built-in floating button (used by the viewer). When false, the
 // parent controls visibility via v-model:open and provides its own trigger
@@ -32,44 +35,10 @@ const inputEl = ref<HTMLInputElement | null>(null);
 const replyingTo = ref<{ id: string; fromName: string; text: string } | null>(null);
 const editingId = ref<string | null>(null);
 
-// Emoji picker.
+// Emoji picker (emoji-mart). Stays open so several can be added in a row.
 const showEmoji = ref(false);
-const EMOJIS = [
-  "😀",
-  "😂",
-  "😍",
-  "😎",
-  "🤔",
-  "😅",
-  "😉",
-  "🙌",
-  "👍",
-  "👎",
-  "🙏",
-  "👏",
-  "🔥",
-  "🎉",
-  "❤️",
-  "✅",
-  "❌",
-  "⭐",
-  "💡",
-  "✏️",
-  "🖊️",
-  "🎨",
-  "📌",
-  "👀",
-  "😮",
-  "😢",
-  "😡",
-  "🤝",
-  "💯",
-  "🚀",
-];
 function insertEmoji(e: string) {
   draft.value += e;
-  showEmoji.value = false;
-  inputEl.value?.focus();
 }
 
 // Sound on incoming messages while the panel is closed.
@@ -388,9 +357,7 @@ watch(open, (isOpen) => {
       </div>
 
       <!-- Emoji picker -->
-      <div v-if="showEmoji" class="chat-emoji" role="listbox" aria-label="Emoji">
-        <button v-for="e in EMOJIS" :key="e" class="emoji" @click="insertEmoji(e)" :aria-label="`Insert ${e}`">{{ e }}</button>
-      </div>
+      <EmojiPicker v-if="showEmoji" class="chat-emoji" @select="insertEmoji" />
 
       <form class="chat-composer" @submit.prevent="send">
         <button
@@ -775,25 +742,7 @@ watch(open, (isOpen) => {
 }
 
 .chat-emoji {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  padding: var(--space-2);
   border-top: 1px solid var(--color-border);
-  max-height: 132px;
-  overflow-y: auto;
-}
-.emoji {
-  width: 30px;
-  height: 30px;
-  font-size: 18px;
-  line-height: 1;
-  border-radius: var(--radius-sm, 4px);
-  background: transparent;
-  border: none;
-}
-.emoji:hover {
-  background: var(--color-surface-2);
 }
 .chat-emoji-btn.active {
   background: var(--color-surface-2);
