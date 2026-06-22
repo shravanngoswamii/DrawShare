@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import { HOST_LEFT_REASON, relayConfigured, WebSocketSession } from "@/adapters/sync/websocket";
+import { newId } from "@/core/ids";
 import { makeViewerName } from "@/core/names";
 import type { SyncMessage, ViewerIdentity } from "@/core/sync";
 import { makeSessionCode } from "@/core/sync";
@@ -11,6 +12,20 @@ interface RosterViewer {
   name: string;
   canEdit: boolean;
 }
+
+// A chat message as held in the store (`mine` marks the local participant's own).
+export interface ChatMessage {
+  id: string;
+  fromId: string;
+  fromName: string;
+  text: string;
+  ts: number;
+  mine: boolean;
+}
+
+const HOST_CHAT_ID = "host";
+const MAX_CHAT = 500;
+const MAX_CHAT_LEN = 2000;
 
 type Mode = "off" | "host" | "viewer";
 type Status =
@@ -55,6 +70,9 @@ interface LiveState {
   pendingViewerStrokes: Stroke[]; // host: viewer-committed strokes awaiting persist
   viewerId: string; // viewer: my stable id this tab
   viewerName: string; // viewer: my display name
+  // Chat (host + viewers).
+  chat: ChatMessage[];
+  unreadChat: number;
 }
 
 // Point-in-time host snapshot sent to a joining viewer.
@@ -202,6 +220,8 @@ export const useLiveStore = defineStore("live", {
     pendingViewerStrokes: [],
     viewerId: "",
     viewerName: "",
+    chat: [],
+    unreadChat: 0,
   }),
   getters: {
     viewerCurrentPage(state): Page | undefined {
@@ -290,6 +310,8 @@ export const useLiveStore = defineStore("live", {
             // from viewers that aren't currently granted.
             if (msg.t === "viewer-stroke-commit" && grantedVids.has(msg.vid)) {
               this.pendingViewerStrokes = [...this.pendingViewerStrokes, msg.stroke];
+            } else if (msg.t === "chat") {
+              this.appendChat(msg);
             }
           },
           onError: (err) => {
@@ -361,6 +383,42 @@ export const useLiveStore = defineStore("live", {
       return pending;
     },
 
+    // ── Chat ──
+    sendChat(text: string) {
+      const trimmed = text.trim().slice(0, MAX_CHAT_LEN);
+      if (!trimmed || this.mode === "off") return;
+      const msg: Extract<SyncMessage, { t: "chat" }> = {
+        t: "chat",
+        id: newId(),
+        fromId: this.mode === "host" ? HOST_CHAT_ID : this.viewerId,
+        fromName: this.mode === "host" ? "Host" : this.viewerName || "Guest",
+        text: trimmed,
+        ts: Date.now(),
+      };
+      this.appendChat(msg); // optimistic; the relay excludes the sender
+      session?.sendAll(msg);
+    },
+
+    appendChat(msg: Extract<SyncMessage, { t: "chat" }>) {
+      if (this.chat.some((m) => m.id === msg.id)) return;
+      const myId = this.mode === "host" ? HOST_CHAT_ID : this.viewerId;
+      const mine = msg.fromId === myId;
+      const entry: ChatMessage = {
+        id: msg.id,
+        fromId: msg.fromId,
+        fromName: msg.fromName,
+        text: msg.text,
+        ts: msg.ts,
+        mine,
+      };
+      this.chat = [...this.chat, entry].slice(-MAX_CHAT);
+      if (!mine) this.unreadChat += 1;
+    },
+
+    markChatRead() {
+      this.unreadChat = 0;
+    },
+
     stop() {
       // Tell viewers the session is over so they end cleanly rather than waiting
       // for the host to return (which a plain disconnect can't distinguish).
@@ -408,6 +466,8 @@ export const useLiveStore = defineStore("live", {
       this.pendingViewerStrokes = [];
       this.viewerId = "";
       this.viewerName = "";
+      this.chat = [];
+      this.unreadChat = 0;
     },
 
     setHostViewport(width: number, height: number) {
@@ -742,6 +802,10 @@ export const useLiveStore = defineStore("live", {
         }
         case "theme": {
           this.viewerHostTheme = msg.themeId;
+          break;
+        }
+        case "chat": {
+          this.appendChat(msg);
           break;
         }
         case "grant-edit": {

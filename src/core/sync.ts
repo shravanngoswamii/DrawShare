@@ -96,6 +96,9 @@ export type SyncMessage =
   // check the grant and attribute them.
   | { t: "grant-edit" }
   | { t: "revoke-edit" }
+  // Chat: any participant -> everyone else (relay-broadcast). `fromId`/`fromName`
+  // are self-reported (no accounts); text is rendered as plain text.
+  | { t: "chat"; id: string; fromId: string; fromName: string; text: string; ts: number }
   | { t: "viewer-stroke-begin"; vid: string; stroke: Stroke }
   | {
       t: "viewer-stroke-points";
@@ -135,6 +138,8 @@ export interface SessionAdapter {
   send(msg: SyncMessage): void;
   // Send a message to one viewer only (host -> viewer), by viewer id.
   sendTo(viewerId: string, msg: SyncMessage): void;
+  // Send a message to every other participant (host + all viewers). Used for chat.
+  sendAll(msg: SyncMessage): void;
   close(): void;
   isOpen(): boolean;
 }

@@ -5,6 +5,7 @@ import { installPointerProbe } from "@/adapters/input/pointerDebug";
 import { storage } from "@/adapters/storage/indexedDB";
 // biome-ignore lint/style/useImportType: rendered in the template — needs a value import, not `import type` (would break runtime component resolution).
 import CanvasStage from "@/components/CanvasStage.vue";
+import ChatPanel from "@/components/ChatPanel.vue";
 import DebugConsole from "@/components/DebugConsole.vue";
 import HelpPanel from "@/components/HelpPanel.vue";
 import PagesPanel from "@/components/PagesPanel.vue";
@@ -63,6 +64,7 @@ const toolbarCollapsed = ref(false);
 const pagesCollapsed = ref(false);
 const shareOpen = ref(false);
 const helpOpen = ref(false);
+const chatOpen = ref(false);
 
 // The mini-dock's expand button means different things by viewport: on desktop
 // it un-collapses the docked panel in place; on mobile there's no docked panel,
@@ -185,7 +187,7 @@ onBeforeUnmount(() => removeProbe?.());
         <CanvasStage v-if="editor.currentPage" ref="canvasStage" :page="editor.currentPage" />
         <div v-else class="loading muted" aria-live="polite">Loading.</div>
       </main>
-      <PagesPanel :open="panelOpen" :collapsed="pagesCollapsed" @close="panelOpen = false" @toggle="onPanelToggle" @share="shareOpen = true" />
+      <PagesPanel :open="panelOpen" :collapsed="pagesCollapsed" @close="panelOpen = false" @toggle="onPanelToggle" @share="shareOpen = true" @chat="chatOpen = !chatOpen" />
       <!-- Back to projects (top-left) -->
       <button class="back-fab" :class="{ quiet: editor.isDrawing }" @click="router.push({ name: 'projects' })" title="Back to projects" aria-label="Back to projects">
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -226,6 +228,7 @@ onBeforeUnmount(() => removeProbe?.());
   </div>
   <HelpPanel :open="helpOpen" @close="helpOpen = false" />
   <ShareSessionModal :open="shareOpen" @close="shareOpen = false" />
+  <ChatPanel v-if="live.isHosting" :fab="false" v-model:open="chatOpen" />
   <DebugConsole v-if="devMode" />
 </template>
 

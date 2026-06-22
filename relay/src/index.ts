@@ -136,6 +136,19 @@ export class LiveRoom {
   }
 
   webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void {
+    // A message addressed to everyone (`{"__all":...}`, e.g. chat) goes to every
+    // other socket, regardless of who sent it.
+    if (typeof message === "string" && message.startsWith('{"__all":')) {
+      for (const target of this.state.getWebSockets()) {
+        if (target === ws) continue;
+        try {
+          target.send(message);
+        } catch {
+          /* socket closing; skip */
+        }
+      }
+      return;
+    }
     const isHost = this.state.getTags(ws).includes("host");
     if (isHost) {
       // A host message addressed to one viewer (`{"__to":"<id>",...}`) goes only
@@ -143,7 +156,7 @@ export class LiveRoom {
       const target = typeof message === "string" ? targetedRecipient(message) : null;
       this.forward(target ? `v:${target}` : "viewer", message);
     } else {
-      // Anything a viewer sends goes to the host(s).
+      // Anything else a viewer sends goes to the host(s).
       this.forward("host", message);
     }
   }

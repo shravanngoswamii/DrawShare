@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import ChatPanel from "@/components/ChatPanel.vue";
 import ThemeMenu from "@/components/ThemeMenu.vue";
 import ViewerStage from "@/components/ViewerStage.vue";
 import { useTheme } from "@/composables/useTheme";
@@ -223,6 +224,8 @@ async function toggleFullscreen() {
         Exit fullscreen
       </button>
     </main>
+
+    <ChatPanel v-if="live.status === 'connected' || live.chat.length > 0" />
   </div>
 </template>
 

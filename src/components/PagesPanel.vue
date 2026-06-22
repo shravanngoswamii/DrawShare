@@ -17,7 +17,7 @@ import { useLiveStore } from "@/stores/live";
 import { useProjectsStore } from "@/stores/projects";
 
 const props = defineProps<{ open?: boolean; collapsed?: boolean }>();
-const emit = defineEmits<{ close: []; toggle: []; share: [] }>();
+const emit = defineEmits<{ close: []; toggle: []; share: []; chat: [] }>();
 
 const editor = useEditorStore();
 const live = useLiveStore();
@@ -635,6 +635,15 @@ function removeSnapshot() {
             </ul>
           </div>
 
+          <!-- Chat (host) -->
+          <button v-if="live.isHosting" class="share-btn chat-btn" @click="emit('chat')" title="Open session chat" aria-label="Open session chat">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            <span class="share-label">Chat</span>
+            <span v-if="live.unreadChat > 0" class="chat-unread">{{ live.unreadChat > 99 ? '99+' : live.unreadChat }}</span>
+          </button>
+
           <!-- Export / clear -->
           <div class="page-tools">
             <button class="tool-btn" @click="exportCurrentPage" title="Export page as PNG" aria-label="Export page as PNG">
@@ -1084,6 +1093,25 @@ function removeSnapshot() {
 
 .collab-toggle.on .knob {
   background: var(--color-accent);
+}
+
+.chat-btn {
+  position: relative;
+  margin-top: var(--space-2);
+}
+
+.chat-unread {
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--color-danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
 }
 
 /* ── Sections ── */

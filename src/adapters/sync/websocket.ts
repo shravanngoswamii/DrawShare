@@ -86,6 +86,14 @@ export class WebSocketSession implements SessionAdapter {
     ws.send(JSON.stringify({ __to: viewerId, ...msg }));
   }
 
+  // Anyone -> everyone else (relay fans it out to all other sockets). `__all`
+  // must be the first key for the relay's cheap prefix check.
+  sendAll(msg: SyncMessage): void {
+    const ws = this.ws;
+    if (ws?.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ __all: 1, ...msg }));
+  }
+
   close(): void {
     this.closed = true;
     this.pending = [];
