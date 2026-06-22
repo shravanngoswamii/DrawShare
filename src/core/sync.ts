@@ -1,5 +1,6 @@
 import type {
   ID,
+  ImageItem,
   Layer,
   NotebookLayout,
   NotebookMode,
@@ -115,7 +116,11 @@ export type SyncMessage =
   | { t: "viewer-shape-commit"; vid: string; shape: Shape }
   | { t: "viewer-text-commit"; vid: string; text: TextItem }
   | { t: "viewer-erase-stroke"; vid: string; strokeId: string }
-  | { t: "viewer-erase-shape"; vid: string; shapeId: string };
+  | { t: "viewer-erase-shape"; vid: string; shapeId: string }
+  // Images. `src` is downscaled to fit one relay frame (see core/imageSync).
+  // host -> viewers, and a permitted viewer -> host (which persists + rebroadcasts).
+  | { t: "image-add"; image: ImageItem }
+  | { t: "viewer-image-add"; vid: string; image: ImageItem };
 
 export interface SessionHostHandlers {
   onViewerJoin(viewerId: string, name: string): void;

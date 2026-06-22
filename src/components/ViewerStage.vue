@@ -4,6 +4,7 @@ import { Canvas2DRenderer } from "@/adapters/render/canvas2d";
 import { drawStack, resolveSheetColors, type SheetColors } from "@/composables/useStackRenderer";
 import { useTheme } from "@/composables/useTheme";
 import { newId } from "@/core/ids";
+import { splitImageLayers } from "@/core/images";
 import { adaptInk } from "@/core/ink";
 import { PAGE_H, PAGE_W, sheetWorldPos } from "@/core/layout";
 import type { Page, Shape, ShapeType, Stroke, StrokePoint, Tool } from "@/core/types";
@@ -131,8 +132,7 @@ function render() {
         live.viewerPages,
         live.viewerAllStrokes,
         live.viewerAllShapes,
-        // Images are not broadcast to viewers yet (large data URLs, no chunking).
-        [],
+        live.viewerImages,
         live.viewerNotebookLayout,
         sheetColors,
         {
@@ -140,13 +140,17 @@ function render() {
         },
       );
     } else {
+      const pageImages = live.viewerImages.filter((i) => i.pageId === props.page.id);
+      const { behind, front } = splitImageLayers(pageImages);
       baseRenderer.beginFrame();
+      for (const img of behind) baseRenderer.drawImageItem(img);
       for (const s of live.viewerStrokes) {
         if (s.pageId === props.page.id) baseRenderer.drawStroke(s);
       }
       for (const sh of live.viewerShapes) {
         if (sh.pageId === props.page.id) baseRenderer.drawShape(sh);
       }
+      for (const img of front) baseRenderer.drawImageItem(img);
       for (const t of props.page.texts ?? []) baseRenderer.drawText(t);
       baseRenderer.endFrame();
     }
@@ -218,6 +222,17 @@ watch(
   () => live.viewerLive,
   () => schedule(),
   { deep: true },
+);
+
+// Decode incoming images (by id), then repaint the base layer once ready.
+watch(
+  () => live.viewerImages.map((i) => i.id).join(","),
+  async () => {
+    await Promise.all(live.viewerImages.map((i) => baseRenderer.loadImage(i)));
+    dirtyBase = true;
+    schedule();
+  },
+  { immediate: true },
 );
 
 // ── Viewer drawing (only while the host has granted permission) ──

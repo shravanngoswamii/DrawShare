@@ -1,10 +1,19 @@
 import { defineStore } from "pinia";
 import { HOST_LEFT_REASON, relayConfigured, WebSocketSession } from "@/adapters/sync/websocket";
 import { newId } from "@/core/ids";
+import { downscaleForSync } from "@/core/imageSync";
 import { makeViewerName } from "@/core/names";
 import type { SyncMessage, ViewerIdentity } from "@/core/sync";
 import { makeSessionCode } from "@/core/sync";
-import type { NotebookLayout, NotebookMode, Page, Project, Shape, Stroke } from "@/core/types";
+import type {
+  ImageItem,
+  NotebookLayout,
+  NotebookMode,
+  Page,
+  Project,
+  Shape,
+  Stroke,
+} from "@/core/types";
 
 // A connected viewer as the host sees them.
 interface RosterViewer {
@@ -61,6 +70,7 @@ interface LiveState {
   viewerNotebookLayout: NotebookLayout;
   viewerAllStrokes: Stroke[];
   viewerAllShapes: Shape[];
+  viewerImages: ImageItem[];
   // Theme id the host is broadcasting; the viewer mirrors it unless overridden.
   viewerHostTheme: string;
   // Collaborative editing.
@@ -86,6 +96,7 @@ type HostSnapshot = {
   notebookLayout: NotebookLayout;
   allStrokes: Stroke[];
   allShapes: Shape[];
+  images: ImageItem[];
   themeId: string;
 };
 
@@ -213,6 +224,7 @@ export const useLiveStore = defineStore("live", {
     viewerNotebookLayout: "vertical",
     viewerAllStrokes: [],
     viewerAllShapes: [],
+    viewerImages: [],
     viewerHostTheme: "",
     viewers: [],
     viewerCanEdit: false,
@@ -294,6 +306,9 @@ export const useLiveStore = defineStore("live", {
               sendStrokesChunked(snap.allStrokes);
               sendShapesChunked(snap.allShapes);
             }
+            // Images aren't in the hello snapshot (they need downscaling); send
+            // them to just this viewer.
+            void this.sendImagesTo(id, snap.images);
             // Restore a previously granted viewer's permission (e.g. after the
             // host reloaded, or the viewer reconnected).
             if (canEdit) session?.sendTo(id, { t: "grant-edit" });
@@ -317,7 +332,8 @@ export const useLiveStore = defineStore("live", {
               msg.t === "viewer-shape-commit" ||
               msg.t === "viewer-text-commit" ||
               msg.t === "viewer-erase-stroke" ||
-              msg.t === "viewer-erase-shape";
+              msg.t === "viewer-erase-shape" ||
+              msg.t === "viewer-image-add";
             if (isViewerEdit && grantedVids.has((msg as { vid: string }).vid)) {
               this.pendingViewerEdits = [...this.pendingViewerEdits, msg];
             }
@@ -354,6 +370,24 @@ export const useLiveStore = defineStore("live", {
 
     broadcastTheme(themeId: string) {
       this.broadcast({ t: "theme", themeId });
+    },
+
+    // Host: send a (downscaled) image to all viewers. Called by the editor when
+    // an image is committed while hosting.
+    async broadcastImage(image: ImageItem) {
+      if (this.mode !== "host" || this.viewerCount === 0) return;
+      const src = await downscaleForSync(image.src).catch(() => image.src);
+      if (this.mode !== "host") return;
+      session?.send({ t: "image-add", image: { ...image, src } });
+    },
+
+    // Host: send the board's existing images to one viewer (e.g. on join).
+    async sendImagesTo(viewerId: string, images: ImageItem[]) {
+      for (const image of images) {
+        const src = await downscaleForSync(image.src).catch(() => image.src);
+        if (this.mode !== "host") return;
+        session?.sendTo(viewerId, { t: "image-add", image: { ...image, src } });
+      }
     },
 
     // ── Collaborative editing ──
@@ -467,6 +501,7 @@ export const useLiveStore = defineStore("live", {
       this.viewerNotebookLayout = "vertical";
       this.viewerAllStrokes = [];
       this.viewerAllShapes = [];
+      this.viewerImages = [];
       this.viewerHostTheme = "";
       this.viewers = [];
       this.viewerCanEdit = false;
@@ -812,6 +847,11 @@ export const useLiveStore = defineStore("live", {
           this.viewerHostTheme = msg.themeId;
           break;
         }
+        case "image-add": {
+          if (this.viewerImages.some((i) => i.id === msg.image.id)) break;
+          this.viewerImages = [...this.viewerImages, msg.image];
+          break;
+        }
         case "chat": {
           this.appendChat(msg);
           break;
@@ -835,6 +875,7 @@ export const useLiveStore = defineStore("live", {
         case "viewer-text-commit":
         case "viewer-erase-stroke":
         case "viewer-erase-shape":
+        case "viewer-image-add":
         case "viewer-ready":
         case "session-ended":
           break;

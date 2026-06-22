@@ -144,6 +144,9 @@ watch(
         case "viewer-erase-shape":
           void editor.deleteShape(edit.shapeId);
           break;
+        case "viewer-image-add":
+          void editor.commitImage(edit.image);
+          break;
       }
     }
   },

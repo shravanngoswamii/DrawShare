@@ -762,6 +762,7 @@ export const useEditorStore = defineStore("editor", {
         this.redoStack = [];
         await storage.putImage(image);
         this._record({ op: "image-set", image });
+        void useLiveStore().broadcastImage(image);
         if (this.project) await useProjectsStore().touch(this.project.id);
       } finally {
         this.saving--;

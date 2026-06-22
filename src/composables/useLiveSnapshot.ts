@@ -19,6 +19,7 @@ export function useLiveSnapshot() {
     // In notebook mode editor.strokes/shapes already hold every sheet's page-local data.
     allStrokes: editor.notebookMode !== "off" ? [...editor.strokes] : [],
     allShapes: editor.notebookMode !== "off" ? [...editor.shapes] : [],
+    images: [...editor.images],
     themeId: activeThemeId.value,
   });
 }

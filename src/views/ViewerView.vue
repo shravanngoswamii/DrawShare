@@ -5,6 +5,7 @@ import ChatPanel from "@/components/ChatPanel.vue";
 import ThemeMenu from "@/components/ThemeMenu.vue";
 import ViewerStage from "@/components/ViewerStage.vue";
 import { useTheme } from "@/composables/useTheme";
+import { imageItemFromFile } from "@/core/imageSync";
 import type { Tool } from "@/core/types";
 import { useLiveStore } from "@/stores/live";
 
@@ -25,6 +26,30 @@ const drawSize = ref(4);
 const drawTool = ref<Tool>("pen");
 const usesColor = computed(() => drawTool.value !== "eraser");
 const canDraw = computed(() => live.viewerCanEdit && !live.viewerIsNotebook);
+
+const imageInput = ref<HTMLInputElement | null>(null);
+function pickImage() {
+  imageInput.value?.click();
+}
+async function onImageFile(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file || !canDraw.value) return;
+  const pageId = live.viewerCurrentPageId ?? live.viewerPages[0]?.id;
+  if (!pageId) return;
+  // Place it at the centre of the host's current view (world coords).
+  const hc = live.viewerHostCamera;
+  const hv = live.viewerHostViewport;
+  const center = {
+    x: hc.x + hv.width / 2 / hc.zoom,
+    y: hc.y + hv.height / 2 / hc.zoom,
+  };
+  const image = await imageItemFromFile(file, pageId, center).catch(() => null);
+  if (!image) return;
+  live.viewerImages = [...live.viewerImages, image]; // optimistic; host echo dedupes by id
+  live.sendViewerEdit({ t: "viewer-image-add", vid: live.viewerId, image });
+}
 
 const statusLabel = computed(() => {
   switch (live.status) {
@@ -222,7 +247,11 @@ async function toggleFullscreen() {
           <button class="tool" :class="{ active: drawTool === 'eraser' }" @click="drawTool = 'eraser'" title="Eraser" aria-label="Eraser">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4L13 5a2 2 0 0 1 2.8 0L21 10a1 1 0 0 1 0 1.4L13 19"/><path d="M22 21H7"/></svg>
           </button>
+          <button class="tool" @click="pickImage" title="Add image" aria-label="Add image">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>
+          </button>
         </div>
+        <input ref="imageInput" type="file" accept="image/*" class="hidden-file" @change="onImageFile" aria-hidden="true" tabindex="-1" />
         <div v-if="usesColor" class="swatches">
           <button
             v-for="c in PEN_COLORS"
@@ -449,6 +478,10 @@ async function toggleFullscreen() {
   width: 80px;
   flex-shrink: 0;
   accent-color: var(--color-accent);
+}
+
+.hidden-file {
+  display: none;
 }
 
 .connecting-spinner {
