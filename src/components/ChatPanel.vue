@@ -26,6 +26,129 @@ const open = computed({
 const full = ref(false);
 const draft = ref("");
 const listEl = ref<HTMLDivElement | null>(null);
+const inputEl = ref<HTMLInputElement | null>(null);
+
+// Reply / edit composer state.
+const replyingTo = ref<{ id: string; fromName: string; text: string } | null>(null);
+const editingId = ref<string | null>(null);
+
+// Emoji picker.
+const showEmoji = ref(false);
+const EMOJIS = [
+  "😀",
+  "😂",
+  "😍",
+  "😎",
+  "🤔",
+  "😅",
+  "😉",
+  "🙌",
+  "👍",
+  "👎",
+  "🙏",
+  "👏",
+  "🔥",
+  "🎉",
+  "❤️",
+  "✅",
+  "❌",
+  "⭐",
+  "💡",
+  "✏️",
+  "🖊️",
+  "🎨",
+  "📌",
+  "👀",
+  "😮",
+  "😢",
+  "😡",
+  "🤝",
+  "💯",
+  "🚀",
+];
+function insertEmoji(e: string) {
+  draft.value += e;
+  showEmoji.value = false;
+  inputEl.value?.focus();
+}
+
+// Sound on incoming messages while the panel is closed.
+const muted = ref(false);
+try {
+  muted.value = localStorage.getItem("drawshare:chat-muted") === "1";
+} catch {
+  /* ignore */
+}
+function toggleMute() {
+  muted.value = !muted.value;
+  try {
+    localStorage.setItem("drawshare:chat-muted", muted.value ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+}
+let audioCtx: AudioContext | undefined;
+function playBeep() {
+  try {
+    const Ctx =
+      window.AudioContext ||
+      (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctx) return;
+    audioCtx = audioCtx || new Ctx();
+    void audioCtx.resume?.();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.type = "sine";
+    osc.frequency.value = 680;
+    const t = audioCtx.currentTime;
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.14, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+    osc.start(t);
+    osc.stop(t + 0.26);
+  } catch {
+    /* sound is best-effort */
+  }
+}
+
+// "Seen by …" under the most recent message you sent.
+const seenInfo = computed(() => {
+  let lastMine: (typeof live.chat)[number] | undefined;
+  for (let i = live.chat.length - 1; i >= 0; i--) {
+    if (live.chat[i].mine) {
+      lastMine = live.chat[i];
+      break;
+    }
+  }
+  if (!lastMine) return null;
+  const names = Object.values(live.chatSeen)
+    .filter((s) => s.ts >= (lastMine as { ts: number }).ts)
+    .map((s) => s.name);
+  return names.length ? { id: lastMine.id, names } : null;
+});
+
+function startReply(m: { id: string; fromName: string; text: string; image?: string }) {
+  replyingTo.value = {
+    id: m.id,
+    fromName: m.fromName,
+    text: m.text || (m.image ? "📷 image" : ""),
+  };
+  editingId.value = null;
+  inputEl.value?.focus();
+}
+function startEdit(m: { id: string; text: string }) {
+  editingId.value = m.id;
+  replyingTo.value = null;
+  draft.value = m.text;
+  nextTick(() => inputEl.value?.focus());
+}
+function cancelCompose() {
+  replyingTo.value = null;
+  editingId.value = null;
+  draft.value = "";
+}
 
 const editingName = ref(false);
 const nameDraft = ref("");
@@ -59,8 +182,15 @@ function toggle() {
 function send() {
   const text = draft.value;
   if (!text.trim()) return;
-  live.sendChat(text);
+  if (editingId.value) {
+    live.editChat(editingId.value, text);
+    editingId.value = null;
+    draft.value = "";
+    return;
+  }
+  live.sendChat(text, undefined, replyingTo.value ?? undefined);
   draft.value = "";
+  replyingTo.value = null;
   scrollToBottom();
 }
 
@@ -75,8 +205,9 @@ async function onImageFile(e: Event) {
   if (!file) return;
   const src = await fileToSyncSrc(file).catch(() => null);
   if (!src) return;
-  live.sendChat(draft.value, src); // any typed text becomes the caption
+  live.sendChat(draft.value, src, replyingTo.value ?? undefined); // typed text = caption
   draft.value = "";
+  replyingTo.value = null;
   scrollToBottom();
 }
 
@@ -84,14 +215,18 @@ function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-// New messages: keep the badge accurate and auto-scroll while open.
+// New messages: keep the badge accurate and auto-scroll while open; otherwise
+// chime (unless muted) for an incoming message.
 watch(
   () => live.chat.length,
-  () => {
+  (len, prev) => {
     if (open.value) {
       live.markChatRead();
       scrollToBottom();
+      return;
     }
+    const last = live.chat[live.chat.length - 1];
+    if (len > prev && last && !last.mine && !muted.value) playBeep();
   },
 );
 
@@ -124,6 +259,21 @@ watch(open, (isOpen) => {
       <header class="chat-head">
         <span class="chat-title">Chat</span>
         <div class="chat-head-actions">
+          <button
+            class="chat-icon-btn"
+            @click="toggleMute"
+            :aria-label="muted ? 'Unmute chat sound' : 'Mute chat sound'"
+            :title="muted ? 'Unmute sound' : 'Mute sound'"
+          >
+            <svg v-if="!muted" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a9 9 0 0 1 0 14"/>
+            </svg>
+            <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M11 5 6 9H2v6h4l5 4z"/><path d="m23 9-6 6"/><path d="m17 9 6 6"/>
+            </svg>
+          </button>
           <button
             class="chat-icon-btn"
             @click="full = !full"
@@ -170,20 +320,70 @@ watch(open, (isOpen) => {
 
       <div class="chat-msgs" ref="listEl">
         <div v-if="!live.chat.length" class="chat-empty">No messages yet. Say hello!</div>
-        <div v-for="m in live.chat" :key="m.id" class="chat-msg" :class="{ mine: m.mine }">
-          <div v-if="!m.mine" class="chat-who">{{ m.fromName }}</div>
-          <div class="chat-row">
-            <div class="chat-bubble" :class="{ 'has-image': m.image }">
-              <img v-if="m.image" :src="m.image" class="chat-img" alt="shared image" loading="lazy" />
-              <span v-if="m.text" class="chat-text">{{ m.text }}</span>
+        <template v-for="m in live.chat" :key="m.id">
+          <div class="chat-msg" :class="{ mine: m.mine }">
+            <div v-if="!m.mine" class="chat-who">{{ m.fromName }}</div>
+            <div class="chat-row">
+              <div class="chat-bubble" :class="{ 'has-image': m.image }">
+                <div v-if="m.replyTo" class="chat-quote">
+                  <span class="chat-quote-name">{{ m.replyTo.fromName }}</span>
+                  <span class="chat-quote-text">{{ m.replyTo.text }}</span>
+                </div>
+                <img v-if="m.image" :src="m.image" class="chat-img" alt="shared image" loading="lazy" />
+                <span v-if="m.text" class="chat-text">{{ m.text }}</span>
+                <span v-if="m.editedTs" class="chat-edited">edited</span>
+              </div>
+              <div class="chat-actions">
+                <button class="chat-act" @click="startReply(m)" title="Reply" aria-label="Reply">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17 4 12l5-5"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
+                </button>
+                <button v-if="m.mine && !m.image" class="chat-act" @click="startEdit(m)" title="Edit" aria-label="Edit">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
+                </button>
+              </div>
+              <span class="chat-time">{{ formatTime(m.ts) }}</span>
             </div>
-            <span class="chat-time">{{ formatTime(m.ts) }}</span>
           </div>
+          <div v-if="seenInfo && seenInfo.id === m.id" class="chat-seen">
+            Seen by {{ seenInfo.names.join(", ") }}
+          </div>
+        </template>
+      </div>
+
+      <!-- Reply / edit context -->
+      <div v-if="replyingTo || editingId" class="chat-compose-ctx">
+        <div class="ctx-text">
+          <template v-if="editingId">Editing message</template>
+          <template v-else-if="replyingTo">
+            Replying to <strong>{{ replyingTo.fromName }}</strong>: {{ replyingTo.text }}
+          </template>
         </div>
+        <button class="chat-icon-btn ctx-cancel" @click="cancelCompose" aria-label="Cancel" title="Cancel">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <!-- Emoji picker -->
+      <div v-if="showEmoji" class="chat-emoji" role="listbox" aria-label="Emoji">
+        <button v-for="e in EMOJIS" :key="e" class="emoji" @click="insertEmoji(e)" :aria-label="`Insert ${e}`">{{ e }}</button>
       </div>
 
       <form class="chat-composer" @submit.prevent="send">
         <button
+          type="button"
+          class="chat-icon-btn chat-emoji-btn"
+          :class="{ active: showEmoji }"
+          @click="showEmoji = !showEmoji"
+          aria-label="Emoji"
+          title="Emoji"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/>
+          </svg>
+        </button>
+        <button
+          v-if="!editingId"
           type="button"
           class="chat-icon-btn chat-attach"
           @click="pickImage"
@@ -197,16 +397,17 @@ watch(open, (isOpen) => {
           </svg>
         </button>
         <input
+          ref="inputEl"
           v-model="draft"
           class="input chat-input"
           type="text"
           :maxlength="2000"
-          placeholder="Type a message"
+          :placeholder="editingId ? 'Edit message' : 'Type a message'"
           aria-label="Message"
           autocomplete="off"
         />
         <button class="btn btn-primary chat-send" type="submit" :disabled="!draft.trim()">
-          Send
+          {{ editingId ? "Save" : "Send" }}
         </button>
         <input
           ref="fileInput"
@@ -446,6 +647,111 @@ watch(open, (isOpen) => {
   font-size: 10px;
   color: var(--color-text-subtle);
   flex-shrink: 0;
+}
+
+.chat-quote {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px var(--space-2);
+  margin-bottom: 4px;
+  border-left: 3px solid var(--color-accent);
+  background: var(--color-surface-3, rgba(127, 127, 127, 0.1));
+  border-radius: 4px;
+  font-size: var(--text-xs);
+  opacity: 0.9;
+}
+.chat-msg.mine .chat-quote {
+  border-left-color: var(--color-accent-text);
+}
+.chat-quote-name {
+  font-weight: 600;
+}
+.chat-quote-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+.chat-edited {
+  font-size: 10px;
+  opacity: 0.6;
+  margin-left: var(--space-2);
+}
+
+.chat-actions {
+  display: none;
+  gap: 2px;
+  align-self: center;
+}
+.chat-row:hover .chat-actions {
+  display: flex;
+}
+.chat-act {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm, 4px);
+  color: var(--color-text-muted);
+  background: transparent;
+  border: none;
+}
+.chat-act:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+
+.chat-seen {
+  align-self: flex-end;
+  font-size: 10px;
+  color: var(--color-text-subtle);
+  padding: 0 var(--space-1) 2px;
+}
+
+.chat-compose-ctx {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+.ctx-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-emoji {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: var(--space-2);
+  border-top: 1px solid var(--color-border);
+  max-height: 132px;
+  overflow-y: auto;
+}
+.emoji {
+  width: 30px;
+  height: 30px;
+  font-size: 18px;
+  line-height: 1;
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  border: none;
+}
+.emoji:hover {
+  background: var(--color-surface-2);
+}
+.chat-emoji-btn.active {
+  background: var(--color-surface-2);
+  color: var(--color-accent);
 }
 
 .chat-composer {

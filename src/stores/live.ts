@@ -31,6 +31,8 @@ export interface ChatMessage {
   ts: number;
   mine: boolean;
   image?: string;
+  replyTo?: { id: string; fromName: string; text: string };
+  editedTs?: number;
 }
 
 const HOST_CHAT_ID = "host";
@@ -86,6 +88,8 @@ interface LiveState {
   // Chat (host + viewers).
   chat: ChatMessage[];
   unreadChat: number;
+  // Read receipts: participant id -> { name, latest message ts they've seen }.
+  chatSeen: Record<string, { name: string; ts: number }>;
 }
 
 // Point-in-time host snapshot sent to a joining viewer.
@@ -252,6 +256,7 @@ export const useLiveStore = defineStore("live", {
     hostName: "Host",
     chat: [],
     unreadChat: 0,
+    chatSeen: {},
   }),
   getters: {
     viewerCurrentPage(state): Page | undefined {
@@ -269,6 +274,10 @@ export const useLiveStore = defineStore("live", {
     // The local participant's display name (host or viewer).
     myName(state): string {
       return state.mode === "host" ? state.hostName : state.viewerName;
+    },
+    // The local participant's chat id.
+    myChatId(state): string {
+      return state.mode === "host" ? HOST_CHAT_ID : state.viewerId;
     },
   },
   actions: {
@@ -368,6 +377,14 @@ export const useLiveStore = defineStore("live", {
             if (session !== activeSession) return;
             if (msg.t === "chat") {
               this.appendChat(msg);
+              return;
+            }
+            if (msg.t === "chat-edit") {
+              this.applyChatEdit(msg.id, msg.text, msg.editedTs);
+              return;
+            }
+            if (msg.t === "chat-seen") {
+              this.applyChatSeen(msg.who, msg.name, msg.ts);
               return;
             }
             // A viewer renamed itself — update the roster (any connected viewer).
@@ -516,20 +533,37 @@ export const useLiveStore = defineStore("live", {
     },
 
     // ── Chat ──
-    sendChat(text: string, image?: string) {
+    sendChat(
+      text: string,
+      image?: string,
+      replyTo?: { id: string; fromName: string; text: string },
+    ) {
       const trimmed = text.trim().slice(0, MAX_CHAT_LEN);
       if ((!trimmed && !image) || this.mode === "off") return;
       const msg: Extract<SyncMessage, { t: "chat" }> = {
         t: "chat",
         id: newId(),
-        fromId: this.mode === "host" ? HOST_CHAT_ID : this.viewerId,
+        fromId: this.myChatId,
         fromName: this.myName || (this.mode === "host" ? "Host" : "Guest"),
         text: trimmed,
         ts: Date.now(),
         ...(image ? { image } : {}),
+        ...(replyTo ? { replyTo } : {}),
       };
       this.appendChat(msg); // optimistic; the relay excludes the sender
       session?.sendAll(msg);
+    },
+
+    // Edit one of your own messages (broadcast the new text to everyone).
+    editChat(id: string, text: string) {
+      const trimmed = text.trim().slice(0, MAX_CHAT_LEN);
+      const m = this.chat.find((x) => x.id === id);
+      if (!m?.mine || !trimmed) return;
+      const editedTs = Date.now();
+      m.text = trimmed;
+      m.editedTs = editedTs;
+      this.persistChat();
+      session?.sendAll({ t: "chat-edit", id, text: trimmed, editedTs });
     },
 
     appendChat(msg: {
@@ -539,10 +573,11 @@ export const useLiveStore = defineStore("live", {
       text: string;
       ts: number;
       image?: string;
+      replyTo?: { id: string; fromName: string; text: string };
+      editedTs?: number;
     }) {
       if (this.chat.some((m) => m.id === msg.id)) return;
-      const myId = this.mode === "host" ? HOST_CHAT_ID : this.viewerId;
-      const mine = msg.fromId === myId;
+      const mine = msg.fromId === this.myChatId;
       const entry: ChatMessage = {
         id: msg.id,
         fromId: msg.fromId,
@@ -551,15 +586,33 @@ export const useLiveStore = defineStore("live", {
         ts: msg.ts,
         mine,
         ...(msg.image ? { image: msg.image } : {}),
+        ...(msg.replyTo ? { replyTo: msg.replyTo } : {}),
+        ...(msg.editedTs ? { editedTs: msg.editedTs } : {}),
       };
       this.chat = [...this.chat, entry].slice(-MAX_CHAT);
       if (!mine) this.unreadChat += 1;
       this.persistChat();
     },
 
+    applyChatEdit(id: string, text: string, editedTs: number) {
+      const m = this.chat.find((x) => x.id === id);
+      if (!m) return;
+      m.text = text;
+      m.editedTs = editedTs;
+      this.persistChat();
+    },
+
+    // A participant reported reading up to `ts`.
+    applyChatSeen(who: string, name: string, ts: number) {
+      if (who === this.myChatId) return;
+      const prev = this.chatSeen[who];
+      this.chatSeen = { ...this.chatSeen, [who]: { name, ts: Math.max(prev?.ts ?? 0, ts) } };
+    },
+
     clearChat() {
       this.chat = [];
       this.unreadChat = 0;
+      this.chatSeen = {};
       this.persistChat();
     },
 
@@ -572,13 +625,14 @@ export const useLiveStore = defineStore("live", {
         text: string;
         ts: number;
         image?: string;
+        replyTo?: { id: string; fromName: string; text: string };
+        editedTs?: number;
       }[],
     ) {
-      const myId = this.mode === "host" ? HOST_CHAT_ID : this.viewerId;
       const seen = new Set(this.chat.map((m) => m.id));
       const incoming = messages
         .filter((m) => !seen.has(m.id))
-        .map((m) => ({ ...m, mine: m.fromId === myId }));
+        .map((m) => ({ ...m, mine: m.fromId === this.myChatId }));
       if (incoming.length === 0) return;
       this.chat = [...incoming, ...this.chat].sort((a, b) => a.ts - b.ts).slice(-MAX_CHAT);
     },
@@ -594,6 +648,11 @@ export const useLiveStore = defineStore("live", {
 
     markChatRead() {
       this.unreadChat = 0;
+      // Tell others we've read up to the latest message (for "Seen" receipts).
+      const last = this.chat[this.chat.length - 1];
+      if (last && this.mode !== "off") {
+        session?.sendAll({ t: "chat-seen", who: this.myChatId, name: this.myName, ts: last.ts });
+      }
     },
 
     // Change the local participant's display name (host or viewer).
@@ -675,6 +734,7 @@ export const useLiveStore = defineStore("live", {
       this.viewerName = "";
       this.chat = [];
       this.unreadChat = 0;
+      this.chatSeen = {};
     },
 
     setHostViewport(width: number, height: number) {
@@ -1028,6 +1088,14 @@ export const useLiveStore = defineStore("live", {
         }
         case "chat-history": {
           this.mergeChatHistory(msg.messages);
+          break;
+        }
+        case "chat-edit": {
+          this.applyChatEdit(msg.id, msg.text, msg.editedTs);
+          break;
+        }
+        case "chat-seen": {
+          this.applyChatSeen(msg.who, msg.name, msg.ts);
           break;
         }
         case "grant-edit": {

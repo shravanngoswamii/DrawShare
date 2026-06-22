@@ -108,6 +108,9 @@ export type SyncMessage =
       text: string;
       ts: number;
       image?: string;
+      // A short snippet of the message this one replies to.
+      replyTo?: { id: string; fromName: string; text: string };
+      editedTs?: number;
     }
   // Chat backlog sent to a newly joined viewer so they see earlier messages.
   | {
@@ -119,8 +122,14 @@ export type SyncMessage =
         text: string;
         ts: number;
         image?: string;
+        replyTo?: { id: string; fromName: string; text: string };
+        editedTs?: number;
       }[];
     }
+  // An author edited one of their messages; everyone updates that message's text.
+  | { t: "chat-edit"; id: string; text: string; editedTs: number }
+  // A participant has read the chat up to `ts` (for "Seen" receipts).
+  | { t: "chat-seen"; who: string; name: string; ts: number }
   // A viewer changed its display name (viewer -> host, to update the roster).
   | { t: "viewer-rename"; vid: string; name: string }
   | { t: "viewer-stroke-begin"; vid: string; stroke: Stroke }
