@@ -12,3 +12,4 @@ dist-ssr
 coverage
 dev-dist
 .claude/
+.wrangler
