@@ -48,6 +48,19 @@ export async function downscaleForSync(src: string): Promise<string> {
   return out;
 }
 
+// Read a picked image file and return a downscaled data URL ready to relay
+// (used for chat image attachments). Returns null for non-images.
+export async function fileToSyncSrc(file: File): Promise<string | null> {
+  if (!file.type.startsWith("image/")) return null;
+  const rawSrc = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Could not read file"));
+    reader.readAsDataURL(file);
+  });
+  return downscaleForSync(rawSrc);
+}
+
 // Build an ImageItem (sync-ready, downscaled) from a picked file, centred at a
 // world point and scaled so its longest side is ~`targetWorld` world units.
 export async function imageItemFromFile(

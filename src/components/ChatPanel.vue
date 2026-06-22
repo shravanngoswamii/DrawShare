@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
+import { fileToSyncSrc } from "@/core/imageSync";
 import { useLiveStore } from "@/stores/live";
 
 // `fab` shows a built-in floating button (used by the viewer). When false, the
@@ -59,6 +60,22 @@ function send() {
   const text = draft.value;
   if (!text.trim()) return;
   live.sendChat(text);
+  draft.value = "";
+  scrollToBottom();
+}
+
+const fileInput = ref<HTMLInputElement | null>(null);
+function pickImage() {
+  fileInput.value?.click();
+}
+async function onImageFile(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  const src = await fileToSyncSrc(file).catch(() => null);
+  if (!src) return;
+  live.sendChat(draft.value, src); // any typed text becomes the caption
   draft.value = "";
   scrollToBottom();
 }
@@ -156,13 +173,29 @@ watch(open, (isOpen) => {
         <div v-for="m in live.chat" :key="m.id" class="chat-msg" :class="{ mine: m.mine }">
           <div v-if="!m.mine" class="chat-who">{{ m.fromName }}</div>
           <div class="chat-row">
-            <div class="chat-bubble">{{ m.text }}</div>
+            <div class="chat-bubble" :class="{ 'has-image': m.image }">
+              <img v-if="m.image" :src="m.image" class="chat-img" alt="shared image" loading="lazy" />
+              <span v-if="m.text" class="chat-text">{{ m.text }}</span>
+            </div>
             <span class="chat-time">{{ formatTime(m.ts) }}</span>
           </div>
         </div>
       </div>
 
       <form class="chat-composer" @submit.prevent="send">
+        <button
+          type="button"
+          class="chat-icon-btn chat-attach"
+          @click="pickImage"
+          aria-label="Attach image"
+          title="Attach image"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/>
+            <path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>
+          </svg>
+        </button>
         <input
           v-model="draft"
           class="input chat-input"
@@ -175,6 +208,15 @@ watch(open, (isOpen) => {
         <button class="btn btn-primary chat-send" type="submit" :disabled="!draft.trim()">
           Send
         </button>
+        <input
+          ref="fileInput"
+          type="file"
+          accept="image/*"
+          class="chat-file"
+          @change="onImageFile"
+          aria-hidden="true"
+          tabindex="-1"
+        />
       </form>
     </div>
   </div>
@@ -377,6 +419,23 @@ watch(open, (isOpen) => {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.chat-bubble.has-image {
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.chat-img {
+  display: block;
+  max-width: 220px;
+  max-height: 220px;
+  width: auto;
+  height: auto;
+  border-radius: var(--radius-md);
+}
+.chat-bubble.has-image .chat-text {
+  padding: 0 var(--space-2) 2px;
+}
 .chat-msg.mine .chat-bubble {
   background: var(--color-accent);
   border-color: var(--color-accent);
@@ -402,8 +461,16 @@ watch(open, (isOpen) => {
   min-width: 0;
 }
 
+.chat-attach {
+  flex-shrink: 0;
+}
+
 .chat-send {
   flex-shrink: 0;
+}
+
+.chat-file {
+  display: none;
 }
 
 @media (max-width: 767px) {

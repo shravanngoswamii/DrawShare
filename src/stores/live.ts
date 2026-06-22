@@ -30,6 +30,7 @@ export interface ChatMessage {
   text: string;
   ts: number;
   mine: boolean;
+  image?: string;
 }
 
 const HOST_CHAT_ID = "host";
@@ -350,6 +351,7 @@ export const useLiveStore = defineStore("live", {
                   fromName: m.fromName,
                   text: m.text,
                   ts: m.ts,
+                  ...(m.image ? { image: m.image } : {}),
                 })),
               });
             }
@@ -514,9 +516,9 @@ export const useLiveStore = defineStore("live", {
     },
 
     // ── Chat ──
-    sendChat(text: string) {
+    sendChat(text: string, image?: string) {
       const trimmed = text.trim().slice(0, MAX_CHAT_LEN);
-      if (!trimmed || this.mode === "off") return;
+      if ((!trimmed && !image) || this.mode === "off") return;
       const msg: Extract<SyncMessage, { t: "chat" }> = {
         t: "chat",
         id: newId(),
@@ -524,12 +526,20 @@ export const useLiveStore = defineStore("live", {
         fromName: this.myName || (this.mode === "host" ? "Host" : "Guest"),
         text: trimmed,
         ts: Date.now(),
+        ...(image ? { image } : {}),
       };
       this.appendChat(msg); // optimistic; the relay excludes the sender
       session?.sendAll(msg);
     },
 
-    appendChat(msg: { id: string; fromId: string; fromName: string; text: string; ts: number }) {
+    appendChat(msg: {
+      id: string;
+      fromId: string;
+      fromName: string;
+      text: string;
+      ts: number;
+      image?: string;
+    }) {
       if (this.chat.some((m) => m.id === msg.id)) return;
       const myId = this.mode === "host" ? HOST_CHAT_ID : this.viewerId;
       const mine = msg.fromId === myId;
@@ -540,15 +550,29 @@ export const useLiveStore = defineStore("live", {
         text: msg.text,
         ts: msg.ts,
         mine,
+        ...(msg.image ? { image: msg.image } : {}),
       };
       this.chat = [...this.chat, entry].slice(-MAX_CHAT);
       if (!mine) this.unreadChat += 1;
       this.persistChat();
     },
 
+    clearChat() {
+      this.chat = [];
+      this.unreadChat = 0;
+      this.persistChat();
+    },
+
     // Merge a chat backlog (received on join) without bumping the unread count.
     mergeChatHistory(
-      messages: { id: string; fromId: string; fromName: string; text: string; ts: number }[],
+      messages: {
+        id: string;
+        fromId: string;
+        fromName: string;
+        text: string;
+        ts: number;
+        image?: string;
+      }[],
     ) {
       const myId = this.mode === "host" ? HOST_CHAT_ID : this.viewerId;
       const seen = new Set(this.chat.map((m) => m.id));
@@ -717,6 +741,7 @@ export const useLiveStore = defineStore("live", {
               }
               this.disconnectReason = "The host ended the session.";
               this.status = "disconnected";
+              this.clearChat(); // chat is discarded when the host ends the session
               session?.close();
               session = undefined;
               return;
@@ -750,6 +775,7 @@ export const useLiveStore = defineStore("live", {
                 if (session !== activeSession || this.status === "connected") return;
                 this.status = "disconnected";
                 this.disconnectReason = "The host did not return.";
+                this.clearChat(); // host gone for good — discard the chat
                 session?.close();
                 session = undefined;
               }, HOST_AWAY_GRACE_MS);
