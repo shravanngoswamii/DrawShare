@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="DrawShare" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="supported-color-schemes" content="light dark" />
+    <link rel="manifest" href="/DrawShare/pr-previews/83/manifest.webmanifest" />
+    <!-- Landing-page display + mono faces (swap = no invisible text while loading) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap"
+    />
+    <title>DrawShare</title>
+    <meta
+      name="description"
+      content="A local-first collaborative whiteboard. Draw, organise pages, and share live over a short code. No account, works offline, open source."
+    />
+
+    <!-- Open Graph / social share preview -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="DrawShare" />
+    <meta property="og:title" content="DrawShare — local-first collaborative whiteboard" />
+    <meta
+      property="og:description"
+      content="Draw, organise pages, and share live over a short code. No account, works offline, open source."
+    />
+    <meta property="og:url" content="https://shravangoswami.com/DrawShare/" />
+    <meta property="og:image" content="https://shravangoswami.com/DrawShare/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="DrawShare — draw, share live, no account" />
+
+    <!-- Twitter card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="DrawShare — local-first collaborative whiteboard" />
+    <meta
+      name="twitter:description"
+      content="Draw, organise pages, and share live over a short code. No account, works offline, open source."
+    />
+    <meta name="twitter:image" content="https://shravangoswami.com/DrawShare/og-image.png" />
+
+    <!-- Prevent flash of wrong theme: set data-mode (+ data-theme) before CSS
+         renders. The theme id encodes its mode as a "-light"/"-dark" suffix, so
+         we can resolve the mode here without loading the theme registry. -->
+    <script>
+      (() => {
+        var el = document.documentElement;
+        var v;
+        try {
+          v = localStorage.getItem("drawshare-theme");
+          if (v === "light" || v === "dark") {
+            el.setAttribute("data-mode", v); // legacy 2-state values
+          } else if (v && v !== "system") {
+            el.setAttribute("data-mode", v.slice(-5) === "-dark" ? "dark" : "light");
+            el.setAttribute("data-theme", v);
+          } else {
+            el.setAttribute(
+              "data-mode",
+              window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
+            );
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <script type="module" crossorigin src="/DrawShare/pr-previews/83/assets/index-D1Rorxqu.js"></script>
+    <link rel="stylesheet" crossorigin href="/DrawShare/pr-previews/83/assets/style-CX8zHCU9.css">
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
+</html>
