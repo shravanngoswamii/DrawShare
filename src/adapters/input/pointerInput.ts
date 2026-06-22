@@ -119,6 +119,12 @@ export class PointerInputAdapter implements InputAdapter {
     if (e.pointerId !== this.activeId) {
       const penDown = e.pointerType === "pen" && (e.buttons > 0 || e.pressure > 0);
       if (!penDown || this.shouldIgnore(e)) return;
+      // Only recover a dropped pointerdown when the pen is actually over the
+      // canvas. The toolbar and side panel are overlay siblings of the canvas,
+      // so a pen tap/drag on them fires a window pointermove with pressure > 0;
+      // without this gate that starts a phantom stroke under the UI (and flips
+      // isDrawing, which fades the toolbar mid-tap, making selection glitchy).
+      if (!this.target || !(e.target instanceof Node) || !this.target.contains(e.target)) return;
       if (this.activeId !== undefined) this.end();
       dlog(`BEGIN via=move(recover) id${e.pointerId} b${e.buttons} p${e.pressure.toFixed(2)}`);
       this.begin(e);

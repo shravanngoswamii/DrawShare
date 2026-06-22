@@ -1009,6 +1009,22 @@ export const useEditorStore = defineStore("editor", {
           continue;
         }
         const pts = stroke.points;
+        // Bounding-box reject: skip strokes whose extent can't reach the eraser,
+        // so a stamp on a dense page doesn't walk every stroke's full polyline.
+        let minX = Number.POSITIVE_INFINITY;
+        let minY = Number.POSITIVE_INFINITY;
+        let maxX = Number.NEGATIVE_INFINITY;
+        let maxY = Number.NEGATIVE_INFINITY;
+        for (const pt of pts) {
+          if (pt.x < minX) minX = pt.x;
+          if (pt.x > maxX) maxX = pt.x;
+          if (pt.y < minY) minY = pt.y;
+          if (pt.y > maxY) maxY = pt.y;
+        }
+        if (wx + radius < minX || wx - radius > maxX || wy + radius < minY || wy - radius > maxY) {
+          survivors.push(stroke);
+          continue;
+        }
         const runs: StrokePoint[][] = [];
         let run: StrokePoint[] = [];
         let hit = false;
@@ -1087,9 +1103,25 @@ export const useEditorStore = defineStore("editor", {
           survivors.push(shape);
           continue;
         }
+        const segs = [...shapeSegments(shape)];
+        // Bounding-box reject (same idea as eraseArea) before the per-segment math.
+        let minX = Number.POSITIVE_INFINITY;
+        let minY = Number.POSITIVE_INFINITY;
+        let maxX = Number.NEGATIVE_INFINITY;
+        let maxY = Number.NEGATIVE_INFINITY;
+        for (const [ax, ay, bx, by] of segs) {
+          minX = Math.min(minX, ax, bx);
+          maxX = Math.max(maxX, ax, bx);
+          minY = Math.min(minY, ay, by);
+          maxY = Math.max(maxY, ay, by);
+        }
+        if (wx + radius < minX || wx - radius > maxX || wy + radius < minY || wy - radius > maxY) {
+          survivors.push(shape);
+          continue;
+        }
         const pieces: Array<[number, number, number, number]> = [];
         let hit = false;
-        for (const [ax, ay, bx, by] of shapeSegments(shape)) {
+        for (const [ax, ay, bx, by] of segs) {
           const iv = eraserHitInterval(ax, ay, bx, by, wx, wy, radius, square);
           if (!iv || iv[1] - iv[0] <= 1e-6) {
             pieces.push([ax, ay, bx, by]);
