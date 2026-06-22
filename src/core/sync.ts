@@ -109,7 +109,13 @@ export type SyncMessage =
       from: number;
     }
   | { t: "viewer-stroke-commit"; vid: string; stroke: Stroke }
-  | { t: "viewer-stroke-cancel"; vid: string; pageId: string; strokeId: string };
+  | { t: "viewer-stroke-cancel"; vid: string; pageId: string; strokeId: string }
+  // Other viewer-origin edits (a permitted viewer drawing shapes/text or erasing).
+  // The host applies each, which persists it and re-broadcasts to everyone.
+  | { t: "viewer-shape-commit"; vid: string; shape: Shape }
+  | { t: "viewer-text-commit"; vid: string; text: TextItem }
+  | { t: "viewer-erase-stroke"; vid: string; strokeId: string }
+  | { t: "viewer-erase-shape"; vid: string; shapeId: string };
 
 export interface SessionHostHandlers {
   onViewerJoin(viewerId: string, name: string): void;

@@ -120,15 +120,31 @@ watch(activeThemeId, (id) => {
   if (live.isHosting) live.broadcastTheme(id);
 });
 
-// Persist strokes drawn by permitted viewers. commitStroke saves them and
-// re-broadcasts a stroke-commit to everyone (the author dedupes its optimistic
-// copy by id), completing the round-trip.
+// Apply edits from permitted viewers. Each editor action persists and
+// re-broadcasts to everyone (the author dedupes its optimistic copy by id),
+// completing the round-trip.
 watch(
-  () => live.pendingViewerStrokes.length,
+  () => live.pendingViewerEdits.length,
   (n) => {
     if (n === 0) return;
-    for (const stroke of live.clearPendingViewerStrokes()) {
-      void editor.commitStroke(stroke);
+    for (const edit of live.clearPendingViewerEdits()) {
+      switch (edit.t) {
+        case "viewer-stroke-commit":
+          void editor.commitStroke(edit.stroke);
+          break;
+        case "viewer-shape-commit":
+          void editor.commitShape(edit.shape);
+          break;
+        case "viewer-text-commit":
+          void editor.commitText(edit.text);
+          break;
+        case "viewer-erase-stroke":
+          void editor.eraseStroke(edit.strokeId);
+          break;
+        case "viewer-erase-shape":
+          void editor.deleteShape(edit.shapeId);
+          break;
+      }
     }
   },
 );

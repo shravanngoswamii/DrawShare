@@ -6,12 +6,16 @@ import { useTheme } from "@/composables/useTheme";
 import { newId } from "@/core/ids";
 import { adaptInk } from "@/core/ink";
 import { PAGE_H, PAGE_W, sheetWorldPos } from "@/core/layout";
-import type { Page, Stroke, StrokePoint } from "@/core/types";
+import type { Page, Shape, ShapeType, Stroke, StrokePoint, Tool } from "@/core/types";
 import { useLiveStore } from "@/stores/live";
 
-const props = defineProps<{ page: Page; color?: string; size?: number }>();
+const props = defineProps<{ page: Page; tool?: Tool; color?: string; size?: number }>();
 const live = useLiveStore();
 const { isDark } = useTheme();
+
+const SHAPE_TYPES: ShapeType[] = ["rect", "ellipse", "line", "arrow"];
+const isShapeTool = (t: Tool | undefined): t is ShapeType =>
+  !!t && (SHAPE_TYPES as string[]).includes(t);
 
 // The viewer can draw only when the host has granted it, and only in free mode
 // (notebook stroke coordinates are page-local and not yet supported here).
@@ -163,12 +167,20 @@ function render() {
       if (clipLive) liveRenderer.popClip();
       liveRenderer.endFrame();
     }
-  } else if ((hostLive && hostLive.points.length > 0) || (ownLive && ownLive.points.length > 0)) {
-    // Both the host's and this viewer's in-progress strokes share the world camera.
-    liveRenderer.beginFrame();
-    if (hostLive && hostLive.points.length > 0) liveRenderer.drawLive(hostLive);
-    if (ownLive && ownLive.points.length > 0) liveRenderer.drawLive(ownLive);
-    liveRenderer.endFrame();
+  } else {
+    const shapePreview = ownShape.value;
+    const hasLive =
+      (hostLive && hostLive.points.length > 0) ||
+      (ownLive && ownLive.points.length > 0) ||
+      shapePreview;
+    if (hasLive) {
+      // The host's and this viewer's in-progress edits share the world camera.
+      liveRenderer.beginFrame();
+      if (hostLive && hostLive.points.length > 0) liveRenderer.drawLive(hostLive);
+      if (ownLive && ownLive.points.length > 0) liveRenderer.drawLive(ownLive);
+      if (shapePreview) liveRenderer.drawShape(shapePreview);
+      liveRenderer.endFrame();
+    }
   }
 }
 
@@ -214,8 +226,94 @@ function screenToWorld(sx: number, sy: number): { x: number; y: number } {
   return { x: sx / zoom + x, y: sy / zoom + y };
 }
 
-let drawing: Stroke | undefined;
+let drawing: Stroke | undefined; // in-progress pen/highlighter stroke
+const ownShape = ref<Shape | undefined>(); // in-progress shape preview (local)
 let activePointer: number | undefined;
+let erasedThisGesture = new Set<string>();
+
+function curColor() {
+  return props.color ?? "#0f172a";
+}
+function curSize() {
+  return props.size ?? 4;
+}
+
+function beginStroke(wp: { x: number; y: number }, pressure: number) {
+  const now = Date.now();
+  const highlighter = props.tool === "highlighter";
+  const stroke: Stroke = {
+    id: newId(),
+    pageId: props.page.id,
+    tool: highlighter ? "highlighter" : "pen",
+    penType: highlighter ? undefined : "ballpoint",
+    color: curColor(),
+    size: curSize(),
+    opacity: highlighter ? 0.35 : 1,
+    points: [{ x: wp.x, y: wp.y, p: pressure, t: now }],
+    createdAt: now,
+  };
+  drawing = stroke;
+  live.setViewerOwnLive({ ...stroke });
+  live.sendViewerEdit({ t: "viewer-stroke-begin", vid: live.viewerId, stroke: { ...stroke } });
+}
+
+function beginShape(wp: { x: number; y: number }) {
+  const now = Date.now();
+  ownShape.value = {
+    id: newId(),
+    pageId: props.page.id,
+    type: props.tool as ShapeType,
+    x1: wp.x,
+    y1: wp.y,
+    x2: wp.x,
+    y2: wp.y,
+    color: curColor(),
+    size: curSize(),
+    opacity: 1,
+    createdAt: now,
+  };
+  schedule();
+}
+
+// Distance from a world point to a stroke's polyline / a shape's bounds. Used
+// for tap-to-erase; a generous margin makes it forgiving.
+function eraseRadius() {
+  return 8 / Math.max(0.01, screenCam.value.zoom) + curSize();
+}
+function hitStroke(s: Stroke, wp: { x: number; y: number }): boolean {
+  const r = eraseRadius() + s.size / 2;
+  return s.points.some((p) => Math.hypot(p.x - wp.x, p.y - wp.y) <= r);
+}
+function hitShape(s: Shape, wp: { x: number; y: number }): boolean {
+  const r = eraseRadius() + s.size / 2;
+  const minX = Math.min(s.x1, s.x2) - r;
+  const maxX = Math.max(s.x1, s.x2) + r;
+  const minY = Math.min(s.y1, s.y2) - r;
+  const maxY = Math.max(s.y1, s.y2) + r;
+  return wp.x >= minX && wp.x <= maxX && wp.y >= minY && wp.y <= maxY;
+}
+
+function eraseAt(wp: { x: number; y: number }) {
+  for (const s of live.viewerStrokes) {
+    if (s.pageId !== props.page.id || erasedThisGesture.has(s.id)) continue;
+    if (hitStroke(s, wp)) {
+      erasedThisGesture.add(s.id);
+      live.viewerStrokes = live.viewerStrokes.filter((x) => x.id !== s.id);
+      dirtyBase = true;
+      live.sendViewerEdit({ t: "viewer-erase-stroke", vid: live.viewerId, strokeId: s.id });
+    }
+  }
+  for (const s of live.viewerShapes) {
+    if (s.pageId !== props.page.id || erasedThisGesture.has(s.id)) continue;
+    if (hitShape(s, wp)) {
+      erasedThisGesture.add(s.id);
+      live.viewerShapes = live.viewerShapes.filter((x) => x.id !== s.id);
+      dirtyBase = true;
+      live.sendViewerEdit({ t: "viewer-erase-shape", vid: live.viewerId, shapeId: s.id });
+    }
+  }
+  schedule();
+}
 
 function onPointerDown(ev: PointerEvent) {
   if (!canDraw.value || activePointer !== undefined || !wrap.value) return;
@@ -224,33 +322,37 @@ function onPointerDown(ev: PointerEvent) {
   activePointer = ev.pointerId;
   const rect = wrap.value.getBoundingClientRect();
   const wp = screenToWorld(ev.clientX - rect.left, ev.clientY - rect.top);
-  const now = Date.now();
-  drawing = {
-    id: newId(),
-    pageId: props.page.id,
-    tool: "pen",
-    penType: "ballpoint",
-    color: props.color ?? "#0f172a",
-    size: props.size ?? 4,
-    opacity: 1,
-    points: [{ x: wp.x, y: wp.y, p: ev.pressure || 0.5, t: now }],
-    createdAt: now,
-  };
-  live.setViewerOwnLive({ ...drawing });
-  live.sendViewerStroke({ t: "viewer-stroke-begin", vid: live.viewerId, stroke: { ...drawing } });
+  if (props.tool === "eraser") {
+    erasedThisGesture = new Set();
+    eraseAt(wp);
+  } else if (isShapeTool(props.tool)) {
+    beginShape(wp);
+  } else {
+    beginStroke(wp, ev.pressure || 0.5);
+  }
   schedule();
 }
 
 function onPointerMove(ev: PointerEvent) {
-  if (activePointer !== ev.pointerId || !drawing || !wrap.value) return;
+  if (activePointer !== ev.pointerId || !wrap.value) return;
   ev.preventDefault();
   const rect = wrap.value.getBoundingClientRect();
   const wp = screenToWorld(ev.clientX - rect.left, ev.clientY - rect.top);
+  if (props.tool === "eraser") {
+    eraseAt(wp);
+    return;
+  }
+  if (ownShape.value) {
+    ownShape.value = { ...ownShape.value, x2: wp.x, y2: wp.y };
+    schedule();
+    return;
+  }
+  if (!drawing) return;
   const point: StrokePoint = { x: wp.x, y: wp.y, p: ev.pressure || 0.5, t: Date.now() };
   const from = drawing.points.length;
   drawing.points = [...drawing.points, point];
   live.setViewerOwnLive({ ...drawing });
-  live.sendViewerStroke({
+  live.sendViewerEdit({
     t: "viewer-stroke-points",
     vid: live.viewerId,
     pageId: drawing.pageId,
@@ -264,23 +366,36 @@ function onPointerMove(ev: PointerEvent) {
 function onPointerUp(ev: PointerEvent) {
   if (activePointer !== ev.pointerId) return;
   activePointer = undefined;
-  if (!drawing) return;
-  const finalized = { ...drawing };
-  drawing = undefined;
-  // Optimistic local commit; the host persists it and echoes a stroke-commit,
-  // which the base-layer dedupe (by id) drops, so it isn't drawn twice.
-  live.viewerStrokes = [...live.viewerStrokes, finalized];
-  dirtyBase = true;
-  live.setViewerOwnLive(undefined);
-  live.sendViewerStroke({ t: "viewer-stroke-commit", vid: live.viewerId, stroke: finalized });
-  schedule();
+  // Optimistic local commit; the host echoes the commit which the base-layer
+  // dedupe (by id) drops, so nothing is drawn twice.
+  if (ownShape.value) {
+    const shape = ownShape.value;
+    ownShape.value = undefined;
+    // Ignore zero-size taps.
+    if (Math.hypot(shape.x2 - shape.x1, shape.y2 - shape.y1) >= 2) {
+      live.viewerShapes = [...live.viewerShapes, shape];
+      dirtyBase = true;
+      live.sendViewerEdit({ t: "viewer-shape-commit", vid: live.viewerId, shape });
+    }
+    schedule();
+    return;
+  }
+  if (drawing) {
+    const finalized = { ...drawing };
+    drawing = undefined;
+    live.viewerStrokes = [...live.viewerStrokes, finalized];
+    dirtyBase = true;
+    live.setViewerOwnLive(undefined);
+    live.sendViewerEdit({ t: "viewer-stroke-commit", vid: live.viewerId, stroke: finalized });
+    schedule();
+  }
 }
 
 function onPointerCancel(ev: PointerEvent) {
   if (activePointer !== ev.pointerId) return;
   activePointer = undefined;
   if (drawing) {
-    live.sendViewerStroke({
+    live.sendViewerEdit({
       t: "viewer-stroke-cancel",
       vid: live.viewerId,
       pageId: drawing.pageId,
@@ -288,6 +403,7 @@ function onPointerCancel(ev: PointerEvent) {
     });
   }
   drawing = undefined;
+  ownShape.value = undefined;
   live.setViewerOwnLive(undefined);
   schedule();
 }
@@ -297,10 +413,11 @@ watch(
   () => schedule(),
   { deep: true },
 );
-// If permission is revoked mid-stroke, drop the in-progress stroke.
+// If permission is revoked mid-edit, drop the in-progress stroke/shape.
 watch(canDraw, (allowed) => {
-  if (!allowed && drawing) {
+  if (!allowed) {
     drawing = undefined;
+    ownShape.value = undefined;
     activePointer = undefined;
     live.setViewerOwnLive(undefined);
     schedule();

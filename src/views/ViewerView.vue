@@ -5,6 +5,7 @@ import ChatPanel from "@/components/ChatPanel.vue";
 import ThemeMenu from "@/components/ThemeMenu.vue";
 import ViewerStage from "@/components/ViewerStage.vue";
 import { useTheme } from "@/composables/useTheme";
+import type { Tool } from "@/core/types";
 import { useLiveStore } from "@/stores/live";
 
 const props = defineProps<{ code: string }>();
@@ -21,6 +22,8 @@ const followHostTheme = ref(true);
 const PEN_COLORS = ["#0f172a", "#dc2626", "#2563eb", "#16a34a", "#f59e0b"];
 const drawColor = ref(PEN_COLORS[0]);
 const drawSize = ref(4);
+const drawTool = ref<Tool>("pen");
+const usesColor = computed(() => drawTool.value !== "eraser");
 const canDraw = computed(() => live.viewerCanEdit && !live.viewerIsNotebook);
 
 const statusLabel = computed(() => {
@@ -146,6 +149,7 @@ async function toggleFullscreen() {
       <ViewerStage
         v-if="live.viewerCurrentPage || (live.viewerIsNotebook && live.viewerPages.length)"
         :page="live.viewerCurrentPage ?? live.viewerPages[0]"
+        :tool="drawTool"
         :color="drawColor"
         :size="drawSize"
       />
@@ -196,8 +200,30 @@ async function toggleFullscreen() {
 
       <!-- Drawing toolbar: only when the host has granted this viewer -->
       <div v-if="canDraw" class="draw-bar" role="toolbar" aria-label="Drawing tools">
-        <span class="draw-hint">You can draw</span>
-        <div class="swatches">
+        <div class="tools">
+          <button class="tool" :class="{ active: drawTool === 'pen' }" @click="drawTool = 'pen'" title="Pen" aria-label="Pen">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
+          </button>
+          <button class="tool" :class="{ active: drawTool === 'highlighter' }" @click="drawTool = 'highlighter'" title="Highlighter" aria-label="Highlighter">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 11-6 6v3h3l6-6"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>
+          </button>
+          <button class="tool" :class="{ active: drawTool === 'rect' }" @click="drawTool = 'rect'" title="Rectangle" aria-label="Rectangle">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="1.5"/></svg>
+          </button>
+          <button class="tool" :class="{ active: drawTool === 'ellipse' }" @click="drawTool = 'ellipse'" title="Ellipse" aria-label="Ellipse">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg>
+          </button>
+          <button class="tool" :class="{ active: drawTool === 'line' }" @click="drawTool = 'line'" title="Line" aria-label="Line">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 19 19 5"/></svg>
+          </button>
+          <button class="tool" :class="{ active: drawTool === 'arrow' }" @click="drawTool = 'arrow'" title="Arrow" aria-label="Arrow">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5"/><path d="M11 5h8v8"/></svg>
+          </button>
+          <button class="tool" :class="{ active: drawTool === 'eraser' }" @click="drawTool = 'eraser'" title="Eraser" aria-label="Eraser">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4L13 5a2 2 0 0 1 2.8 0L21 10a1 1 0 0 1 0 1.4L13 19"/><path d="M22 21H7"/></svg>
+          </button>
+        </div>
+        <div v-if="usesColor" class="swatches">
           <button
             v-for="c in PEN_COLORS"
             :key="c"
@@ -210,13 +236,14 @@ async function toggleFullscreen() {
           ></button>
         </div>
         <input
+          v-if="usesColor"
           class="size"
           type="range"
           min="2"
           max="14"
           step="1"
           v-model.number="drawSize"
-          aria-label="Pen size"
+          aria-label="Brush size"
         />
       </div>
 
@@ -359,25 +386,49 @@ async function toggleFullscreen() {
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
+  gap: var(--space-2);
+  padding: var(--space-2);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
   box-shadow: var(--shadow-md);
-  max-width: calc(100vw - var(--space-4) * 2);
+  max-width: calc(100vw - var(--space-3) * 2);
+  overflow-x: auto;
 }
 
-.draw-hint {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--color-success);
-  white-space: nowrap;
+.tools {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.tool {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  background: transparent;
+  border: none;
+  flex-shrink: 0;
+}
+.tool:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+.tool.active {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
 }
 
 .swatches {
   display: flex;
   gap: var(--space-1);
+  padding-left: var(--space-1);
+  border-left: 1px solid var(--color-border);
+  flex-shrink: 0;
 }
 
 .swatch {
@@ -386,6 +437,7 @@ async function toggleFullscreen() {
   border-radius: var(--radius-pill);
   border: 2px solid transparent;
   box-shadow: 0 0 0 1px var(--color-border);
+  flex-shrink: 0;
 }
 
 .swatch.active {
@@ -394,7 +446,8 @@ async function toggleFullscreen() {
 }
 
 .size {
-  width: 90px;
+  width: 80px;
+  flex-shrink: 0;
   accent-color: var(--color-accent);
 }
 

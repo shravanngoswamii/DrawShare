@@ -67,7 +67,7 @@ interface LiveState {
   viewers: RosterViewer[]; // host: connected viewers + their draw permission
   viewerCanEdit: boolean; // viewer: has the host granted me drawing?
   viewerOwnLive: Stroke | undefined; // viewer: my own in-progress stroke (local preview)
-  pendingViewerStrokes: Stroke[]; // host: viewer-committed strokes awaiting persist
+  pendingViewerEdits: SyncMessage[]; // host: viewer edits awaiting persist + rebroadcast
   viewerId: string; // viewer: my stable id this tab
   viewerName: string; // viewer: my display name
   // Chat (host + viewers).
@@ -217,7 +217,7 @@ export const useLiveStore = defineStore("live", {
     viewers: [],
     viewerCanEdit: false,
     viewerOwnLive: undefined,
-    pendingViewerStrokes: [],
+    pendingViewerEdits: [],
     viewerId: "",
     viewerName: "",
     chat: [],
@@ -252,7 +252,7 @@ export const useLiveStore = defineStore("live", {
       this.status = "connecting";
       this.viewerCount = 0;
       this.viewers = [];
-      this.pendingViewerStrokes = [];
+      this.pendingViewerEdits = [];
       this.error = "";
       // Restore granted viewers on a resume; start fresh otherwise.
       grantedVids = resumeCode ? new Set(readHostSession()?.granted ?? []) : new Set();
@@ -305,13 +305,21 @@ export const useLiveStore = defineStore("live", {
           },
           onViewerMessage: (msg) => {
             if (session !== activeSession) return;
-            // A permitted viewer committed a stroke: queue it for the editor to
-            // persist + re-broadcast (completing the round-trip). Ignore strokes
-            // from viewers that aren't currently granted.
-            if (msg.t === "viewer-stroke-commit" && grantedVids.has(msg.vid)) {
-              this.pendingViewerStrokes = [...this.pendingViewerStrokes, msg.stroke];
-            } else if (msg.t === "chat") {
+            if (msg.t === "chat") {
               this.appendChat(msg);
+              return;
+            }
+            // An edit from a permitted viewer: queue it for the editor to apply,
+            // which persists it and re-broadcasts to everyone (the round-trip).
+            // Ignore edits from viewers that aren't currently granted.
+            const isViewerEdit =
+              msg.t === "viewer-stroke-commit" ||
+              msg.t === "viewer-shape-commit" ||
+              msg.t === "viewer-text-commit" ||
+              msg.t === "viewer-erase-stroke" ||
+              msg.t === "viewer-erase-shape";
+            if (isViewerEdit && grantedVids.has((msg as { vid: string }).vid)) {
+              this.pendingViewerEdits = [...this.pendingViewerEdits, msg];
             }
           },
           onError: (err) => {
@@ -372,14 +380,14 @@ export const useLiveStore = defineStore("live", {
       this.viewerOwnLive = stroke;
     },
 
-    sendViewerStroke(msg: SyncMessage) {
+    sendViewerEdit(msg: SyncMessage) {
       if (this.mode !== "viewer") return;
       session?.send(msg);
     },
 
-    clearPendingViewerStrokes(): Stroke[] {
-      const pending = this.pendingViewerStrokes;
-      this.pendingViewerStrokes = [];
+    clearPendingViewerEdits(): SyncMessage[] {
+      const pending = this.pendingViewerEdits;
+      this.pendingViewerEdits = [];
       return pending;
     },
 
@@ -463,7 +471,7 @@ export const useLiveStore = defineStore("live", {
       this.viewers = [];
       this.viewerCanEdit = false;
       this.viewerOwnLive = undefined;
-      this.pendingViewerStrokes = [];
+      this.pendingViewerEdits = [];
       this.viewerId = "";
       this.viewerName = "";
       this.chat = [];
@@ -817,12 +825,16 @@ export const useLiveStore = defineStore("live", {
           this.viewerOwnLive = undefined;
           break;
         }
-        // Viewer-origin strokes are consumed by the host via onViewerMessage and
+        // Viewer-origin edits are consumed by the host via onViewerMessage and
         // never reach a viewer's applyMessage.
         case "viewer-stroke-begin":
         case "viewer-stroke-points":
         case "viewer-stroke-commit":
         case "viewer-stroke-cancel":
+        case "viewer-shape-commit":
+        case "viewer-text-commit":
+        case "viewer-erase-stroke":
+        case "viewer-erase-shape":
         case "viewer-ready":
         case "session-ended":
           break;
