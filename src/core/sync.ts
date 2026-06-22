@@ -101,9 +101,8 @@ export interface SessionViewerHandlers {
 }
 
 export interface SessionAdapter {
-  host(sessionId: string, handlers: SessionHostHandlers): Promise<string>;
-  join(sessionId: string, offerToken: string, handlers: SessionViewerHandlers): Promise<string>;
-  applyAnswer(answerToken: string): Promise<void>;
+  host(sessionId: string, handlers: SessionHostHandlers): Promise<void>;
+  join(sessionId: string, handlers: SessionViewerHandlers): Promise<void>;
   send(msg: SyncMessage): void;
   close(): void;
   isOpen(): boolean;

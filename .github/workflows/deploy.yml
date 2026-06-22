@@ -29,6 +29,7 @@ jobs:
       - name: Build
         env:
           BASE_PATH: /${{ github.event.repository.name }}/
+          VITE_LIVE_RELAY_URL: ${{ vars.VITE_LIVE_RELAY_URL }}
         run: npm run build
 
       - name: Add SPA fallback

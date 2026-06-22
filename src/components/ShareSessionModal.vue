@@ -10,36 +10,22 @@ const emit = defineEmits<{ close: [] }>();
 const editor = useEditorStore();
 const live = useLiveStore();
 const copied = ref(false);
-const answerToken = ref("");
-const showFallback = ref(false);
 
-const relayJoinUrl = computed(() => {
-  if (!live.code) return "";
-  return buildShareUrl(`v/${live.code}`);
-});
-
-// Full URL with the offer token embedded (offline fallback). The token rides in
-// the fragment so it stays client-side, never reaching the server.
-const joinUrl = computed(() => {
-  if (!live.code || !live.offerToken) return "";
-  return buildShareUrl(`v/${live.code}`, { offer: live.offerToken });
-});
+const joinUrl = computed(() => (live.code ? buildShareUrl(`v/${live.code}`) : ""));
 
 const qrUrl = computed(() => {
-  if (!relayJoinUrl.value) return "";
-  return `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(relayJoinUrl.value)}&bgcolor=ffffff&margin=2`;
+  if (!joinUrl.value) return "";
+  return `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(joinUrl.value)}&bgcolor=ffffff&margin=2`;
 });
 
 const canShare = computed(() => typeof navigator.share === "function");
 
 const statusLabel = computed(() => {
   if (live.status === "connecting") return "Setting up session…";
-  if (live.status === "waiting" && !live.relayChecked) return "Connecting to relay…";
-  if (live.status === "waiting" && live.viewerCount === 0) return "Waiting for viewers";
+  if (live.status === "error") return live.error || "Connection error";
   if (live.viewerCount === 1) return "1 viewer connected";
   if (live.viewerCount > 1) return `${live.viewerCount} viewers connected`;
-  if (live.status === "error") return live.error || "Connection error";
-  return "";
+  return "Waiting for viewers";
 });
 
 async function start() {
@@ -55,22 +41,17 @@ async function start() {
     allStrokes: editor.notebookMode !== "off" ? [...editor.strokes] : [],
     allShapes: editor.notebookMode !== "off" ? [...editor.shapes] : [],
   }));
-  answerToken.value = "";
-  showFallback.value = false;
 }
 
 function stop() {
   live.stop();
-  answerToken.value = "";
-  showFallback.value = false;
   emit("close");
 }
 
 async function copyUrl() {
-  const url = live.relayAvailable ? relayJoinUrl.value : joinUrl.value;
-  if (!url) return;
+  if (!joinUrl.value) return;
   try {
-    await navigator.clipboard.writeText(url);
+    await navigator.clipboard.writeText(joinUrl.value);
     copied.value = true;
     setTimeout(() => (copied.value = false), 1500);
   } catch {
@@ -79,20 +60,16 @@ async function copyUrl() {
 }
 
 async function share() {
-  if (!canShare.value || !relayJoinUrl.value) return;
+  if (!canShare.value || !joinUrl.value) return;
   await navigator
     .share({
       title: `Join DrawShare session ${live.code}`,
       text: `Join my live drawing session. Code: ${live.code}`,
-      url: relayJoinUrl.value,
+      url: joinUrl.value,
     })
     .catch(() => {
       /* user dismissed */
     });
-}
-
-async function connect() {
-  await live.applyViewerResponse(answerToken.value);
 }
 </script>
 
@@ -113,7 +90,7 @@ async function connect() {
       <div class="body" v-if="live.mode !== 'host'">
         <p class="intro muted">
           Start a session and share the code. Viewers enter it on the home
-          screen — no link copying needed. Works on any Wi-Fi or hotspot.
+          screen — no link copying needed. Works across the internet, on any device.
         </p>
         <button
           class="btn btn-primary big"
@@ -136,14 +113,14 @@ async function connect() {
           <span>{{ statusLabel }}</span>
         </div>
 
-        <!-- Loading: generating offer or connecting to relay -->
-        <div v-if="live.status === 'connecting' || (live.status === 'waiting' && !live.relayChecked && !live.relayAvailable)" class="relay-pending muted">
+        <!-- Loading: opening the session -->
+        <div v-if="live.status === 'connecting'" class="relay-pending muted">
           <div class="spin" aria-hidden="true"></div>
-          <span>{{ live.status === 'connecting' ? 'Generating session…' : 'Connecting to relay…' }}</span>
+          <span>Setting up session…</span>
         </div>
 
-        <!-- Relay available: simple code + QR flow -->
-        <template v-else-if="live.relayAvailable || live.status === 'connected'">
+        <!-- Live: code + QR + share link -->
+        <template v-else-if="live.status !== 'error'">
           <div class="code-block">
             <div class="label code-lbl">Session code</div>
             <div class="code" aria-label="Session code">{{ live.code }}</div>
@@ -163,7 +140,7 @@ async function connect() {
           <div class="url-row">
             <input
               class="input url"
-              :value="relayJoinUrl"
+              :value="joinUrl"
               readonly
               @focus="($event.target as HTMLInputElement).select()"
               aria-label="Session link"
@@ -182,50 +159,8 @@ async function connect() {
           </div>
         </template>
 
-        <!-- Relay unavailable: offline / LAN manual fallback -->
-        <template v-else-if="live.relayChecked && !live.relayAvailable">
-          <div class="warn">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-              <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-            Relay unavailable — same Wi-Fi required. Share the link manually.
-          </div>
-
-          <div class="field">
-            <label class="label" for="join-url">Session link (contains connection data)</label>
-            <div class="url-row">
-              <input
-                id="join-url"
-                class="input url"
-                :value="joinUrl"
-                readonly
-                @focus="($event.target as HTMLInputElement).select()"
-              />
-              <button class="btn copy-btn" @click="copyUrl">
-                {{ copied ? "Copied" : "Copy" }}
-              </button>
-            </div>
-            <div class="muted url-hint">
-              Open this link on the viewer device (must be on the same network).
-            </div>
-          </div>
-
-          <div class="field">
-            <label class="label" for="answer-token">Viewer response</label>
-            <textarea
-              id="answer-token"
-              v-model="answerToken"
-              class="input response"
-              rows="3"
-              placeholder="Paste the token from the viewer device here"
-            />
-            <button class="btn btn-primary" @click="connect" :disabled="!answerToken.trim()">
-              Connect
-            </button>
-          </div>
-        </template>
+        <!-- Error -->
+        <p v-else class="error">{{ live.error || "Connection error" }}</p>
 
         <div class="actions">
           <button class="btn danger" @click="stop">Stop sharing</button>
@@ -423,13 +358,6 @@ async function connect() {
   min-width: 72px;
 }
 
-/* ── Fields (manual fallback) ── */
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
 .label {
   font-size: var(--text-xs);
   font-weight: 600;
@@ -437,31 +365,6 @@ async function connect() {
   letter-spacing: 0.05em;
   color: var(--color-text-muted);
 }
-
-.response {
-  min-height: 80px;
-  resize: vertical;
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-}
-
-.url-hint { font-size: var(--text-xs); }
-
-/* ── Warning banner ── */
-.warn {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  font-size: var(--text-sm);
-  color: var(--color-warning-strong, #92400e);
-  background: var(--color-warning-soft, #fef3c7);
-  border: 1px solid var(--color-warning-border, #fde68a);
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
-  line-height: 1.45;
-}
-
-.warn svg { flex-shrink: 0; margin-top: 1px; }
 
 /* ── Actions ── */
 .actions {

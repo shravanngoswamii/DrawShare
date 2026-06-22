@@ -1,8 +1,8 @@
-// Two share links carry a large, private payload that must never reach the
-// server: a full page snapshot, and the host's WebRTC offer token. The app
-// routes on clean history-mode paths, so those payloads ride in the URL
-// fragment (after #), which browsers never send to a server. Everything else
-// is a plain path. These helpers build and read the fragment payloads.
+// A snapshot share link carries a large, private payload that must never reach
+// the server: the full page contents. The app routes on clean history-mode
+// paths, so that payload rides in the URL fragment (after #), which browsers
+// never send to a server. Everything else is a plain path. These helpers build
+// and read the fragment payload.
 
 const BASE = import.meta.env.BASE_URL;
 

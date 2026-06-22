@@ -45,13 +45,12 @@
 
       <h2>Live sessions (optional)</h2>
       <p>
-        When you host or join a live session, DrawShare sets up a direct, peer-to-peer
-        connection between devices using WebRTC. To help two devices find each other it uses a
-        public relay (ntfy.sh) to exchange the connection handshake on a topic derived from
-        your session code, and a public STUN server (Google) to discover network addresses. As
-        part of normal peer-to-peer networking, your IP address may be visible to the people in
-        your session and to those connection servers. Once connected, your strokes stream
-        directly between participants and are not stored by us.
+        When you host or join a live session, your device connects over a secure WebSocket to a
+        relay server we run on Cloudflare. The relay simply passes strokes between the host and
+        the viewers for the duration of the session — it is keyed only by your session code, it
+        does not store your drawing, and nothing is written to a database. As with any network
+        connection, the relay sees your IP address (handled by Cloudflare); we do not log or
+        retain it. When the session ends, nothing about it remains on the server.
       </p>
 
       <h2>QR codes (optional)</h2>

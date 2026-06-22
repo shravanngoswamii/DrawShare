@@ -342,6 +342,7 @@ function removeSnapshot() {
         </svg>
       </button>
       <button
+        v-if="live.available"
         class="dock-btn dock-live"
         :class="{ live: live.isHosting }"
         @click="emit('share')"
@@ -605,7 +606,7 @@ function removeSnapshot() {
         </button>
         <div v-if="showActions" class="group-body">
           <!-- Live session -->
-          <button class="share-btn" data-tour="share" :class="{ live: live.isHosting }" @click="emit('share')" :title="live.isHosting ? `Live session: ${live.code}` : 'Start a live session'" :aria-label="live.isHosting ? `Live session active, code: ${live.code}` : 'Start a live session'">
+          <button v-if="live.available" class="share-btn" data-tour="share" :class="{ live: live.isHosting }" @click="emit('share')" :title="live.isHosting ? `Live session: ${live.code}` : 'Start a live session'" :aria-label="live.isHosting ? `Live session active, code: ${live.code}` : 'Start a live session'">
             <span v-if="live.isHosting" class="live-dot" aria-hidden="true"></span>
             <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9" /><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5" /><circle cx="12" cy="12" r="2" /><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5" /><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1" />

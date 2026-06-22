@@ -9,11 +9,13 @@ import { useOnboarding } from "@/composables/useOnboarding";
 import { useProjectBackup } from "@/composables/useProjectBackup";
 import { useTheme } from "@/composables/useTheme";
 import { useThumbnails } from "@/composables/useThumbnails";
+import { useLiveStore } from "@/stores/live";
 import { useProjectsStore } from "@/stores/projects";
 
 const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 const projects = useProjectsStore();
+const live = useLiveStore();
 const router = useRouter();
 const { isDark } = useTheme();
 const { exportAll, exportProject, importAll } = useProjectBackup();
@@ -267,7 +269,7 @@ function formatDate(ts: number): string {
         </button>
       </section>
 
-      <section class="join-card" data-tour="join">
+      <section v-if="live.available" class="join-card" data-tour="join">
         <div class="join-text">
           <div class="join-title">Join a live session</div>
           <div class="muted join-sub">

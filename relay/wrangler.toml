@@ -1,0 +1,18 @@
+name = "drawshare"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+
+# Browser origins allowed to open the relay (cost guard, not a secret). Set this
+# to your site's origin. Leave empty to allow any origin; localhost is always
+# allowed for development. If you fork DrawShare, change this to your domain.
+[vars]
+ALLOWED_ORIGINS = "https://shravangoswami.com"
+
+# SQLite-backed Durable Object -> eligible for the Workers Free plan.
+[[durable_objects.bindings]]
+name = "LIVE_ROOM"
+class_name = "LiveRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["LiveRoom"]

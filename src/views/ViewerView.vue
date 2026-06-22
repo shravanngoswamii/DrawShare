@@ -1,21 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRouter } from "vue-router";
 import ViewerStage from "@/components/ViewerStage.vue";
-import { readFragmentParam } from "@/core/shareLinks";
 import { useLiveStore } from "@/stores/live";
 
 const props = defineProps<{ code: string }>();
 const live = useLiveStore();
-const route = useRoute();
 const router = useRouter();
 
 const showThumbs = ref(false);
 const fullscreen = ref(false);
-const copied = ref(false);
-
-// The host can embed its WebRTC offer in the link's fragment (offline fallback).
-const offerToken = computed(() => readFragmentParam(route.hash, "offer"));
 
 const statusLabel = computed(() => {
   switch (live.status) {
@@ -43,7 +37,7 @@ const dotClass = computed(() => {
 });
 
 onMounted(async () => {
-  await live.join(props.code, offerToken.value);
+  await live.join(props.code);
 });
 
 onBeforeUnmount(() => {
@@ -51,7 +45,7 @@ onBeforeUnmount(() => {
 });
 
 async function reconnect() {
-  await live.join(props.code, offerToken.value);
+  await live.join(props.code);
 }
 
 function leave() {
@@ -66,16 +60,6 @@ async function toggleFullscreen() {
   } else {
     await document.exitFullscreen().catch(() => {});
     fullscreen.value = false;
-  }
-}
-
-async function copyResponse() {
-  try {
-    await navigator.clipboard.writeText(live.viewerResponseToken);
-    copied.value = true;
-    setTimeout(() => (copied.value = false), 1500);
-  } catch {
-    /* noop */
   }
 }
 </script>
@@ -156,18 +140,8 @@ async function copyResponse() {
               <div v-if="live.disconnectReason" class="reconnect-reason">{{ live.disconnectReason }}</div>
             </template>
             <template v-else>
-              {{ live.status === "connecting" ? "Connecting to " + props.code + "…" : "Fetching session…" }}
+              {{ live.status === "connecting" ? "Connecting to " + props.code + "…" : "Waiting for the host to start…" }}
             </template>
-          </div>
-          <div class="field response-field" v-if="live.viewerResponseToken">
-            <label class="label">Viewer response</label>
-            <div class="url-row">
-              <input class="input response" :value="live.viewerResponseToken" readonly @focus="($event.target as HTMLInputElement).select()" />
-              <button class="btn copy-btn" @click="copyResponse">
-                {{ copied ? "Copied" : "Copy" }}
-              </button>
-            </div>
-            <div class="muted url-hint">Share this token back with the host to finish pairing.</div>
           </div>
         </div>
       </div>
@@ -301,40 +275,6 @@ async function copyResponse() {
   flex-direction: column;
   align-items: center;
   gap: var(--space-3);
-}
-
-.wifi-hint {
-  font-size: var(--text-xs);
-  text-align: center;
-  max-width: 260px;
-}
-
-.response-field {
-  margin-top: var(--space-2);
-  width: min(100%, 420px);
-}
-
-.url-row {
-  display: flex;
-  gap: var(--space-2);
-  width: 100%;
-}
-
-.response {
-  flex: 1;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-}
-
-.copy-btn {
-  flex-shrink: 0;
-  min-width: 80px;
-}
-
-.url-hint {
-  font-size: var(--text-xs);
-  text-align: center;
-  max-width: 320px;
 }
 
 .reconnect-reason {

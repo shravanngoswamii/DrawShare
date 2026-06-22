@@ -7,11 +7,13 @@ import ThemeMenu from "@/components/ThemeMenu.vue";
 import { useTheme } from "@/composables/useTheme";
 import { useThumbnails } from "@/composables/useThumbnails";
 import { makeSessionCode } from "@/core/sync";
+import { useLiveStore } from "@/stores/live";
 import { useProjectsStore } from "@/stores/projects";
 
 const router = useRouter();
 const { isDark } = useTheme();
 const projects = useProjectsStore();
+const live = useLiveStore();
 const { projectThumbnails, renderProjectThumbnail } = useThumbnails();
 
 const joinCode = ref("");
@@ -608,7 +610,7 @@ onBeforeUnmount(() => {
     </section>
 
     <!-- Join -->
-    <section class="join">
+    <section v-if="live.available" class="join">
       <div class="shell join-inner">
         <div>
           <h2 class="section-title left h-display">Got a code?</h2>

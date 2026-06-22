@@ -1,11 +1,5 @@
 import { defineStore } from "pinia";
-import {
-  relayFetchAnswer,
-  relayFetchOffer,
-  relayPublishAnswer,
-  relayPublishOffer,
-} from "@/adapters/sync/relay";
-import { WebRTCSession } from "@/adapters/sync/webrtc";
+import { HOST_LEFT_REASON, relayConfigured, WebSocketSession } from "@/adapters/sync/websocket";
 import type { SyncMessage } from "@/core/sync";
 import { makeSessionCode } from "@/core/sync";
 import type { NotebookLayout, NotebookMode, Page, Project, Shape, Stroke } from "@/core/types";
@@ -28,12 +22,8 @@ interface LiveState {
   error: string;
   disconnectReason: string;
   reconnectAttempt: number;
-  relayAvailable: boolean;
-  relayChecked: boolean;
   hostViewport: { width: number; height: number };
   hostCamera: { x: number; y: number; zoom: number };
-  offerToken: string;
-  viewerResponseToken: string;
   viewerProject: Project | undefined;
   viewerPages: Page[];
   viewerCurrentPageId: string | undefined;
@@ -50,12 +40,11 @@ interface LiveState {
   viewerAllShapes: Shape[];
 }
 
-let session: WebRTCSession | undefined;
-let activePollCode: string | null = null;
+let session: WebSocketSession | undefined;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 const MAX_RECONNECT_ATTEMPTS = 3;
 
-// Send a notebook's strokes as several batches so no single data-channel message
+// Send a notebook's strokes as several batches so no single relay message
 // exceeds the size cap on large notebooks.
 const STROKE_CHUNK = 40;
 function sendStrokesChunked(strokes: Stroke[]): void {
@@ -79,12 +68,8 @@ export const useLiveStore = defineStore("live", {
     error: "",
     disconnectReason: "",
     reconnectAttempt: 0,
-    relayAvailable: false,
-    relayChecked: false,
     hostViewport: { width: 1920, height: 1080 },
     hostCamera: { x: 0, y: 0, zoom: 1 },
-    offerToken: "",
-    viewerResponseToken: "",
     viewerProject: undefined,
     viewerPages: [],
     viewerCurrentPageId: undefined,
@@ -109,6 +94,9 @@ export const useLiveStore = defineStore("live", {
     isHosting(state): boolean {
       return state.mode === "host" && state.status !== "idle" && state.status !== "error";
     },
+    available(): boolean {
+      return relayConfigured();
+    },
   },
   actions: {
     async startHosting(
@@ -125,18 +113,21 @@ export const useLiveStore = defineStore("live", {
       },
     ) {
       if (this.mode !== "off") return;
-      const activeSession = new WebRTCSession();
+      if (!relayConfigured()) {
+        this.error = "Live sharing is not configured.";
+        this.status = "error";
+        return;
+      }
+      const activeSession = new WebSocketSession();
       session = activeSession;
       this.code = makeSessionCode();
       this.mode = "host";
       this.status = "connecting";
       this.viewerCount = 0;
       this.error = "";
-      this.offerToken = "";
-      this.viewerResponseToken = "";
       try {
-        const offerToken = await activeSession.host(this.code, {
-          onViewerJoin: (id) => {
+        await activeSession.host(this.code, {
+          onViewerJoin: () => {
             if (session !== activeSession) return;
             this.viewerCount = this.viewerCount + 1;
             const snap = snapshot();
@@ -153,7 +144,7 @@ export const useLiveStore = defineStore("live", {
               notebookMode: snap.notebookMode,
               notebookLayout: snap.notebookLayout,
               // Notebook strokes/shapes follow in chunked messages to avoid one
-              // oversized data-channel send.
+              // oversized relay send.
               allStrokes: [],
               allShapes: [],
             };
@@ -162,7 +153,6 @@ export const useLiveStore = defineStore("live", {
               sendStrokesChunked(snap.allStrokes);
               sendShapesChunked(snap.allShapes);
             }
-            void id;
           },
           onViewerLeave: () => {
             if (session !== activeSession) return;
@@ -175,21 +165,7 @@ export const useLiveStore = defineStore("live", {
           },
         });
         if (session !== activeSession) return;
-        this.offerToken = offerToken;
         this.status = "waiting";
-
-        // Try relay (non-blocking) — falls back to manual if unavailable
-        relayPublishOffer(this.code, offerToken)
-          .then(() => {
-            if (session !== activeSession) return;
-            this.relayAvailable = true;
-            this.relayChecked = true;
-            void this.startPollingForAnswer(this.code);
-          })
-          .catch(() => {
-            if (session !== activeSession) return;
-            this.relayChecked = true;
-          });
       } catch (err) {
         if (session === activeSession) {
           this.error = (err as Error).message;
@@ -202,7 +178,6 @@ export const useLiveStore = defineStore("live", {
     },
 
     stop() {
-      activePollCode = null;
       if (reconnectTimer !== undefined) {
         clearTimeout(reconnectTimer);
         reconnectTimer = undefined;
@@ -216,8 +191,6 @@ export const useLiveStore = defineStore("live", {
       this.error = "";
       this.disconnectReason = "";
       this.reconnectAttempt = 0;
-      this.relayAvailable = false;
-      this.relayChecked = false;
       this.viewerProject = undefined;
       this.viewerPages = [];
       this.viewerCurrentPageId = undefined;
@@ -231,28 +204,12 @@ export const useLiveStore = defineStore("live", {
       this.viewerNotebookLayout = "vertical";
       this.viewerAllStrokes = [];
       this.viewerAllShapes = [];
-      this.offerToken = "";
-      this.viewerResponseToken = "";
-    },
-
-    async startPollingForAnswer(code: string) {
-      activePollCode = code;
-      for (let i = 0; i < 90; i++) {
-        await new Promise<void>((r) => setTimeout(r, 2_000));
-        if (activePollCode !== code || this.mode !== "host") return;
-        if (this.status === "connected") return;
-        const answer = await relayFetchAnswer(code).catch(() => null);
-        if (!answer) continue;
-        if (activePollCode !== code) return;
-        await this.applyViewerResponse(answer);
-        return;
-      }
     },
 
     setHostViewport(width: number, height: number) {
       if (this.hostViewport.width === width && this.hostViewport.height === height) return;
       this.hostViewport = { width, height };
-      if (this.mode === "host") {
+      if (this.mode === "host" && this.viewerCount > 0) {
         const { x, y, zoom } = this.hostCamera;
         session?.send({ t: "viewport", width, height, camX: x, camY: y, camZoom: zoom });
       }
@@ -263,13 +220,20 @@ export const useLiveStore = defineStore("live", {
       if (Math.abs(c.x - x) < 0.5 && Math.abs(c.y - y) < 0.5 && Math.abs(c.zoom - zoom) < 0.0005)
         return;
       this.hostCamera = { x, y, zoom };
-      if (this.mode === "host") {
+      if (this.mode === "host" && this.viewerCount > 0) {
         const { width, height } = this.hostViewport;
         session?.send({ t: "viewport", width, height, camX: x, camY: y, camZoom: zoom });
       }
     },
 
-    async join(code: string, offerToken: string) {
+    async join(code: string) {
+      if (!relayConfigured()) {
+        this.mode = "viewer";
+        this.code = code.toUpperCase();
+        this.error = "Live sharing is not configured.";
+        this.status = "error";
+        return;
+      }
       // If this is a fresh join (not an auto-reconnect), reset everything.
       const isReconnect = this.mode === "viewer" && this.status === "reconnecting";
       if (!isReconnect) {
@@ -279,38 +243,14 @@ export const useLiveStore = defineStore("live", {
       }
       // Close any existing session before creating a new one.
       session?.close();
-      const activeSession = new WebRTCSession();
+      const activeSession = new WebSocketSession();
       session = activeSession;
       this.mode = "viewer";
       this.status = "connecting";
       this.code = code.toUpperCase();
       this.error = "";
-      this.viewerResponseToken = "";
       try {
-        let resolvedOffer = offerToken.trim();
-        if (!resolvedOffer) {
-          // Relay mode — poll for the offer by code. ntfy.sh has a publish→poll
-          // propagation delay, and the viewer often enters the code before the
-          // host has published, so retry instead of failing on the first miss
-          // (the host already retries the answer poll the same way).
-          let fetched: string | null = null;
-          for (let i = 0; i < 30; i++) {
-            fetched = await relayFetchOffer(code).catch(() => null);
-            if (session !== activeSession) return;
-            if (fetched) break;
-            await new Promise((r) => setTimeout(r, 2_000));
-          }
-          if (!fetched) {
-            this.error = "Session not found. Make sure the host has started sharing.";
-            this.status = "error";
-            session.close();
-            session = undefined;
-            this.mode = "off";
-            return;
-          }
-          resolvedOffer = fetched;
-        }
-        const responseToken = await activeSession.join(this.code, resolvedOffer, {
+        await activeSession.join(this.code, {
           onConnected: () => {
             if (session !== activeSession) return;
             this.status = "connected";
@@ -324,6 +264,12 @@ export const useLiveStore = defineStore("live", {
           onDisconnect: (reason?: string) => {
             if (session !== activeSession) return;
             this.disconnectReason = reason ?? "Connection lost";
+            // The host leaving is terminal — the relay would accept a reconnect
+            // but no host would ever answer it.
+            if (reason === HOST_LEFT_REASON) {
+              this.status = "disconnected";
+              return;
+            }
             if (this.reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
               this.status = "reconnecting";
               if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
@@ -331,7 +277,7 @@ export const useLiveStore = defineStore("live", {
                 reconnectTimer = undefined;
                 if (this.mode !== "viewer" || this.status !== "reconnecting") return;
                 this.reconnectAttempt += 1;
-                void this.join(this.code, "");
+                void this.join(this.code);
               }, 2_000);
             } else {
               this.status = "disconnected";
@@ -344,12 +290,10 @@ export const useLiveStore = defineStore("live", {
           },
         });
         if (session !== activeSession) return;
-        this.viewerResponseToken = responseToken;
+        // Connected to the relay; wait for the host's first message to go live.
         if (this.status === "connecting") {
           this.status = "waiting";
         }
-        // Publish answer to relay so host auto-connects (fire-and-forget)
-        relayPublishAnswer(code, responseToken).catch(() => null);
       } catch (err) {
         if (session === activeSession) {
           this.error = (err as Error).message;
@@ -361,20 +305,8 @@ export const useLiveStore = defineStore("live", {
       }
     },
 
-    async applyViewerResponse(answerToken: string) {
-      if (this.mode !== "host" || !session) return;
-      const trimmed = answerToken.trim();
-      if (!trimmed) return;
-      try {
-        await session.applyAnswer(trimmed);
-      } catch (err) {
-        this.error = (err as Error).message;
-        this.status = "error";
-      }
-    },
-
     broadcast(msg: SyncMessage) {
-      if (this.mode !== "host") return;
+      if (this.mode !== "host" || this.viewerCount === 0) return;
       session?.send(msg);
     },
 
