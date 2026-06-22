@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, ref } from "vue";
 import type { ShapeType, Tool } from "@/core/types";
 import { useEditorStore } from "@/stores/editor";
 
-const props = defineProps<{ collapsed?: boolean; panelOpen?: boolean }>();
+const props = defineProps<{ collapsed?: boolean; panelOpen?: boolean; guest?: boolean }>();
 const emit = defineEmits<{ toggle: []; "image-import": [] }>();
 
 const editor = useEditorStore();
@@ -505,10 +505,11 @@ onMounted(() => {
         </button>
       </div>
 
-      <div class="divider"></div>
+      <div v-if="!props.guest" class="divider"></div>
 
-      <!-- Presenter aids: one button opens a flyout with laser + spotlight -->
-      <div class="pop-wrap group">
+      <!-- Presenter aids: one button opens a flyout with laser + spotlight.
+           Host-only — hidden for live-session guests. -->
+      <div v-if="!props.guest" class="pop-wrap group">
         <button
           class="tool"
           :class="{ active: editor.presenterMode !== 'off' }"

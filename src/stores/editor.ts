@@ -1,8 +1,10 @@
 import { defineStore } from "pinia";
-import { storage } from "@/adapters/storage/indexedDB";
+import { storage as realStorage } from "@/adapters/storage/indexedDB";
 import { newId } from "@/core/ids";
+import { downscaleForSync } from "@/core/imageSync";
 import { setSheetSize } from "@/core/layout";
 import { shapeSegments } from "@/core/shapes";
+import type { SyncMessage } from "@/core/sync";
 import type {
   HistoryEntry,
   ImageItem,
@@ -22,6 +24,15 @@ import type {
 import { dlog } from "@/debug";
 import { useLiveStore } from "./live";
 import { useProjectsStore } from "./projects";
+
+// A no-op stand-in for the storage adapter, used in guest (live-viewer) mode
+// where the board lives only in memory and must never touch this device's DB.
+// Reads resolve to empty so an accidental load in guest mode can't throw.
+const noopStorage = new Proxy({} as typeof realStorage, {
+  get() {
+    return async () => undefined;
+  },
+});
 
 // Sub-interval [t1, t2] of segment A→B that lies inside the eraser — a circle of
 // the given radius, or (square) a box of half-size radius — centred at (wx, wy);
@@ -98,6 +109,10 @@ interface EditorState {
   // Bumped to ask the canvas to scroll/animate to a sheet (notebook overview clicks).
   scrollRequestPageId: string | undefined;
   scrollRequestNonce: number;
+  // Guest (live-viewer) mode: the board is seeded from the host's snapshot and
+  // mirrored over the relay instead of loaded from / saved to this device's DB.
+  // Mutating actions route to the host as viewer-* edits; persistence is skipped.
+  guest: boolean;
 }
 
 export const useEditorStore = defineStore("editor", {
@@ -137,8 +152,14 @@ export const useEditorStore = defineStore("editor", {
     presenterMode: "off",
     scrollRequestPageId: undefined,
     scrollRequestNonce: 0,
+    guest: false,
   }),
   getters: {
+    // The storage adapter to persist through. Guest mode swaps in a no-op so a
+    // live viewer never writes the host's project into its own IndexedDB.
+    db(state): typeof realStorage {
+      return state.guest ? noopStorage : realStorage;
+    },
     currentPage(state): Page | undefined {
       return state.pages.find((p) => p.id === state.currentPageId);
     },
@@ -164,9 +185,12 @@ export const useEditorStore = defineStore("editor", {
   },
   actions: {
     async open(projectId: string) {
+      // The host editor always persists to the real DB — never inherit a stale
+      // guest flag from a prior live-viewer session in this tab.
+      this.guest = false;
       // Skip the DB round-trip if this project is already loaded (e.g. just created).
       if (this.project?.id === projectId && this.pages.length > 0) return;
-      const project = await storage.getProject(projectId);
+      const project = await this.db.getProject(projectId);
       if (!project) throw new Error("Project not found");
       this.project = project;
       // Point the projects-list store at this same object. Otherwise it keeps a
@@ -175,7 +199,7 @@ export const useEditorStore = defineStore("editor", {
       const projects = useProjectsStore();
       const idx = projects.projects.findIndex((p) => p.id === projectId);
       if (idx >= 0) projects.projects[idx] = project;
-      this.pages = await storage.listPages(projectId);
+      this.pages = await this.db.listPages(projectId);
       if (this.pages.length === 0) {
         const page = await this.createPageInternal(0);
         this.pages = [page];
@@ -201,6 +225,7 @@ export const useEditorStore = defineStore("editor", {
       this.redoStack = [];
     },
     initNew(project: import("@/core/types").Project, page: import("@/core/types").Page) {
+      this.guest = false;
       this.project = project;
       this.pages = [page];
       this.currentPageId = page.id;
@@ -217,12 +242,12 @@ export const useEditorStore = defineStore("editor", {
       void this.loadLayers(page.id);
     },
     async loadStrokes(pageId: string) {
-      this.strokes = await storage.listStrokes(pageId);
+      this.strokes = await this.db.listStrokes(pageId);
     },
     // Load a page's layers, creating a default "Layer 1" if none exist, and select
     // the first drawable (visible + unlocked) layer.
     async loadLayers(pageId: string) {
-      let layers = await storage.listLayers(pageId);
+      let layers = await this.db.listLayers(pageId);
       if (layers.length === 0) {
         const defaultLayer: Layer = {
           id: newId(),
@@ -233,7 +258,7 @@ export const useEditorStore = defineStore("editor", {
           index: 0,
           createdAt: Date.now(),
         };
-        await storage.putLayer(defaultLayer);
+        await this.db.putLayer(defaultLayer);
         layers = [defaultLayer];
       }
       this.layers = layers;
@@ -241,23 +266,23 @@ export const useEditorStore = defineStore("editor", {
       this.currentLayerId = preferred?.id ?? null;
     },
     async loadShapes(pageId: string) {
-      this.shapes = await storage.listShapes(pageId);
+      this.shapes = await this.db.listShapes(pageId);
     },
     async loadImages(pageId: string) {
-      this.images = await storage.listImages(pageId);
+      this.images = await this.db.listImages(pageId);
     },
     // Notebook mode: load every sheet's strokes/shapes/images into one array (each
     // tagged by pageId). The renderer offsets each sheet to its world position.
     async loadAllStrokes() {
-      const lists = await Promise.all(this.pages.map((p) => storage.listStrokes(p.id)));
+      const lists = await Promise.all(this.pages.map((p) => this.db.listStrokes(p.id)));
       this.strokes = lists.flat();
     },
     async loadAllShapes() {
-      const lists = await Promise.all(this.pages.map((p) => storage.listShapes(p.id)));
+      const lists = await Promise.all(this.pages.map((p) => this.db.listShapes(p.id)));
       this.shapes = lists.flat();
     },
     async loadAllImages() {
-      const lists = await Promise.all(this.pages.map((p) => storage.listImages(p.id)));
+      const lists = await Promise.all(this.pages.map((p) => this.db.listImages(p.id)));
       this.images = lists.flat();
     },
     // Free mode only: switch the visible page (reloads its strokes, resets
@@ -271,7 +296,7 @@ export const useEditorStore = defineStore("editor", {
       await this.loadLayers(pageId);
       this.history = [];
       this.redoStack = [];
-      useLiveStore().broadcast({
+      this._sync({
         t: "page-set",
         pageId,
         pages: [...this.pages],
@@ -314,7 +339,7 @@ export const useEditorStore = defineStore("editor", {
         createdAt: now,
         updatedAt: now,
       };
-      await storage.putPage(page);
+      await this.db.putPage(page);
       return page;
     },
     async addPage() {
@@ -323,8 +348,8 @@ export const useEditorStore = defineStore("editor", {
       this.pages = [...this.pages, page];
       this.project.pageOrder = this.pages.map((p) => p.id);
       this.project.updatedAt = Date.now();
-      await storage.putProject({ ...this.project });
-      useLiveStore().broadcast({
+      await this.db.putProject({ ...this.project });
+      this._sync({
         t: "page-add",
         page,
         pages: [...this.pages],
@@ -340,14 +365,14 @@ export const useEditorStore = defineStore("editor", {
       if (this.pages.length <= 1) return;
       // For replay, a deleted sheet's content simply vanishes at this point.
       this._record({ op: "page-clear", pageId });
-      await storage.deletePage(pageId);
+      await this.db.deletePage(pageId);
       this.pages = this.pages.filter((p) => p.id !== pageId).map((p, i) => ({ ...p, index: i }));
-      for (const p of this.pages) await storage.putPage(p);
+      for (const p of this.pages) await this.db.putPage(p);
       this.project.pageOrder = this.pages.map((p) => p.id);
       this.project.updatedAt = Date.now();
-      await storage.putProject({ ...this.project });
+      await this.db.putProject({ ...this.project });
       const fallback = this.pages[0].id;
-      useLiveStore().broadcast({
+      this._sync({
         t: "page-delete",
         pageId,
         pages: [...this.pages],
@@ -369,16 +394,16 @@ export const useEditorStore = defineStore("editor", {
       if (!page) return;
       page.name = name.trim() || page.name;
       page.updatedAt = Date.now();
-      await storage.putPage({ ...page });
-      useLiveStore().broadcast({ t: "page-rename", pageId, name: page.name });
+      await this.db.putPage({ ...page });
+      this._sync({ t: "page-rename", pageId, name: page.name });
     },
     async setPageBackground(pageId: string, background: Page["background"]) {
       const page = this.pages.find((p) => p.id === pageId);
       if (!page) return;
       page.background = background;
       page.updatedAt = Date.now();
-      await storage.putPage({ ...page });
-      useLiveStore().broadcast({ t: "page-background", pageId, background });
+      await this.db.putPage({ ...page });
+      this._sync({ t: "page-background", pageId, background });
     },
     // Append a forward content op to the recording log. No-op unless the project
     // has recordReplay on. Fire-and-forget so it never blocks drawing; events are
@@ -386,7 +411,7 @@ export const useEditorStore = defineStore("editor", {
     _record(op: ReplayOp) {
       const project = this.project;
       if (!project?.recordReplay) return;
-      storage.appendEvent({ projectId: project.id, t: Date.now(), op }).catch(() => {});
+      this.db.appendEvent({ projectId: project.id, t: Date.now(), op }).catch(() => {});
     },
     // Net effect of an undo/redo on a whole page (area-erase): wipe the page,
     // then re-add the exact stroke/shape set it should now hold. The seq
@@ -419,21 +444,21 @@ export const useEditorStore = defineStore("editor", {
         this.strokes = this.strokes.map((s) =>
           s.layerId === fromLayerId ? { ...s, layerId: toLayerId } : s,
         );
-        for (const s of movedStrokes) await storage.putStroke({ ...s, layerId: toLayerId });
+        for (const s of movedStrokes) await this.db.putStroke({ ...s, layerId: toLayerId });
       }
       const movedShapes = this.shapes.filter((s) => s.layerId === fromLayerId);
       if (movedShapes.length) {
         this.shapes = this.shapes.map((s) =>
           s.layerId === fromLayerId ? { ...s, layerId: toLayerId } : s,
         );
-        for (const s of movedShapes) await storage.putShape({ ...s, layerId: toLayerId });
+        for (const s of movedShapes) await this.db.putShape({ ...s, layerId: toLayerId });
       }
       const movedImages = this.images.filter((i) => i.layerId === fromLayerId);
       if (movedImages.length) {
         this.images = this.images.map((i) =>
           i.layerId === fromLayerId ? { ...i, layerId: toLayerId } : i,
         );
-        for (const i of movedImages) await storage.putImage({ ...i, layerId: toLayerId });
+        for (const i of movedImages) await this.db.putImage({ ...i, layerId: toLayerId });
       }
       for (const page of this.pages) {
         const texts = page.texts ?? [];
@@ -441,7 +466,7 @@ export const useEditorStore = defineStore("editor", {
           page.texts = texts.map((t) =>
             t.layerId === fromLayerId ? { ...t, layerId: toLayerId } : t,
           );
-          await storage.putPage({ ...page });
+          await this.db.putPage({ ...page });
         }
       }
     },
@@ -457,24 +482,24 @@ export const useEditorStore = defineStore("editor", {
       if (entry.strokes.length) {
         const ids = new Set(entry.strokes.map((s) => s.id));
         this.strokes = [...this.strokes.filter((s) => !ids.has(s.id)), ...entry.strokes];
-        for (const s of entry.strokes) await storage.putStroke(s);
+        for (const s of entry.strokes) await this.db.putStroke(s);
       }
       if (entry.shapes.length) {
         const ids = new Set(entry.shapes.map((s) => s.id));
         this.shapes = [...this.shapes.filter((s) => !ids.has(s.id)), ...entry.shapes];
-        for (const s of entry.shapes) await storage.putShape(s);
+        for (const s of entry.shapes) await this.db.putShape(s);
       }
       if (entry.images.length) {
         const ids = new Set(entry.images.map((i) => i.id));
         this.images = [...this.images.filter((i) => !ids.has(i.id)), ...entry.images];
-        for (const i of entry.images) await storage.putImage(i);
+        for (const i of entry.images) await this.db.putImage(i);
       }
       if (entry.texts.length) {
         const page = this.pages.find((p) => p.id === entry.layer.pageId);
         if (page) {
           const ids = new Set(entry.texts.map((t) => t.id));
           page.texts = [...(page.texts ?? []).filter((t) => !ids.has(t.id)), ...entry.texts];
-          await storage.putPage({ ...page });
+          await this.db.putPage({ ...page });
         }
       }
     },
@@ -486,9 +511,9 @@ export const useEditorStore = defineStore("editor", {
       this.strokes = this.strokes.filter((s) => s.id !== strokeId);
       this.history = [...this.history, { kind: "stroke-erase", stroke }];
       this.redoStack = [];
-      await storage.deleteStroke(strokeId);
+      await this.db.deleteStroke(strokeId);
       this._record({ op: "stroke-remove", pageId: stroke.pageId, id: strokeId });
-      useLiveStore().broadcast({ t: "stroke-delete", pageId: stroke.pageId, strokeId });
+      this._sync({ t: "stroke-delete", pageId: stroke.pageId, strokeId });
     },
     async commitStroke(input: Stroke) {
       this.saving++;
@@ -500,9 +525,9 @@ export const useEditorStore = defineStore("editor", {
         );
         this.history = [...this.history, { kind: "stroke-add", stroke }];
         this.redoStack = [];
-        await storage.putStroke(stroke);
+        await this.db.putStroke(stroke);
         this._record({ op: "stroke-add", stroke });
-        useLiveStore().broadcast({ t: "stroke-commit", stroke });
+        this._sync({ t: "stroke-commit", stroke });
         if (this.project) await useProjectsStore().touch(this.project.id);
       } finally {
         this.saving--;
@@ -517,11 +542,11 @@ export const useEditorStore = defineStore("editor", {
         const prev = (page.texts ?? []).find((t) => t.id === text.id) ?? null;
         page.texts = [...(page.texts ?? []).filter((t) => t.id !== text.id), text];
         page.updatedAt = Date.now();
-        await storage.putPage({ ...page });
+        await this.db.putPage({ ...page });
         this.history = [...this.history, { kind: "text-upsert", prev, next: text }];
         this.redoStack = [];
         this._record({ op: "text-set", text });
-        useLiveStore().broadcast({ t: "text-commit", text });
+        this._sync({ t: "text-commit", text });
         if (this.project) await useProjectsStore().touch(this.project.id);
       } finally {
         this.saving--;
@@ -534,9 +559,9 @@ export const useEditorStore = defineStore("editor", {
         this.shapes = [...this.shapes, shape];
         this.history = [...this.history, { kind: "shape-add", shape }];
         this.redoStack = [];
-        await storage.putShape(shape);
+        await this.db.putShape(shape);
         this._record({ op: "shape-add", shape });
-        useLiveStore().broadcast({ t: "shape-commit", shape });
+        this._sync({ t: "shape-commit", shape });
         if (this.project) await useProjectsStore().touch(this.project.id);
       } finally {
         this.saving--;
@@ -548,9 +573,9 @@ export const useEditorStore = defineStore("editor", {
       this.shapes = this.shapes.filter((s) => s.id !== shapeId);
       this.history = [...this.history, { kind: "shape-erase", shape }];
       this.redoStack = [];
-      await storage.deleteShape(shapeId);
+      await this.db.deleteShape(shapeId);
       this._record({ op: "shape-remove", pageId: shape.pageId, id: shapeId });
-      useLiveStore().broadcast({ t: "shape-delete", pageId: shape.pageId, shapeId });
+      this._sync({ t: "shape-delete", pageId: shape.pageId, shapeId });
     },
     async deleteText(pageId: string, textId: string) {
       const page = this.pages.find((p) => p.id === pageId);
@@ -559,11 +584,11 @@ export const useEditorStore = defineStore("editor", {
       if (!text) return;
       page.texts = page.texts.filter((t) => t.id !== textId);
       page.updatedAt = Date.now();
-      await storage.putPage({ ...page });
+      await this.db.putPage({ ...page });
       this.history = [...this.history, { kind: "text-delete", text }];
       this.redoStack = [];
       this._record({ op: "text-remove", pageId, id: textId });
-      useLiveStore().broadcast({ t: "text-delete", pageId, textId });
+      this._sync({ t: "text-delete", pageId, textId });
     },
     async undo() {
       const entry = this.history[this.history.length - 1];
@@ -572,40 +597,40 @@ export const useEditorStore = defineStore("editor", {
       this.redoStack = [...this.redoStack, entry];
       if (entry.kind === "stroke-add") {
         this.strokes = this.strokes.filter((s) => s.id !== entry.stroke.id);
-        await storage.deleteStroke(entry.stroke.id);
+        await this.db.deleteStroke(entry.stroke.id);
         this._record({ op: "stroke-remove", pageId: entry.stroke.pageId, id: entry.stroke.id });
-        useLiveStore().broadcast({
+        this._sync({
           t: "stroke-delete",
           pageId: entry.stroke.pageId,
           strokeId: entry.stroke.id,
         });
       } else if (entry.kind === "stroke-erase") {
         this.strokes = [...this.strokes, entry.stroke];
-        await storage.putStroke(entry.stroke);
+        await this.db.putStroke(entry.stroke);
         this._record({ op: "stroke-add", stroke: entry.stroke });
-        useLiveStore().broadcast({ t: "stroke-commit", stroke: entry.stroke });
+        this._sync({ t: "stroke-commit", stroke: entry.stroke });
       } else if (entry.kind === "text-upsert") {
         const page = this.pages.find((p) => p.id === entry.next.pageId);
         if (page) {
           if (entry.prev) {
             page.texts = [...(page.texts ?? []).filter((t) => t.id !== entry.next.id), entry.prev];
-            await storage.putPage({ ...page });
+            await this.db.putPage({ ...page });
             this._record({ op: "text-set", text: entry.prev });
-            useLiveStore().broadcast({ t: "text-commit", text: entry.prev });
+            this._sync({ t: "text-commit", text: entry.prev });
           } else {
             page.texts = (page.texts ?? []).filter((t) => t.id !== entry.next.id);
-            await storage.putPage({ ...page });
+            await this.db.putPage({ ...page });
             this._record({ op: "text-remove", pageId: page.id, id: entry.next.id });
-            useLiveStore().broadcast({ t: "text-delete", pageId: page.id, textId: entry.next.id });
+            this._sync({ t: "text-delete", pageId: page.id, textId: entry.next.id });
           }
         }
       } else if (entry.kind === "text-delete") {
         const page = this.pages.find((p) => p.id === entry.text.pageId);
         if (page) {
           page.texts = [...(page.texts ?? []).filter((t) => t.id !== entry.text.id), entry.text];
-          await storage.putPage({ ...page });
+          await this.db.putPage({ ...page });
           this._record({ op: "text-set", text: entry.text });
-          useLiveStore().broadcast({ t: "text-commit", text: entry.text });
+          this._sync({ t: "text-commit", text: entry.text });
         }
       } else if (entry.kind === "area-erase") {
         this.strokes = [...this.strokes.filter((s) => s.pageId !== entry.pageId), ...entry.before];
@@ -613,12 +638,12 @@ export const useEditorStore = defineStore("editor", {
           ...this.shapes.filter((s) => s.pageId !== entry.pageId),
           ...entry.shapesBefore,
         ];
-        await storage.deleteStrokesForPage(entry.pageId);
-        for (const s of entry.before) await storage.putStroke(s);
-        await storage.deleteShapesForPage(entry.pageId);
-        for (const s of entry.shapesBefore) await storage.putShape(s);
+        await this.db.deleteStrokesForPage(entry.pageId);
+        for (const s of entry.before) await this.db.putStroke(s);
+        await this.db.deleteShapesForPage(entry.pageId);
+        for (const s of entry.shapesBefore) await this.db.putShape(s);
         this._recordPageReset(entry.pageId, entry.before, entry.shapesBefore);
-        useLiveStore().broadcast({
+        this._sync({
           t: "page-set",
           pageId: entry.pageId,
           pages: [...this.pages],
@@ -627,30 +652,30 @@ export const useEditorStore = defineStore("editor", {
         });
       } else if (entry.kind === "shape-add") {
         this.shapes = this.shapes.filter((s) => s.id !== entry.shape.id);
-        await storage.deleteShape(entry.shape.id);
+        await this.db.deleteShape(entry.shape.id);
         this._record({ op: "shape-remove", pageId: entry.shape.pageId, id: entry.shape.id });
-        useLiveStore().broadcast({
+        this._sync({
           t: "shape-delete",
           pageId: entry.shape.pageId,
           shapeId: entry.shape.id,
         });
       } else if (entry.kind === "shape-erase") {
         this.shapes = [...this.shapes, entry.shape];
-        await storage.putShape(entry.shape);
+        await this.db.putShape(entry.shape);
         this._record({ op: "shape-add", shape: entry.shape });
-        useLiveStore().broadcast({ t: "shape-commit", shape: entry.shape });
+        this._sync({ t: "shape-commit", shape: entry.shape });
       } else if (entry.kind === "image-add") {
         this.images = this.images.filter((i) => i.id !== entry.image.id);
-        await storage.deleteImage(entry.image.id);
+        await this.db.deleteImage(entry.image.id);
         this._record({ op: "image-remove", pageId: entry.image.pageId, id: entry.image.id });
       } else if (entry.kind === "image-erase") {
         this.images = [...this.images, entry.image];
-        await storage.putImage(entry.image);
+        await this.db.putImage(entry.image);
         this._record({ op: "image-set", image: entry.image });
       } else if (entry.kind === "layer-add") {
         // Undo add: drop the (empty) layer.
         this.layers = this.layers.filter((l) => l.id !== entry.layer.id);
-        await storage.deleteLayer(entry.layer.id);
+        await this.db.deleteLayer(entry.layer.id);
         if (this.currentLayerId === entry.layer.id) {
           const preferred = this.layers.find((l) => l.visible && !l.locked) ?? this.layers[0];
           this.currentLayerId = preferred?.id ?? null;
@@ -658,7 +683,7 @@ export const useEditorStore = defineStore("editor", {
       } else if (entry.kind === "layer-delete") {
         // Undo delete: restore the layer and move its content back onto it.
         this.layers = [...this.layers, entry.layer].sort((a, b) => a.index - b.index);
-        await storage.putLayer(entry.layer);
+        await this.db.putLayer(entry.layer);
         await this._restoreLayerContent(entry);
       }
     },
@@ -669,14 +694,14 @@ export const useEditorStore = defineStore("editor", {
       this.history = [...this.history, entry];
       if (entry.kind === "stroke-add") {
         this.strokes = [...this.strokes, entry.stroke];
-        await storage.putStroke(entry.stroke);
+        await this.db.putStroke(entry.stroke);
         this._record({ op: "stroke-add", stroke: entry.stroke });
-        useLiveStore().broadcast({ t: "stroke-commit", stroke: entry.stroke });
+        this._sync({ t: "stroke-commit", stroke: entry.stroke });
       } else if (entry.kind === "stroke-erase") {
         this.strokes = this.strokes.filter((s) => s.id !== entry.stroke.id);
-        await storage.deleteStroke(entry.stroke.id);
+        await this.db.deleteStroke(entry.stroke.id);
         this._record({ op: "stroke-remove", pageId: entry.stroke.pageId, id: entry.stroke.id });
-        useLiveStore().broadcast({
+        this._sync({
           t: "stroke-delete",
           pageId: entry.stroke.pageId,
           strokeId: entry.stroke.id,
@@ -685,17 +710,17 @@ export const useEditorStore = defineStore("editor", {
         const page = this.pages.find((p) => p.id === entry.next.pageId);
         if (page) {
           page.texts = [...(page.texts ?? []).filter((t) => t.id !== entry.next.id), entry.next];
-          await storage.putPage({ ...page });
+          await this.db.putPage({ ...page });
           this._record({ op: "text-set", text: entry.next });
-          useLiveStore().broadcast({ t: "text-commit", text: entry.next });
+          this._sync({ t: "text-commit", text: entry.next });
         }
       } else if (entry.kind === "text-delete") {
         const page = this.pages.find((p) => p.id === entry.text.pageId);
         if (page) {
           page.texts = (page.texts ?? []).filter((t) => t.id !== entry.text.id);
-          await storage.putPage({ ...page });
+          await this.db.putPage({ ...page });
           this._record({ op: "text-remove", pageId: page.id, id: entry.text.id });
-          useLiveStore().broadcast({ t: "text-delete", pageId: page.id, textId: entry.text.id });
+          this._sync({ t: "text-delete", pageId: page.id, textId: entry.text.id });
         }
       } else if (entry.kind === "area-erase") {
         this.strokes = [...this.strokes.filter((s) => s.pageId !== entry.pageId), ...entry.after];
@@ -703,12 +728,12 @@ export const useEditorStore = defineStore("editor", {
           ...this.shapes.filter((s) => s.pageId !== entry.pageId),
           ...entry.shapesAfter,
         ];
-        await storage.deleteStrokesForPage(entry.pageId);
-        for (const s of entry.after) await storage.putStroke(s);
-        await storage.deleteShapesForPage(entry.pageId);
-        for (const s of entry.shapesAfter) await storage.putShape(s);
+        await this.db.deleteStrokesForPage(entry.pageId);
+        for (const s of entry.after) await this.db.putStroke(s);
+        await this.db.deleteShapesForPage(entry.pageId);
+        for (const s of entry.shapesAfter) await this.db.putShape(s);
         this._recordPageReset(entry.pageId, entry.after, entry.shapesAfter);
-        useLiveStore().broadcast({
+        this._sync({
           t: "page-set",
           pageId: entry.pageId,
           pages: [...this.pages],
@@ -717,35 +742,35 @@ export const useEditorStore = defineStore("editor", {
         });
       } else if (entry.kind === "shape-add") {
         this.shapes = [...this.shapes, entry.shape];
-        await storage.putShape(entry.shape);
+        await this.db.putShape(entry.shape);
         this._record({ op: "shape-add", shape: entry.shape });
-        useLiveStore().broadcast({ t: "shape-commit", shape: entry.shape });
+        this._sync({ t: "shape-commit", shape: entry.shape });
       } else if (entry.kind === "shape-erase") {
         this.shapes = this.shapes.filter((s) => s.id !== entry.shape.id);
-        await storage.deleteShape(entry.shape.id);
+        await this.db.deleteShape(entry.shape.id);
         this._record({ op: "shape-remove", pageId: entry.shape.pageId, id: entry.shape.id });
-        useLiveStore().broadcast({
+        this._sync({
           t: "shape-delete",
           pageId: entry.shape.pageId,
           shapeId: entry.shape.id,
         });
       } else if (entry.kind === "image-add") {
         this.images = [...this.images, entry.image];
-        await storage.putImage(entry.image);
+        await this.db.putImage(entry.image);
         this._record({ op: "image-set", image: entry.image });
       } else if (entry.kind === "image-erase") {
         this.images = this.images.filter((i) => i.id !== entry.image.id);
-        await storage.deleteImage(entry.image.id);
+        await this.db.deleteImage(entry.image.id);
         this._record({ op: "image-remove", pageId: entry.image.pageId, id: entry.image.id });
       } else if (entry.kind === "layer-add") {
         // Redo add: restore the layer and make it current.
         this.layers = [...this.layers, entry.layer].sort((a, b) => a.index - b.index);
-        await storage.putLayer(entry.layer);
+        await this.db.putLayer(entry.layer);
         this.currentLayerId = entry.layer.id;
       } else if (entry.kind === "layer-delete") {
         // Redo delete: remove the layer and re-orphan its content to the bottom layer.
         this.layers = this.layers.filter((l) => l.id !== entry.layer.id);
-        await storage.deleteLayer(entry.layer.id);
+        await this.db.deleteLayer(entry.layer.id);
         await this._reassignLayerContent(entry.layer.id, this.layers[0]?.id);
         if (this.currentLayerId === entry.layer.id) {
           const preferred = this.layers.find((l) => l.visible && !l.locked) ?? this.layers[0];
@@ -760,9 +785,21 @@ export const useEditorStore = defineStore("editor", {
         this.images = [...this.images, image];
         this.history = [...this.history, { kind: "image-add", image }];
         this.redoStack = [];
-        await storage.putImage(image);
+        await this.db.putImage(image);
         this._record({ op: "image-set", image });
-        void useLiveStore().broadcastImage(image);
+        if (this.guest) {
+          // Relay a downscaled copy to the host (which persists + re-broadcasts);
+          // keep the full-resolution copy locally.
+          const live = useLiveStore();
+          const src = await downscaleForSync(image.src).catch(() => image.src);
+          live.sendViewerEdit({
+            t: "viewer-image-add",
+            vid: live.viewerId,
+            image: { ...image, src },
+          });
+        } else {
+          void useLiveStore().broadcastImage(image);
+        }
         if (this.project) await useProjectsStore().touch(this.project.id);
       } finally {
         this.saving--;
@@ -774,7 +811,7 @@ export const useEditorStore = defineStore("editor", {
       this.images = this.images.filter((i) => i.id !== imageId);
       this.history = [...this.history, { kind: "image-erase", image }];
       this.redoStack = [];
-      await storage.deleteImage(imageId);
+      await this.db.deleteImage(imageId);
       this._record({ op: "image-remove", pageId: image.pageId, id: imageId });
     },
     async moveImage(imageId: string, x: number, y: number) {
@@ -786,7 +823,7 @@ export const useEditorStore = defineStore("editor", {
       // A move is a fresh edit: invalidate any outstanding redo branch (consistent
       // with all other mutations). The move itself is not pushed to undo history.
       this.redoStack = [];
-      await storage.putImage({ ...image });
+      await this.db.putImage({ ...image });
       this._record({ op: "image-set", image: { ...image } });
       if (this.project) await useProjectsStore().touch(this.project.id);
       return prev;
@@ -801,7 +838,7 @@ export const useEditorStore = defineStore("editor", {
       image.width = width;
       image.height = height;
       this.redoStack = [];
-      await storage.putImage({ ...image });
+      await this.db.putImage({ ...image });
       this._record({ op: "image-set", image: { ...image } });
       if (this.project) await useProjectsStore().touch(this.project.id);
     },
@@ -817,7 +854,7 @@ export const useEditorStore = defineStore("editor", {
       shape.x2 = x2;
       shape.y2 = y2;
       this.redoStack = [];
-      await storage.putShape({ ...shape });
+      await this.db.putShape({ ...shape });
       this._record({ op: "shape-remove", pageId: shape.pageId, id: shape.id });
       this._record({ op: "shape-add", shape: { ...shape } });
       if (this.project) await useProjectsStore().touch(this.project.id);
@@ -830,7 +867,7 @@ export const useEditorStore = defineStore("editor", {
       const maxZ = this.images.reduce((m, i) => Math.max(m, i.z ?? 0), 0);
       image.z = maxZ + 1;
       this.redoStack = [];
-      await storage.putImage({ ...image });
+      await this.db.putImage({ ...image });
       this._record({ op: "image-set", image: { ...image } });
       if (this.project) await useProjectsStore().touch(this.project.id);
     },
@@ -840,16 +877,16 @@ export const useEditorStore = defineStore("editor", {
       const minZ = this.images.reduce((m, i) => Math.min(m, i.z ?? 0), 0);
       image.z = minZ - 1;
       this.redoStack = [];
-      await storage.putImage({ ...image });
+      await this.db.putImage({ ...image });
       this._record({ op: "image-set", image: { ...image } });
       if (this.project) await useProjectsStore().touch(this.project.id);
     },
     async clearPage() {
       if (!this.currentPageId) return;
-      await storage.deleteStrokesForPage(this.currentPageId);
-      await storage.deleteShapesForPage(this.currentPageId);
-      await storage.deleteImagesForPage(this.currentPageId);
-      await storage.deleteLayersForPage(this.currentPageId);
+      await this.db.deleteStrokesForPage(this.currentPageId);
+      await this.db.deleteShapesForPage(this.currentPageId);
+      await this.db.deleteImagesForPage(this.currentPageId);
+      await this.db.deleteLayersForPage(this.currentPageId);
       const pageId = this.currentPageId;
       this.strokes = [];
       this.shapes = [];
@@ -859,7 +896,7 @@ export const useEditorStore = defineStore("editor", {
       // Rebuild the single default layer for the now-empty page.
       await this.loadLayers(pageId);
       this._record({ op: "page-clear", pageId });
-      useLiveStore().broadcast({ t: "clear-page", pageId });
+      this._sync({ t: "clear-page", pageId });
     },
     // ── Layers ────────────────────────────────────────────────────────────────
     async addLayer() {
@@ -874,7 +911,7 @@ export const useEditorStore = defineStore("editor", {
         index: nextIndex,
         createdAt: Date.now(),
       };
-      await storage.putLayer(layer);
+      await this.db.putLayer(layer);
       this.layers = [...this.layers, layer];
       this.currentLayerId = layer.id;
       this.history = [...this.history, { kind: "layer-add", layer }];
@@ -894,10 +931,10 @@ export const useEditorStore = defineStore("editor", {
       const texts = (page?.texts ?? []).filter((t) => t.layerId === layerId);
       // Content survives on the bottom-most remaining layer.
       await this._reassignLayerContent(layerId, bottom.id);
-      await storage.deleteLayer(layerId);
+      await this.db.deleteLayer(layerId);
       const renumbered = remaining.map((l, i) => ({ ...l, index: i }));
       this.layers = renumbered;
-      for (const l of renumbered) await storage.putLayer(l);
+      for (const l of renumbered) await this.db.putLayer(l);
       if (this.currentLayerId === layerId) {
         const preferred = renumbered.find((l) => l.visible && !l.locked) ?? renumbered[0];
         this.currentLayerId = preferred?.id ?? null;
@@ -912,13 +949,13 @@ export const useEditorStore = defineStore("editor", {
       const layer = this.layers.find((l) => l.id === layerId);
       if (!layer) return;
       layer.name = name.trim() || layer.name;
-      await storage.putLayer({ ...layer });
+      await this.db.putLayer({ ...layer });
     },
     async toggleLayerVisibility(layerId: string) {
       const layer = this.layers.find((l) => l.id === layerId);
       if (!layer) return;
       layer.visible = !layer.visible;
-      await storage.putLayer({ ...layer });
+      await this.db.putLayer({ ...layer });
       // Hiding the current layer? Move drawing focus to another drawable layer.
       if (!layer.visible && this.currentLayerId === layerId) {
         const preferred = this.layers.find((l) => l.id !== layerId && l.visible && !l.locked);
@@ -929,7 +966,7 @@ export const useEditorStore = defineStore("editor", {
       const layer = this.layers.find((l) => l.id === layerId);
       if (!layer) return;
       layer.locked = !layer.locked;
-      await storage.putLayer({ ...layer });
+      await this.db.putLayer({ ...layer });
       if (layer.locked && this.currentLayerId === layerId) {
         const preferred = this.layers.find((l) => l.id !== layerId && l.visible && !l.locked);
         if (preferred) this.currentLayerId = preferred.id;
@@ -949,7 +986,7 @@ export const useEditorStore = defineStore("editor", {
       without.splice(clamped, 0, layer);
       const renumbered = without.map((l, i) => ({ ...l, index: i }));
       this.layers = renumbered;
-      for (const l of renumbered) await storage.putLayer(l);
+      for (const l of renumbered) await this.db.putLayer(l);
     },
     async moveLayerUp(layerId: string) {
       const layer = this.layers.find((l) => l.id === layerId);
@@ -1163,10 +1200,10 @@ export const useEditorStore = defineStore("editor", {
           ];
           this.redoStack = [];
         }
-        await storage.deleteStrokesForPage(pageId);
-        for (const s of this.strokes) if (s.pageId === pageId) await storage.putStroke(s);
-        await storage.deleteShapesForPage(pageId);
-        for (const s of shapesAfter) await storage.putShape(s);
+        await this.db.deleteStrokesForPage(pageId);
+        for (const s of this.strokes) if (s.pageId === pageId) await this.db.putStroke(s);
+        await this.db.deleteShapesForPage(pageId);
+        for (const s of shapesAfter) await this.db.putShape(s);
         // Record the area-erase as remove/add diffs so replay shows the cut.
         if (this.project?.recordReplay) {
           const afterStrokeIds = new Set(after.map((s) => s.id));
@@ -1186,7 +1223,30 @@ export const useEditorStore = defineStore("editor", {
             if (!beforeShapeIds.has(s.id)) this._record({ op: "shape-add", shape: s });
           }
         }
-        useLiveStore().broadcast({
+        // Guest: page-set has no viewer-origin equivalent, so relay the erase as
+        // remove/add diffs the host can apply (drop cut originals, add the
+        // surviving fragments). Same diff the recorder above computes.
+        if (this.guest) {
+          const live = useLiveStore();
+          const vid = live.viewerId;
+          const afterStrokeIds = new Set(after.map((s) => s.id));
+          for (const s of before)
+            if (!afterStrokeIds.has(s.id))
+              live.sendViewerEdit({ t: "viewer-erase-stroke", vid, strokeId: s.id });
+          const beforeStrokeIds = new Set(before.map((s) => s.id));
+          for (const s of after)
+            if (!beforeStrokeIds.has(s.id))
+              live.sendViewerEdit({ t: "viewer-stroke-commit", vid, stroke: s });
+          const afterShapeIds = new Set(shapesAfter.map((s) => s.id));
+          for (const s of shapesBefore)
+            if (!afterShapeIds.has(s.id))
+              live.sendViewerEdit({ t: "viewer-erase-shape", vid, shapeId: s.id });
+          const beforeShapeIds = new Set(shapesBefore.map((s) => s.id));
+          for (const s of shapesAfter)
+            if (!beforeShapeIds.has(s.id))
+              live.sendViewerEdit({ t: "viewer-shape-commit", vid, shape: s });
+        }
+        this._sync({
           t: "page-set",
           pageId,
           pages: [...this.pages],
@@ -1209,15 +1269,15 @@ export const useEditorStore = defineStore("editor", {
     setPresenterMode(mode: "off" | "laser" | "spotlight") {
       this.presenterMode = mode;
       if (mode === "off") {
-        useLiveStore().broadcast({ t: "presenter-off" });
+        this._sync({ t: "presenter-off" });
       }
     },
     async setNotebookLayout(layout: NotebookLayout) {
       if (!this.project || this.project.notebookLayout === layout) return;
       this.project.notebookLayout = layout;
       this.project.updatedAt = Date.now();
-      await storage.putProject({ ...this.project });
-      useLiveStore().broadcast({ t: "notebook-layout", layout });
+      await this.db.putProject({ ...this.project });
+      this._sync({ t: "notebook-layout", layout });
     },
     // Toggle opt-in session recording. Enabling starts a fresh log whose first
     // events are the current content of every page, so replay has a baseline to
@@ -1227,16 +1287,16 @@ export const useEditorStore = defineStore("editor", {
       if (!this.project || (this.project.recordReplay ?? false) === on) return;
       this.project.recordReplay = on;
       this.project.updatedAt = Date.now();
-      await storage.putProject({ ...this.project });
+      await this.db.putProject({ ...this.project });
       if (!on) return;
       const projectId = this.project.id;
-      await storage.clearEvents(projectId);
+      await this.db.clearEvents(projectId);
       const now = Date.now();
       for (const page of this.pages) {
         const [strokes, shapes, images] = await Promise.all([
-          storage.listStrokes(page.id),
-          storage.listShapes(page.id),
-          storage.listImages(page.id),
+          this.db.listStrokes(page.id),
+          this.db.listShapes(page.id),
+          this.db.listImages(page.id),
         ]);
         const ops: ReplayOp[] = [
           ...strokes.map((stroke) => ({ op: "stroke-add", stroke }) as ReplayOp),
@@ -1244,8 +1304,213 @@ export const useEditorStore = defineStore("editor", {
           ...images.map((image) => ({ op: "image-set", image }) as ReplayOp),
           ...(page.texts ?? []).map((text) => ({ op: "text-set", text }) as ReplayOp),
         ];
-        for (const op of ops) await storage.appendEvent({ projectId, t: now, op, baseline: true });
+        for (const op of ops) await this.db.appendEvent({ projectId, t: now, op, baseline: true });
       }
+    },
+
+    // ── Live (host broadcast / guest relay) ─────────────────────────────────
+    // Send a state-change to live peers. As host, broadcast it to viewers. As a
+    // guest, translate it into the equivalent viewer-origin edit and send it to
+    // the host (which persists and re-broadcasts to everyone). Messages with no
+    // viewer-origin equivalent (page-*, clear-page, text-delete, notebook-*,
+    // presenter-*) are dropped in guest mode — those actions are host-only.
+    _sync(msg: SyncMessage) {
+      const live = useLiveStore();
+      if (!this.guest) {
+        live.broadcast(msg);
+        return;
+      }
+      const vid = live.viewerId;
+      switch (msg.t) {
+        case "stroke-commit":
+          live.sendViewerEdit({ t: "viewer-stroke-commit", vid, stroke: msg.stroke });
+          break;
+        case "stroke-delete":
+          live.sendViewerEdit({ t: "viewer-erase-stroke", vid, strokeId: msg.strokeId });
+          break;
+        case "shape-commit":
+          live.sendViewerEdit({ t: "viewer-shape-commit", vid, shape: msg.shape });
+          break;
+        case "shape-delete":
+          live.sendViewerEdit({ t: "viewer-erase-shape", vid, shapeId: msg.shapeId });
+          break;
+        case "text-commit":
+          live.sendViewerEdit({ t: "viewer-text-commit", vid, text: msg.text });
+          break;
+      }
+    },
+
+    // ── Guest (live-viewer) mode ────────────────────────────────────────────
+    // Seed the board from the host's hello snapshot instead of IndexedDB and
+    // switch the store into guest mode (no persistence; mutations relay to host).
+    beginGuestSession(snap: {
+      project: Project;
+      pages: Page[];
+      currentPageId: string;
+      strokes: Stroke[];
+      shapes: Shape[];
+      notebookMode?: NotebookMode;
+      notebookLayout?: NotebookLayout;
+      allStrokes?: Stroke[];
+      allShapes?: Shape[];
+    }) {
+      this.guest = true;
+      this.project = { ...snap.project };
+      this.pages = snap.pages.map((p) => ({ ...p }));
+      this.currentPageId = snap.currentPageId;
+      const notebook = this.notebookMode !== "off";
+      // Notebook strokes/shapes arrive in chunked follow-up messages; seed empty
+      // and let applyRemoteNotebook* accumulate them. Free mode ships the current
+      // page's content inline.
+      this.strokes = notebook ? [...(snap.allStrokes ?? [])] : [...snap.strokes];
+      this.shapes = notebook ? [...(snap.allShapes ?? [])] : [...snap.shapes];
+      this.images = [];
+      this.layers = [];
+      this.currentLayerId = null;
+      this.history = [];
+      this.redoStack = [];
+      this.tool = "pen";
+      this.presenterMode = "off";
+      this.camera = { x: 0, y: 0, zoom: 1 };
+      setSheetSize(snap.pages[0]?.width ?? 0, snap.pages[0]?.height ?? 0);
+    },
+    // Drop the guest board and return the store to its idle (host-capable) state.
+    endGuestSession() {
+      if (!this.guest) return;
+      this.guest = false;
+      this.project = undefined;
+      this.pages = [];
+      this.currentPageId = undefined;
+      this.strokes = [];
+      this.shapes = [];
+      this.images = [];
+      this.layers = [];
+      this.currentLayerId = null;
+      this.history = [];
+      this.redoStack = [];
+    },
+
+    // ── Apply-remote: write a host broadcast into this (guest) store WITHOUT
+    // persisting, recording history, or re-broadcasting (that would loop). Each
+    // dedupes by id so the author's own echo is harmless.
+    applyRemoteStrokeCommit(stroke: Stroke) {
+      if (!this.guest) return;
+      if (this.notebookMode === "off" && stroke.pageId !== this.currentPageId) return;
+      if (this.strokes.some((s) => s.id === stroke.id)) return;
+      this.strokes = [...this.strokes, stroke];
+    },
+    applyRemoteStrokeDelete(strokeId: string) {
+      if (!this.guest) return;
+      this.strokes = this.strokes.filter((s) => s.id !== strokeId);
+    },
+    applyRemoteShapeCommit(shape: Shape) {
+      if (!this.guest) return;
+      if (this.notebookMode === "off" && shape.pageId !== this.currentPageId) return;
+      if (this.shapes.some((s) => s.id === shape.id)) return;
+      this.shapes = [...this.shapes, shape];
+    },
+    applyRemoteShapeDelete(shapeId: string) {
+      if (!this.guest) return;
+      this.shapes = this.shapes.filter((s) => s.id !== shapeId);
+    },
+    applyRemoteTextCommit(text: TextItem) {
+      if (!this.guest) return;
+      const page = this.pages.find((p) => p.id === text.pageId);
+      if (!page) return;
+      page.texts = [...(page.texts ?? []).filter((t) => t.id !== text.id), text];
+    },
+    applyRemoteTextDelete(pageId: string, textId: string) {
+      if (!this.guest) return;
+      const page = this.pages.find((p) => p.id === pageId);
+      if (page?.texts) page.texts = page.texts.filter((t) => t.id !== textId);
+    },
+    applyRemoteClearPage(pageId: string) {
+      if (!this.guest) return;
+      if (this.notebookMode !== "off") {
+        this.strokes = this.strokes.filter((s) => s.pageId !== pageId);
+        this.shapes = this.shapes.filter((s) => s.pageId !== pageId);
+      } else if (pageId === this.currentPageId) {
+        this.strokes = [];
+        this.shapes = [];
+      }
+    },
+    applyRemoteImageAdd(image: ImageItem) {
+      if (!this.guest) return;
+      if (this.images.some((i) => i.id === image.id)) return;
+      this.images = [...this.images, image];
+    },
+    applyRemotePageSet(pageId: string, pages: Page[], strokes: Stroke[], shapes: Shape[]) {
+      if (!this.guest) return;
+      this.pages = pages.map((p) => ({ ...p }));
+      if (this.notebookMode !== "off") {
+        this.strokes = this.strokes.filter((s) => s.pageId !== pageId).concat(strokes);
+        this.shapes = this.shapes.filter((s) => s.pageId !== pageId).concat(shapes);
+      } else {
+        // Free mode: the guest follows the host's current page.
+        this.currentPageId = pageId;
+        this.strokes = strokes;
+        this.shapes = shapes;
+      }
+    },
+    applyRemotePages(pages: Page[]) {
+      if (!this.guest) return;
+      this.pages = pages.map((p) => ({ ...p }));
+    },
+    applyRemotePageDelete(pageId: string, pages: Page[], fallbackPageId: string) {
+      if (!this.guest) return;
+      this.pages = pages.map((p) => ({ ...p }));
+      if (this.notebookMode !== "off") {
+        this.strokes = this.strokes.filter((s) => s.pageId !== pageId);
+        this.shapes = this.shapes.filter((s) => s.pageId !== pageId);
+      } else if (this.currentPageId === pageId) {
+        this.currentPageId = fallbackPageId;
+        this.strokes = [];
+        this.shapes = [];
+      }
+    },
+    applyRemotePageRename(pageId: string, name: string) {
+      if (!this.guest) return;
+      const page = this.pages.find((p) => p.id === pageId);
+      if (page) page.name = name;
+    },
+    applyRemotePageBackground(pageId: string, background: Page["background"]) {
+      if (!this.guest) return;
+      const page = this.pages.find((p) => p.id === pageId);
+      if (page) page.background = background;
+    },
+    applyRemotePageSize(pageId: string, width: number, height: number) {
+      if (!this.guest) return;
+      const page = this.pages.find((p) => p.id === pageId);
+      if (page) {
+        page.width = width;
+        page.height = height;
+      }
+    },
+    applyRemoteNotebookStrokes(strokes: Stroke[]) {
+      if (!this.guest) return;
+      this.strokes = this.strokes.concat(strokes);
+    },
+    applyRemoteNotebookShapes(shapes: Shape[]) {
+      if (!this.guest) return;
+      this.shapes = this.shapes.concat(shapes);
+    },
+    applyRemoteNotebookSync(
+      mode: NotebookMode,
+      layout: NotebookLayout,
+      pages: Page[],
+      allStrokes: Stroke[],
+      allShapes: Shape[],
+    ) {
+      if (!this.guest || !this.project) return;
+      this.project.notebookMode = mode;
+      this.project.notebookLayout = layout;
+      this.pages = pages.map((p) => ({ ...p }));
+      this.strokes = [...allStrokes];
+      this.shapes = [...allShapes];
+    },
+    applyRemoteNotebookLayout(layout: NotebookLayout) {
+      if (!this.guest || !this.project) return;
+      this.project.notebookLayout = layout;
     },
   },
 });

@@ -1,55 +1,33 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+// biome-ignore lint/style/useImportType: rendered in the template — needs a value import.
+import CanvasStage from "@/components/CanvasStage.vue";
 import ChatPanel from "@/components/ChatPanel.vue";
 import ThemeMenu from "@/components/ThemeMenu.vue";
-import ViewerStage from "@/components/ViewerStage.vue";
+import Toolbar from "@/components/Toolbar.vue";
 import { useTheme } from "@/composables/useTheme";
-import { imageItemFromFile } from "@/core/imageSync";
-import type { Tool } from "@/core/types";
+import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
 
 const props = defineProps<{ code: string }>();
 const live = useLiveStore();
+const editor = useEditorStore();
 const router = useRouter();
 const { mirrorTheme, pickCount } = useTheme();
 
+const canvasStage = ref<InstanceType<typeof CanvasStage> | null>(null);
 const showThumbs = ref(false);
 const fullscreen = ref(false);
+const toolbarCollapsed = ref(false);
 // Follow the host's theme until the viewer picks their own from the menu.
 const followHostTheme = ref(true);
 
-// Drawing tools, shown only while the host has granted this viewer permission.
-const PEN_COLORS = ["#0f172a", "#dc2626", "#2563eb", "#16a34a", "#f59e0b"];
-const drawColor = ref(PEN_COLORS[0]);
-const drawSize = ref(4);
-const drawTool = ref<Tool>("pen");
-const usesColor = computed(() => drawTool.value !== "eraser");
-const canDraw = computed(() => live.viewerCanEdit && !live.viewerIsNotebook);
-
-const imageInput = ref<HTMLInputElement | null>(null);
-function pickImage() {
-  imageInput.value?.click();
-}
-async function onImageFile(e: Event) {
-  const input = e.target as HTMLInputElement;
-  const file = input.files?.[0];
-  input.value = "";
-  if (!file || !canDraw.value) return;
-  const pageId = live.viewerCurrentPageId ?? live.viewerPages[0]?.id;
-  if (!pageId) return;
-  // Place it at the centre of the host's current view (world coords).
-  const hc = live.viewerHostCamera;
-  const hv = live.viewerHostViewport;
-  const center = {
-    x: hc.x + hv.width / 2 / hc.zoom,
-    y: hc.y + hv.height / 2 / hc.zoom,
-  };
-  const image = await imageItemFromFile(file, pageId, center).catch(() => null);
-  if (!image) return;
-  live.viewerImages = [...live.viewerImages, image]; // optimistic; host echo dedupes by id
-  live.sendViewerEdit({ t: "viewer-image-add", vid: live.viewerId, image });
-}
+// The board is ready once the host's hello has seeded the guest editor.
+const ready = computed(() => editor.guest && !!editor.currentPage);
+// Drawing is offered only once the host grants this viewer permission.
+const canDraw = computed(() => live.viewerCanEdit);
+const isFree = computed(() => editor.notebookMode === "off");
 
 const statusLabel = computed(() => {
   switch (live.status) {
@@ -70,6 +48,12 @@ const statusLabel = computed(() => {
   }
 });
 
+const dotClass = computed(() => {
+  if (live.status === "connected") return "dot dot-live";
+  if (live.status === "connecting" || live.status === "reconnecting") return "dot dot-pending";
+  return "dot dot-off";
+});
+
 // Mirror the host's theme (applied transiently, so the viewer's saved theme is
 // untouched) until they override it.
 watch(
@@ -79,25 +63,36 @@ watch(
   },
   { immediate: true },
 );
-// Any explicit pick from the theme menu means the viewer wants their own theme;
-// stop following the host from then on.
+// Any explicit pick from the theme menu means the viewer wants their own theme.
 watch(pickCount, () => {
   followHostTheme.value = false;
 });
 
-const dotClass = computed(() => {
-  if (live.status === "connected") return "dot dot-live";
-  if (live.status === "connecting" || live.status === "reconnecting") return "dot dot-pending";
-  return "dot dot-off";
-});
+// Own-edits undo/redo (the editor routes these to the host as deletes/commits).
+function onKey(e: KeyboardEvent) {
+  const tag = (e.target as HTMLElement | null)?.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA") return;
+  if (!canDraw.value) return;
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && e.key === "z" && !e.shiftKey) {
+    e.preventDefault();
+    editor.undo();
+  } else if (mod && (e.key === "y" || (e.key === "z" && e.shiftKey))) {
+    e.preventDefault();
+    editor.redo();
+  }
+}
 
 onMounted(async () => {
+  window.addEventListener("keydown", onKey);
   await live.join(props.code);
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener("keydown", onKey);
   mirrorTheme(null); // restore the viewer's own saved theme on the way out
   live.stop();
+  editor.endGuestSession();
 });
 
 async function reconnect() {
@@ -106,6 +101,7 @@ async function reconnect() {
 
 function leave() {
   live.stop();
+  editor.endGuestSession();
   router.replace({ name: "projects" });
 }
 
@@ -132,7 +128,7 @@ async function toggleFullscreen() {
           </svg>
         </button>
         <span class="project-name">
-          {{ live.viewerProject?.name ?? "Connecting." }}
+          {{ editor.project?.name ?? "Connecting." }}
         </span>
         <span v-if="live.viewerName" class="viewer-name" :title="`You are ${live.viewerName}`">
           {{ live.viewerName }}
@@ -142,7 +138,7 @@ async function toggleFullscreen() {
         <button
           class="btn btn-ghost"
           @click="showThumbs = !showThumbs"
-          v-if="live.viewerPages.length > 1"
+          v-if="isFree && editor.pages.length > 1"
           :class="{ active: showThumbs }"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -171,13 +167,7 @@ async function toggleFullscreen() {
     </header>
 
     <main class="stage-wrap">
-      <ViewerStage
-        v-if="live.viewerCurrentPage || (live.viewerIsNotebook && live.viewerPages.length)"
-        :page="live.viewerCurrentPage ?? live.viewerPages[0]"
-        :tool="drawTool"
-        :color="drawColor"
-        :size="drawSize"
-      />
+      <CanvasStage v-if="ready" ref="canvasStage" :page="editor.currentPage!" />
       <div v-else class="state">
         <div v-if="live.status === 'error'" class="error-state">
           <div class="state-title">Couldn't connect</div>
@@ -208,72 +198,41 @@ async function toggleFullscreen() {
         </div>
       </div>
 
-      <div v-if="showThumbs && !live.viewerIsNotebook && live.viewerPages.length > 1" class="page-strip" role="tablist">
+      <!-- The real editing toolbar, shown once the host grants drawing. -->
+      <Toolbar
+        v-if="ready && canDraw"
+        guest
+        :collapsed="toolbarCollapsed"
+        @toggle="toolbarCollapsed = !toolbarCollapsed"
+        @image-import="canvasStage?.triggerFileImport()"
+      />
+      <button
+        v-if="ready && canDraw && toolbarCollapsed"
+        class="pencil-fab"
+        @click="toolbarCollapsed = false"
+        title="Show tools"
+        aria-label="Show tools"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+          <path d="m15 5 4 4" />
+        </svg>
+      </button>
+
+      <div v-if="showThumbs && isFree && editor.pages.length > 1" class="page-strip" role="tablist">
         <button
-          v-for="p in live.viewerPages"
+          v-for="p in editor.pages"
           :key="p.id"
           class="strip-item"
-          :class="{ active: live.viewerCurrentPageId === p.id }"
-          @click="live.viewerCurrentPageId = p.id"
+          :class="{ active: editor.currentPageId === p.id }"
+          @click="editor.currentPageId = p.id"
           role="tab"
-          :aria-selected="live.viewerCurrentPageId === p.id"
+          :aria-selected="editor.currentPageId === p.id"
         >
           <div class="strip-thumb"></div>
           <span class="strip-label">{{ p.name }}</span>
         </button>
-      </div>
-
-      <!-- Drawing toolbar: only when the host has granted this viewer -->
-      <div v-if="canDraw" class="draw-bar" role="toolbar" aria-label="Drawing tools">
-        <div class="tools">
-          <button class="tool" :class="{ active: drawTool === 'pen' }" @click="drawTool = 'pen'" title="Pen" aria-label="Pen">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
-          </button>
-          <button class="tool" :class="{ active: drawTool === 'highlighter' }" @click="drawTool = 'highlighter'" title="Highlighter" aria-label="Highlighter">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 11-6 6v3h3l6-6"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>
-          </button>
-          <button class="tool" :class="{ active: drawTool === 'rect' }" @click="drawTool = 'rect'" title="Rectangle" aria-label="Rectangle">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="1.5"/></svg>
-          </button>
-          <button class="tool" :class="{ active: drawTool === 'ellipse' }" @click="drawTool = 'ellipse'" title="Ellipse" aria-label="Ellipse">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg>
-          </button>
-          <button class="tool" :class="{ active: drawTool === 'line' }" @click="drawTool = 'line'" title="Line" aria-label="Line">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 19 19 5"/></svg>
-          </button>
-          <button class="tool" :class="{ active: drawTool === 'arrow' }" @click="drawTool = 'arrow'" title="Arrow" aria-label="Arrow">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5"/><path d="M11 5h8v8"/></svg>
-          </button>
-          <button class="tool" :class="{ active: drawTool === 'eraser' }" @click="drawTool = 'eraser'" title="Eraser" aria-label="Eraser">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4L13 5a2 2 0 0 1 2.8 0L21 10a1 1 0 0 1 0 1.4L13 19"/><path d="M22 21H7"/></svg>
-          </button>
-          <button class="tool" @click="pickImage" title="Add image" aria-label="Add image">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>
-          </button>
-        </div>
-        <input ref="imageInput" type="file" accept="image/*" class="hidden-file" @change="onImageFile" aria-hidden="true" tabindex="-1" />
-        <div v-if="usesColor" class="swatches">
-          <button
-            v-for="c in PEN_COLORS"
-            :key="c"
-            class="swatch"
-            :class="{ active: drawColor === c }"
-            :style="{ background: c }"
-            @click="drawColor = c"
-            :aria-label="`Use colour ${c}`"
-            :aria-pressed="drawColor === c"
-          ></button>
-        </div>
-        <input
-          v-if="usesColor"
-          class="size"
-          type="range"
-          min="2"
-          max="14"
-          step="1"
-          v-model.number="drawSize"
-          aria-label="Brush size"
-        />
       </div>
 
       <button v-if="fullscreen" class="exit-fs btn" @click="toggleFullscreen">
@@ -408,80 +367,24 @@ async function toggleFullscreen() {
   max-width: 40vw;
 }
 
-.draw-bar {
+/* Re-open pill for the collapsed toolbar (matches the editor's). */
+.pencil-fab {
   position: absolute;
-  bottom: calc(var(--space-4) + var(--safe-bottom));
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
-  box-shadow: var(--shadow-md);
-  max-width: calc(100vw - var(--space-3) * 2);
-  overflow-x: auto;
-}
-
-.tools {
-  display: flex;
-  gap: 2px;
-  flex-shrink: 0;
-}
-
-.tool {
-  width: 32px;
-  height: 32px;
+  top: 12px;
+  left: 12px;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-md);
-  color: var(--color-text-muted);
-  background: transparent;
-  border: none;
-  flex-shrink: 0;
-}
-.tool:hover {
-  background: var(--color-surface-2);
-  color: var(--color-text);
-}
-.tool.active {
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
-}
-
-.swatches {
-  display: flex;
-  gap: var(--space-1);
-  padding-left: var(--space-1);
-  border-left: 1px solid var(--color-border);
-  flex-shrink: 0;
-}
-
-.swatch {
-  width: 22px;
-  height: 22px;
+  width: 44px;
+  height: 44px;
   border-radius: var(--radius-pill);
-  border: 2px solid transparent;
-  box-shadow: 0 0 0 1px var(--color-border);
-  flex-shrink: 0;
-}
-
-.swatch.active {
-  border-color: var(--color-surface);
-  box-shadow: 0 0 0 2px var(--color-accent);
-}
-
-.size {
-  width: 80px;
-  flex-shrink: 0;
-  accent-color: var(--color-accent);
-}
-
-.hidden-file {
-  display: none;
+  background: var(--color-glass-bg-strong);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-glass-border);
+  box-shadow: 0 4px 14px var(--color-glass-shadow), 0 1px 2px var(--color-glass-shadow);
+  color: var(--color-accent);
 }
 
 .connecting-spinner {
