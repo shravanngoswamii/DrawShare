@@ -14,6 +14,7 @@ import type {
   Shape,
   Stroke,
 } from "@/core/types";
+import { useEditorStore } from "./editor";
 
 // A connected viewer as the host sees them.
 interface RosterViewer {
@@ -59,21 +60,6 @@ interface LiveState {
   reconnectAttempt: number;
   hostViewport: { width: number; height: number };
   hostCamera: { x: number; y: number; zoom: number };
-  viewerProject: Project | undefined;
-  viewerPages: Page[];
-  viewerCurrentPageId: string | undefined;
-  viewerStrokes: Stroke[];
-  viewerShapes: Shape[];
-  viewerLive: Stroke | undefined;
-  viewerHostViewport: { width: number; height: number };
-  viewerHostCamera: { x: number; y: number; zoom: number };
-  viewerPresenter: { mode: "laser" | "spotlight"; x: number; y: number } | null;
-  // Notebook stack mirror: every sheet's page-local strokes/shapes + the mode/layout.
-  viewerNotebookMode: NotebookMode;
-  viewerNotebookLayout: NotebookLayout;
-  viewerAllStrokes: Stroke[];
-  viewerAllShapes: Shape[];
-  viewerImages: ImageItem[];
   // Theme id the host is broadcasting; the viewer mirrors it unless overridden.
   viewerHostTheme: string;
   // Collaborative editing.
@@ -231,20 +217,6 @@ export const useLiveStore = defineStore("live", {
     reconnectAttempt: 0,
     hostViewport: { width: 1920, height: 1080 },
     hostCamera: { x: 0, y: 0, zoom: 1 },
-    viewerProject: undefined,
-    viewerPages: [],
-    viewerCurrentPageId: undefined,
-    viewerStrokes: [],
-    viewerShapes: [],
-    viewerLive: undefined,
-    viewerHostViewport: { width: 1920, height: 1080 },
-    viewerHostCamera: { x: 0, y: 0, zoom: 1 },
-    viewerPresenter: null,
-    viewerNotebookMode: "off",
-    viewerNotebookLayout: "vertical",
-    viewerAllStrokes: [],
-    viewerAllShapes: [],
-    viewerImages: [],
     viewerHostTheme: "",
     viewers: [],
     viewerCanEdit: false,
@@ -259,12 +231,6 @@ export const useLiveStore = defineStore("live", {
     chatSeen: {},
   }),
   getters: {
-    viewerCurrentPage(state): Page | undefined {
-      return state.viewerPages.find((p) => p.id === state.viewerCurrentPageId);
-    },
-    viewerIsNotebook(state): boolean {
-      return state.viewerNotebookMode !== "off";
-    },
     isHosting(state): boolean {
       return state.mode === "host" && state.status !== "idle" && state.status !== "error";
     },
@@ -710,20 +676,6 @@ export const useLiveStore = defineStore("live", {
       this.error = "";
       this.disconnectReason = "";
       this.reconnectAttempt = 0;
-      this.viewerProject = undefined;
-      this.viewerPages = [];
-      this.viewerCurrentPageId = undefined;
-      this.viewerStrokes = [];
-      this.viewerShapes = [];
-      this.viewerLive = undefined;
-      this.viewerHostViewport = { width: 1920, height: 1080 };
-      this.viewerHostCamera = { x: 0, y: 0, zoom: 1 };
-      this.viewerPresenter = null;
-      this.viewerNotebookMode = "off";
-      this.viewerNotebookLayout = "vertical";
-      this.viewerAllStrokes = [];
-      this.viewerAllShapes = [];
-      this.viewerImages = [];
       this.viewerHostTheme = "";
       this.viewers = [];
       this.viewerCanEdit = false;
@@ -818,7 +770,9 @@ export const useLiveStore = defineStore("live", {
                 hostAwayTimer = undefined;
               }
             }
-            this.applyMessage(msg);
+            // The viewer drives the editor store directly (guest mode), reusing
+            // the host's CanvasStage instead of the old ViewerStage mirror.
+            this.applyRemoteToEditor(msg);
           },
           onDisconnect: (reason?: string) => {
             if (session !== activeSession) return;
@@ -883,245 +837,139 @@ export const useLiveStore = defineStore("live", {
       session?.send(msg);
     },
 
-    applyMessage(msg: SyncMessage) {
+    // Guest mode: apply a host broadcast to the editor store (the viewer reuses
+    // the host's CanvasStage). Content goes through editor.applyRemote* (no
+    // persist / history / re-broadcast). In-progress strokes ride the existing
+    // remoteLiveStrokes preview. Chat/grant/theme are handled here as before;
+    // viewport/presenter are ignored (the viewer keeps its own camera).
+    applyRemoteToEditor(msg: SyncMessage) {
+      const editor = useEditorStore();
       switch (msg.t) {
-        case "hello": {
-          this.viewerProject = msg.project;
-          this.viewerPages = msg.pages;
-          this.viewerCurrentPageId = msg.currentPageId;
-          this.viewerStrokes = msg.strokes;
-          this.viewerShapes = msg.shapes ?? [];
-          this.viewerLive = undefined;
-          this.viewerHostViewport = { ...msg.hostViewport };
-          this.viewerHostCamera = { ...msg.hostCamera };
-          this.viewerNotebookMode = msg.notebookMode ?? "off";
-          this.viewerNotebookLayout = msg.notebookLayout ?? "vertical";
-          this.viewerAllStrokes = msg.allStrokes ?? [];
-          this.viewerAllShapes = msg.allShapes ?? [];
+        case "hello":
+          editor.beginGuestSession({
+            project: msg.project,
+            pages: msg.pages,
+            currentPageId: msg.currentPageId,
+            strokes: msg.strokes,
+            shapes: msg.shapes ?? [],
+            notebookMode: msg.notebookMode,
+            notebookLayout: msg.notebookLayout,
+            allStrokes: msg.allStrokes,
+            allShapes: msg.allShapes,
+          });
           this.viewerHostTheme = msg.themeId ?? "";
+          this.viewerCanEdit = false;
+          this.viewerOwnLive = undefined;
+          this.remoteLiveStrokes = [];
           break;
-        }
-        case "notebook-sync": {
-          this.viewerNotebookMode = msg.notebookMode;
-          this.viewerNotebookLayout = msg.notebookLayout;
-          this.viewerPages = msg.pages;
-          this.viewerAllStrokes = msg.allStrokes;
-          this.viewerAllShapes = msg.allShapes;
-          this.viewerLive = undefined;
+        case "notebook-sync":
+          editor.applyRemoteNotebookSync(
+            msg.notebookMode,
+            msg.notebookLayout,
+            msg.pages,
+            msg.allStrokes,
+            msg.allShapes,
+          );
           break;
-        }
-        case "notebook-strokes": {
-          this.viewerAllStrokes = this.viewerAllStrokes.concat(msg.strokes);
+        case "notebook-strokes":
+          editor.applyRemoteNotebookStrokes(msg.strokes);
           break;
-        }
-        case "notebook-shapes": {
-          this.viewerAllShapes = this.viewerAllShapes.concat(msg.shapes);
+        case "notebook-shapes":
+          editor.applyRemoteNotebookShapes(msg.shapes);
           break;
-        }
-        case "notebook-layout": {
-          this.viewerNotebookLayout = msg.layout;
+        case "notebook-layout":
+          editor.applyRemoteNotebookLayout(msg.layout);
           break;
-        }
-        case "viewport": {
-          this.viewerHostViewport = { width: msg.width, height: msg.height };
-          this.viewerHostCamera = { x: msg.camX, y: msg.camY, zoom: msg.camZoom };
+        case "page-set":
+          editor.applyRemotePageSet(msg.pageId, msg.pages, msg.strokes, msg.shapes);
           break;
-        }
-        case "page-set": {
-          this.viewerPages = msg.pages;
-          this.viewerLive = undefined;
-          if (this.viewerIsNotebook) {
-            // Notebook: replace just this sheet's strokes/shapes in the full stack
-            // (used by the host's area-erase / undo flush).
-            this.viewerAllStrokes = this.viewerAllStrokes
-              .filter((s) => s.pageId !== msg.pageId)
-              .concat(msg.strokes);
-            this.viewerAllShapes = this.viewerAllShapes
-              .filter((s) => s.pageId !== msg.pageId)
-              .concat(msg.shapes);
-          } else {
-            this.viewerCurrentPageId = msg.pageId;
-            this.viewerStrokes = msg.strokes;
-            this.viewerShapes = msg.shapes;
-          }
+        case "page-add":
+          editor.applyRemotePages(msg.pages);
           break;
-        }
-        case "page-add": {
-          this.viewerPages = msg.pages;
+        case "page-delete":
+          editor.applyRemotePageDelete(msg.pageId, msg.pages, msg.fallbackPageId);
           break;
-        }
-        case "page-delete": {
-          this.viewerPages = msg.pages;
-          if (this.viewerIsNotebook) {
-            this.viewerAllStrokes = this.viewerAllStrokes.filter((s) => s.pageId !== msg.pageId);
-            this.viewerAllShapes = this.viewerAllShapes.filter((s) => s.pageId !== msg.pageId);
-          } else if (this.viewerCurrentPageId === msg.pageId) {
-            this.viewerCurrentPageId = msg.fallbackPageId;
-            this.viewerStrokes = [];
-            this.viewerShapes = [];
-          }
+        case "page-rename":
+          editor.applyRemotePageRename(msg.pageId, msg.name);
           break;
-        }
-        case "page-rename": {
-          const p = this.viewerPages.find((x) => x.id === msg.pageId);
-          if (p) p.name = msg.name;
+        case "page-background":
+          editor.applyRemotePageBackground(msg.pageId, msg.background);
           break;
-        }
-        case "page-background": {
-          const p = this.viewerPages.find((x) => x.id === msg.pageId);
-          if (p) p.background = msg.background;
+        case "page-size":
+          editor.applyRemotePageSize(msg.pageId, msg.width, msg.height);
           break;
-        }
-        case "page-size": {
-          const p = this.viewerPages.find((x) => x.id === msg.pageId);
-          if (p) {
-            p.width = msg.width;
-            p.height = msg.height;
-          }
-          break;
-        }
         case "stroke-begin": {
-          // Skip the echo of our own in-progress stroke (the host relays it back).
+          // Host (or another viewer, relayed) drawing live. Skip our own echo.
           if (this.viewerOwnLive && msg.stroke.id === this.viewerOwnLive.id) break;
-          // Notebook renders the whole stack, so accept live strokes on any sheet.
-          if (!this.viewerIsNotebook && msg.stroke.pageId !== this.viewerCurrentPageId) break;
-          this.viewerLive = { ...msg.stroke };
+          // Page-local previews aren't positioned here, so skip notebook live
+          // strokes (the committed stroke still arrives via stroke-commit).
+          if (editor.notebookMode !== "off") break;
+          this.remoteLiveStrokes = [
+            ...this.remoteLiveStrokes.filter((s) => s.id !== msg.stroke.id),
+            { ...msg.stroke },
+          ];
           break;
         }
         case "stroke-points": {
           if (this.viewerOwnLive && msg.strokeId === this.viewerOwnLive.id) break;
-          if (!this.viewerIsNotebook && msg.pageId !== this.viewerCurrentPageId) break;
-          const live = this.viewerLive;
-          if (!live || live.id !== msg.strokeId) break;
-          live.points = live.points.concat(msg.points);
-          this.viewerLive = { ...live };
+          this.remoteLiveStrokes = this.remoteLiveStrokes.map((s) =>
+            s.id === msg.strokeId ? { ...s, points: [...s.points, ...msg.points] } : s,
+          );
           break;
         }
-        case "stroke-commit": {
-          this.viewerLive = undefined;
-          if (this.viewerIsNotebook) {
-            if (this.viewerAllStrokes.some((s) => s.id === msg.stroke.id)) break;
-            this.viewerAllStrokes = [...this.viewerAllStrokes, msg.stroke];
-          } else {
-            if (msg.stroke.pageId !== this.viewerCurrentPageId) break;
-            if (this.viewerStrokes.some((s) => s.id === msg.stroke.id)) break;
-            this.viewerStrokes = [...this.viewerStrokes, msg.stroke];
-          }
+        case "stroke-cancel":
+          this.remoteLiveStrokes = this.remoteLiveStrokes.filter((s) => s.id !== msg.strokeId);
           break;
-        }
-        case "stroke-cancel": {
-          if (this.viewerOwnLive && msg.strokeId === this.viewerOwnLive.id) break;
-          if (this.viewerLive && this.viewerLive.id === msg.strokeId) {
-            this.viewerLive = undefined;
-          }
+        case "stroke-commit":
+          this.remoteLiveStrokes = this.remoteLiveStrokes.filter((s) => s.id !== msg.stroke.id);
+          editor.applyRemoteStrokeCommit(msg.stroke);
           break;
-        }
-        case "stroke-delete": {
-          if (this.viewerIsNotebook) {
-            this.viewerAllStrokes = this.viewerAllStrokes.filter((s) => s.id !== msg.strokeId);
-          } else {
-            this.viewerStrokes = this.viewerStrokes.filter((s) => s.id !== msg.strokeId);
-          }
+        case "stroke-delete":
+          editor.applyRemoteStrokeDelete(msg.strokeId);
           break;
-        }
-        case "shape-commit": {
-          if (this.viewerIsNotebook) {
-            if (this.viewerAllShapes.some((s) => s.id === msg.shape.id)) break;
-            this.viewerAllShapes = [...this.viewerAllShapes, msg.shape];
-          } else {
-            if (msg.shape.pageId !== this.viewerCurrentPageId) break;
-            if (this.viewerShapes.some((s) => s.id === msg.shape.id)) break;
-            this.viewerShapes = [...this.viewerShapes, msg.shape];
-          }
+        case "shape-commit":
+          editor.applyRemoteShapeCommit(msg.shape);
           break;
-        }
-        case "shape-delete": {
-          if (this.viewerIsNotebook) {
-            this.viewerAllShapes = this.viewerAllShapes.filter((s) => s.id !== msg.shapeId);
-          } else {
-            this.viewerShapes = this.viewerShapes.filter((s) => s.id !== msg.shapeId);
-          }
+        case "shape-delete":
+          editor.applyRemoteShapeDelete(msg.shapeId);
           break;
-        }
-        case "text-commit": {
-          const page = this.viewerPages.find((p) => p.id === msg.text.pageId);
-          if (page) {
-            page.texts = [...(page.texts ?? []).filter((t) => t.id !== msg.text.id), msg.text];
-          }
+        case "text-commit":
+          editor.applyRemoteTextCommit(msg.text);
           break;
-        }
-        case "text-delete": {
-          const page = this.viewerPages.find((p) => p.id === msg.pageId);
-          if (page?.texts) page.texts = page.texts.filter((t) => t.id !== msg.textId);
+        case "text-delete":
+          editor.applyRemoteTextDelete(msg.pageId, msg.textId);
           break;
-        }
-        case "clear-page": {
-          if (this.viewerIsNotebook) {
-            this.viewerAllStrokes = this.viewerAllStrokes.filter((s) => s.pageId !== msg.pageId);
-            this.viewerAllShapes = this.viewerAllShapes.filter((s) => s.pageId !== msg.pageId);
-          } else if (msg.pageId === this.viewerCurrentPageId) {
-            this.viewerStrokes = [];
-            this.viewerShapes = [];
-          }
+        case "clear-page":
+          editor.applyRemoteClearPage(msg.pageId);
           break;
-        }
-        case "presenter": {
-          this.viewerPresenter = { mode: msg.mode, x: msg.x, y: msg.y };
+        case "image-add":
+          editor.applyRemoteImageAdd(msg.image);
           break;
-        }
-        case "presenter-off": {
-          this.viewerPresenter = null;
-          break;
-        }
-        case "theme": {
+        case "theme":
           this.viewerHostTheme = msg.themeId;
           break;
-        }
-        case "image-add": {
-          if (this.viewerImages.some((i) => i.id === msg.image.id)) break;
-          this.viewerImages = [...this.viewerImages, msg.image];
-          break;
-        }
-        case "chat": {
-          this.appendChat(msg);
-          break;
-        }
-        case "chat-history": {
-          this.mergeChatHistory(msg.messages);
-          break;
-        }
-        case "chat-edit": {
-          this.applyChatEdit(msg.id, msg.text, msg.editedTs);
-          break;
-        }
-        case "chat-seen": {
-          this.applyChatSeen(msg.who, msg.name, msg.ts);
-          break;
-        }
-        case "grant-edit": {
+        case "grant-edit":
           this.viewerCanEdit = true;
           break;
-        }
-        case "revoke-edit": {
+        case "revoke-edit":
           this.viewerCanEdit = false;
           this.viewerOwnLive = undefined;
           break;
-        }
-        // Viewer-origin edits are consumed by the host via onViewerMessage and
-        // never reach a viewer's applyMessage.
-        case "viewer-stroke-begin":
-        case "viewer-stroke-points":
-        case "viewer-stroke-commit":
-        case "viewer-stroke-cancel":
-        case "viewer-shape-commit":
-        case "viewer-text-commit":
-        case "viewer-erase-stroke":
-        case "viewer-erase-shape":
-        case "viewer-image-add":
-        case "viewer-rename":
-        case "viewer-ready":
-        case "session-ended":
+        case "chat":
+          this.appendChat(msg);
           break;
+        case "chat-history":
+          this.mergeChatHistory(msg.messages);
+          break;
+        case "chat-edit":
+          this.applyChatEdit(msg.id, msg.text, msg.editedTs);
+          break;
+        case "chat-seen":
+          this.applyChatSeen(msg.who, msg.name, msg.ts);
+          break;
+        // viewport / presenter / presenter-off: the viewer keeps its own camera
+        // and does not mirror the host's presenter overlay — ignored.
+        // session-ended is handled in onMessage before reaching here.
       }
     },
   },

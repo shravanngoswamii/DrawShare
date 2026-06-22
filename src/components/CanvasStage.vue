@@ -815,6 +815,18 @@ function render() {
         from: liveSendCursor,
       });
       liveSendCursor = currentStroke.points.length;
+    } else if (editor.guest && currentStroke.points.length > liveSendCursor) {
+      const newPoints = currentStroke.points.slice(liveSendCursor);
+      live.setViewerOwnLive({ ...currentStroke });
+      live.sendViewerEdit({
+        t: "viewer-stroke-points",
+        vid: live.viewerId,
+        pageId: currentStroke.pageId,
+        strokeId: currentStroke.id,
+        points: newPoints,
+        from: liveSendCursor,
+      });
+      liveSendCursor = currentStroke.points.length;
     }
   }
   // Live preview of strokes a permitted viewer is currently drawing (world coords).
@@ -1093,6 +1105,8 @@ function commitEditing() {
 function handleDown(s: InputSample) {
   if (replay.active) return;
   if (panActive || pinchActive) return;
+  // Guest (live viewer) without draw permission can pan/zoom but not edit.
+  if (editor.guest && !live.viewerCanEdit) return;
   // Laser is a pointing aid, not a tool: the press starts a transient glow trail
   // instead of a committed stroke.
   if (editor.presenterMode === "laser") {
@@ -1275,6 +1289,16 @@ function handleDown(s: InputSample) {
   liveSendCursor = 0;
   if (live.mode === "host") {
     live.broadcast({ t: "stroke-begin", stroke: { ...currentStroke, points: [point] } });
+    liveSendCursor = 1;
+  } else if (editor.guest) {
+    // Guest: stream the in-progress stroke to the host as a viewer edit; track
+    // it as our own live so the host's relayed echo is ignored.
+    live.setViewerOwnLive({ ...currentStroke });
+    live.sendViewerEdit({
+      t: "viewer-stroke-begin",
+      vid: live.viewerId,
+      stroke: { ...currentStroke, points: [point] },
+    });
     liveSendCursor = 1;
   }
   schedule();
@@ -1566,6 +1590,9 @@ async function handleUp(sample?: InputSample) {
   liveSendCursor = 0;
   dirtyBase = true;
   schedule();
+  // Guest: editor.commitStroke relays the commit to the host; drop our live copy
+  // so the host's re-broadcast isn't suppressed as an own-echo.
+  if (editor.guest) live.setViewerOwnLive(undefined);
   await editor.commitStroke(finished);
 }
 
@@ -1647,6 +1674,7 @@ async function handleCancel(sample?: InputSample) {
     liveSendCursor = 0;
     dirtyBase = true;
     schedule();
+    if (editor.guest) live.setViewerOwnLive(undefined);
     await editor.commitStroke(partial);
   } else {
     if (live.mode === "host") {
@@ -1655,6 +1683,14 @@ async function handleCancel(sample?: InputSample) {
         pageId: currentStroke.pageId,
         strokeId: currentStroke.id,
       });
+    } else if (editor.guest) {
+      live.sendViewerEdit({
+        t: "viewer-stroke-cancel",
+        vid: live.viewerId,
+        pageId: currentStroke.pageId,
+        strokeId: currentStroke.id,
+      });
+      live.setViewerOwnLive(undefined);
     }
     currentStroke = undefined;
     liveSendCursor = 0;
@@ -1779,6 +1815,16 @@ function onWheel(e: WheelEvent) {
 // Abandon any in-progress stroke/shape/erase without committing — used when a
 // second finger turns a one-finger draw into a two-finger pan/zoom.
 function discardActiveDraw() {
+  // Guest: tell the host to drop our dangling live stroke (host path unchanged).
+  if (editor.guest && currentStroke) {
+    live.sendViewerEdit({
+      t: "viewer-stroke-cancel",
+      vid: live.viewerId,
+      pageId: currentStroke.pageId,
+      strokeId: currentStroke.id,
+    });
+    live.setViewerOwnLive(undefined);
+  }
   currentStroke = undefined;
   currentShape = undefined;
   predictedPoints = [];
