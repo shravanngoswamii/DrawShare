@@ -10,12 +10,16 @@ const emit = defineEmits<{ "update:open": [boolean] }>();
 
 const live = useLiveStore();
 
+// With a built-in FAB (viewer) the component owns its open state; otherwise the
+// parent controls it via v-model:open (host). We can't use `props.open` to tell
+// the modes apart — Vue casts an absent boolean prop to `false`, not undefined —
+// so the `fab` prop is the discriminator.
 const internalOpen = ref(false);
 const open = computed({
-  get: () => (props.open !== undefined ? props.open : internalOpen.value),
+  get: () => (props.fab ? internalOpen.value : props.open),
   set: (v: boolean) => {
-    internalOpen.value = v;
-    emit("update:open", v);
+    if (props.fab) internalOpen.value = v;
+    else emit("update:open", v);
   },
 });
 const full = ref(false);
@@ -154,7 +158,7 @@ watch(open, (isOpen) => {
   height: 48px;
   border-radius: var(--radius-pill);
   background: var(--color-accent);
-  color: #fff;
+  color: var(--color-accent-text);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -304,7 +308,7 @@ watch(open, (isOpen) => {
 .chat-msg.mine .chat-bubble {
   background: var(--color-accent);
   border-color: var(--color-accent);
-  color: #fff;
+  color: var(--color-accent-text);
 }
 
 .chat-time {

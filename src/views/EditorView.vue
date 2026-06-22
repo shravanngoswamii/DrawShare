@@ -449,11 +449,11 @@ onBeforeUnmount(() => removeProbe?.());
 .help-fab.active { background: var(--color-accent-soft); color: var(--color-accent); border-color: var(--color-accent); }
 .help-fab.quiet { opacity: 0.06; pointer-events: none; }
 
-/* Chat FAB: same glass pill as help, stacked just above it. */
+/* Chat FAB: same glass pill as help, sitting just to its left. */
 .chat-fab {
   position: absolute;
-  bottom: 56px;
-  right: 16px;
+  bottom: 16px;
+  right: 56px;
   z-index: 20;
   width: 32px;
   height: 32px;
@@ -487,7 +487,7 @@ onBeforeUnmount(() => removeProbe?.());
    corner FABs left to sit just clear of it. (Mobile panel is a drawer — no shift.) */
 @media (min-width: 768px) {
   .help-fab.shifted { right: calc(var(--sidepanel-w) + 20px); }
-  .chat-fab.shifted { right: calc(var(--sidepanel-w) + 20px); }
+  .chat-fab.shifted { right: calc(var(--sidepanel-w) + 60px); }
   .replay-fab.shifted { right: calc(var(--sidepanel-w) + 16px); }
 }
 
@@ -509,15 +509,18 @@ onBeforeUnmount(() => removeProbe?.());
     bottom: calc(var(--safe-bottom, 0px) + 72px);
   }
   .chat-fab {
-    bottom: calc(var(--safe-bottom, 0px) + 116px);
+    bottom: calc(var(--safe-bottom, 0px) + 72px);
   }
   .replay-fab {
     bottom: calc(var(--safe-bottom, 0px) + 118px);
   }
   .help-fab.shifted,
-  .chat-fab.shifted,
   .replay-fab.shifted {
     right: 12px;
+  }
+  /* Beside the help button (which sits at right:12 on mobile). */
+  .chat-fab.shifted {
+    right: 52px;
   }
 }
 </style>
