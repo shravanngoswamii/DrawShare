@@ -16,19 +16,6 @@ body,
   touch-action: manipulation;
 }
 
-/* Root the document so it can't be scrolled. On iPad Chrome the on-screen
-   keyboard scrolls the whole page up to reveal the focused input and leaves it
-   stuck-scrolled after closing, opening a gap below the app. Pinning body/#app
-   with position:fixed means the keyboard can only pan the visual viewport
-   (which auto-resets on close), never the layout. Every view/panel scrolls its
-   own inner overflow:auto container, so nothing relies on document scroll. */
-body,
-#app {
-  position: fixed;
-  inset: 0;
-  width: 100%;
-}
-
 html {
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;

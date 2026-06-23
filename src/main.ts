@@ -48,7 +48,26 @@ router.onError((err) => {
   }
 });
 
+// On iPad the virtual keyboard scrolls the document to reveal the focused input
+// and leaves it stuck-scrolled after closing. Don't resize the app (that left a
+// gap below it in iPad Chrome) — just snap the document back to the top once the
+// input blurs or the keyboard closes, never while an input is still focused.
+function lockKeyboardScroll() {
+  const isTyping = () => {
+    const el = document.activeElement as HTMLElement | null;
+    return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+  };
+  const reset = () => {
+    if (isTyping()) return;
+    window.scrollTo(0, 0);
+    if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
+  };
+  window.visualViewport?.addEventListener("resize", reset);
+  window.addEventListener("focusout", () => requestAnimationFrame(reset));
+}
+
 async function bootstrap() {
+  lockKeyboardScroll();
   await storage.init();
   const app = createApp(App);
   app.use(createPinia());
