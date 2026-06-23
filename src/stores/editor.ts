@@ -781,10 +781,9 @@ export const useEditorStore = defineStore("editor", {
     async commitImage(input: ImageItem) {
       this.saving++;
       try {
-        // New images are locked by default (a stray drag/eraser won't disturb them).
         const image: ImageItem = {
           ...input,
-          locked: input.locked ?? true,
+          locked: false,
           layerId: this._layerFor(input.pageId),
         };
         this.images = [...this.images, image];
@@ -847,15 +846,6 @@ export const useEditorStore = defineStore("editor", {
       this.redoStack = [];
       await this.db.putImage({ ...image });
       this._record({ op: "image-set", image: { ...image } });
-      this._syncImage(image);
-      if (this.project) await useProjectsStore().touch(this.project.id);
-    },
-    // Lock/unlock an image (locked = protected from move/resize/erase). Synced.
-    async setImageLocked(imageId: string, locked: boolean) {
-      const image = this.images.find((i) => i.id === imageId);
-      if (!image || image.locked === locked) return;
-      image.locked = locked;
-      await this.db.putImage({ ...image });
       this._syncImage(image);
       if (this.project) await useProjectsStore().touch(this.project.id);
     },
