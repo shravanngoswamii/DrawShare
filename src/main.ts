@@ -48,7 +48,21 @@ router.onError((err) => {
   }
 });
 
+// Size the app to the visual viewport (which excludes the on-screen keyboard)
+// so the layout shrinks to the visible area instead of the browser scrolling
+// the page up and leaving a stuck gap below it on iPad Chrome. See base.css.
+function trackViewportHeight() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const apply = () =>
+    document.documentElement.style.setProperty("--app-height", `${Math.round(vv.height)}px`);
+  apply();
+  vv.addEventListener("resize", apply);
+  vv.addEventListener("scroll", apply);
+}
+
 async function bootstrap() {
+  trackViewportHeight();
   await storage.init();
   const app = createApp(App);
   app.use(createPinia());

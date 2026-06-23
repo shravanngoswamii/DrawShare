@@ -16,17 +16,28 @@ body,
   touch-action: manipulation;
 }
 
-/* Root the document so it can't be scrolled. On iPad Chrome the on-screen
-   keyboard scrolls the whole page up to reveal the focused input and leaves it
-   stuck-scrolled after closing, opening a gap below the app. Pinning body/#app
-   with position:fixed means the keyboard can only pan the visual viewport
-   (which auto-resets on close), never the layout. Every view/panel scrolls its
-   own inner overflow:auto container, so nothing relies on document scroll. */
+/* iOS keyboard handling. The on-screen keyboard never shrinks the layout
+   viewport, so a bottom-anchored input (the chat composer) sits behind it and
+   the browser scrolls/pans the page up to reveal it — which on iPad Chrome stays
+   stuck after the keyboard closes, leaving a gap below the app. Instead we pin
+   the app and size it to window.visualViewport (its height excludes the
+   keyboard, set as --app-height in main.ts), so the app shrinks to the visible
+   area and the browser never needs to scroll. Every view/panel scrolls its own
+   inner overflow:auto container, so nothing relies on document scroll. */
 body,
 #app {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
   width: 100%;
+  height: var(--app-height, 100%);
+}
+
+/* Make #app the containing block for its position:fixed descendants (toolbar,
+   chat composer, panels) so they anchor to the visible area above the keyboard
+   rather than the full layout viewport. */
+#app {
+  transform: translateZ(0);
 }
 
 html {
