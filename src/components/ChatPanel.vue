@@ -92,18 +92,58 @@ function requestNotifyPermission() {
     /* not supported */
   }
 }
-function notify(m: { fromName: string; text: string; image?: string }) {
+type Incoming = { fromName: string; text: string; image?: string };
+const bodyOf = (m: Incoming) => m.text || (m.image ? "📷 Photo" : "");
+
+// New chat while the panel is closed: a system notification reaches you when the
+// tab is in the background; an in-app Notiflix toast catches you when the tab is
+// open but the chat is collapsed. Both are clickable to open the chat.
+function notify(m: Incoming) {
+  if (document.hidden || !document.hasFocus()) notifySystem(m);
+  else void toast(m);
+}
+function notifySystem(m: Incoming) {
   try {
     if (!("Notification" in window) || Notification.permission !== "granted") return;
-    // Only when the tab isn't the one being looked at.
-    if (!document.hidden && document.hasFocus()) return;
-    const body = m.text || (m.image ? "📷 Photo" : "");
-    const n = new Notification(`${m.fromName} · DrawShare`, { body, tag: "drawshare-chat" });
+    const n = new Notification(`${m.fromName} · DrawShare`, {
+      body: bodyOf(m),
+      tag: "drawshare-chat",
+    });
     n.onclick = () => {
       window.focus();
       open.value = true;
       n.close();
     };
+  } catch {
+    /* best-effort */
+  }
+}
+let notifyLib: typeof import("notiflix") | undefined;
+async function toast(m: Incoming) {
+  try {
+    if (!notifyLib) {
+      notifyLib = await import("notiflix");
+      notifyLib.Notify.init({
+        position: "right-top",
+        distance: "16px",
+        borderRadius: "10px",
+        fontFamily: "inherit",
+        useIcon: false,
+        clickToClose: true,
+        cssAnimationStyle: "from-right",
+      });
+    }
+    // Read the theme accent per-call so toasts track light/dark theme switches.
+    const cs = getComputedStyle(document.documentElement);
+    const background = cs.getPropertyValue("--color-accent").trim() || "#2563eb";
+    const textColor = cs.getPropertyValue("--color-accent-text").trim() || "#ffffff";
+    notifyLib.Notify.info(
+      `${m.fromName}: ${bodyOf(m)}`,
+      () => {
+        open.value = true;
+      },
+      { info: { background, textColor, notiflixIconColor: textColor } },
+    );
   } catch {
     /* best-effort */
   }
