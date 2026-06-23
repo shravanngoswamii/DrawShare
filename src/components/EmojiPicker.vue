@@ -29,6 +29,13 @@ onMounted(async () => {
   pickerEl = picker as unknown as HTMLElement;
   if (host.value) host.value.appendChild(pickerEl);
   else pickerEl.remove();
+  // Hide the scrollbar inside emoji-mart's shadow DOM (outer CSS can't reach it).
+  const root = (pickerEl as HTMLElement & { shadowRoot?: ShadowRoot | null }).shadowRoot;
+  if (root) {
+    const style = document.createElement("style");
+    style.textContent = ".scroll{scrollbar-width:none}.scroll::-webkit-scrollbar{display:none}";
+    root.appendChild(style);
+  }
 });
 
 onBeforeUnmount(() => {

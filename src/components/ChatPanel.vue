@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, ref, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { fileToSyncSrc } from "@/core/imageSync";
 import { useLiveStore } from "@/stores/live";
 
@@ -79,6 +79,33 @@ function playBeep() {
     osc.stop(t + 0.26);
   } catch {
     /* sound is best-effort */
+  }
+}
+
+// Browser (system) notifications via the native Web Notifications API.
+function requestNotifyPermission() {
+  try {
+    if ("Notification" in window && Notification.permission === "default") {
+      void Notification.requestPermission();
+    }
+  } catch {
+    /* not supported */
+  }
+}
+function notify(m: { fromName: string; text: string; image?: string }) {
+  try {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    // Only when the tab isn't the one being looked at.
+    if (!document.hidden && document.hasFocus()) return;
+    const body = m.text || (m.image ? "📷 Photo" : "");
+    const n = new Notification(`${m.fromName} · DrawShare`, { body, tag: "drawshare-chat" });
+    n.onclick = () => {
+      window.focus();
+      open.value = true;
+      n.close();
+    };
+  } catch {
+    /* best-effort */
   }
 }
 
@@ -174,6 +201,7 @@ function send() {
   live.sendChat(text, undefined, replyingTo.value ?? undefined);
   draft.value = "";
   replyingTo.value = null;
+  showEmoji.value = false;
   scrollToBottom();
 }
 
@@ -191,6 +219,7 @@ async function onImageFile(e: Event) {
   live.sendChat(draft.value, src, replyingTo.value ?? undefined); // typed text = caption
   draft.value = "";
   replyingTo.value = null;
+  showEmoji.value = false;
   scrollToBottom();
 }
 
@@ -209,17 +238,42 @@ watch(
       return;
     }
     const last = live.chat[live.chat.length - 1];
-    if (len > prev && last && !last.mine && !muted.value) playBeep();
+    if (len > prev && last && !last.mine && !muted.value) {
+      playBeep();
+      notify(last);
+    }
   },
 );
 
-// Opened (including by the parent in controlled mode): clear the badge, scroll.
+// Opened (including by the parent in controlled mode): clear the badge, scroll,
+// and ask for notification permission (this is a user gesture).
 watch(open, (isOpen) => {
   if (isOpen) {
     live.markChatRead();
     scrollToBottom();
+    requestNotifyPermission();
+  } else {
+    showEmoji.value = false;
   }
 });
+
+// Esc closes the emoji picker first, then the panel (desktop).
+function onKeydown(e: KeyboardEvent) {
+  if (e.key !== "Escape" || !open.value) return;
+  if (showEmoji.value) {
+    showEmoji.value = false;
+    e.stopPropagation();
+  }
+}
+watch(
+  open,
+  (isOpen) => {
+    if (isOpen) window.addEventListener("keydown", onKeydown, true);
+    else window.removeEventListener("keydown", onKeydown, true);
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown, true));
 </script>
 
 <template>
@@ -565,6 +619,10 @@ watch(open, (isOpen) => {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  scrollbar-width: none;
+}
+.chat-msgs::-webkit-scrollbar {
+  display: none;
 }
 
 .chat-empty {

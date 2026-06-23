@@ -750,7 +750,10 @@ function removeSnapshot() {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+}
+.panel-body::-webkit-scrollbar {
+  display: none;
 }
 
 /* Pages as a horizontal filmstrip — stays one row tall so it never steals
