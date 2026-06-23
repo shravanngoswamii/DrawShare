@@ -48,7 +48,28 @@ router.onError((err) => {
   }
 });
 
+// iOS (Safari and Chrome, both WebKit) scrolls the layout viewport to reveal a
+// focused input for the on-screen keyboard and leaves the page stuck-scrolled
+// after it closes — the CSS pin alone doesn't stop it. Force the document back
+// to the top once typing ends (input blur) or the keyboard closes (visual
+// viewport grows back), but never while an input is still focused, so we don't
+// fight the keyboard's own scroll-into-view mid-typing.
+function lockKeyboardScroll() {
+  const isTyping = () => {
+    const el = document.activeElement as HTMLElement | null;
+    return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+  };
+  const reset = () => {
+    if (isTyping()) return;
+    window.scrollTo(0, 0);
+    if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
+  };
+  window.addEventListener("focusout", () => requestAnimationFrame(reset));
+  window.visualViewport?.addEventListener("resize", reset);
+}
+
 async function bootstrap() {
+  lockKeyboardScroll();
   await storage.init();
   const app = createApp(App);
   app.use(createPinia());
