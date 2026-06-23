@@ -1,10 +1,22 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import {
+  computed,
+  defineAsyncComponent,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from "vue";
 import { fileToSyncSrc } from "@/core/imageSync";
 import { useLiveStore } from "@/stores/live";
 
 // Lazy-load the emoji picker (and its data) only when first opened.
 const EmojiPicker = defineAsyncComponent(() => import("@/components/EmojiPicker.vue"));
+// Lightbox is only needed once an image is opened.
+const ImageLightbox = defineAsyncComponent(() => import("@/components/ImageLightbox.vue"));
+
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
 // `fab` shows a built-in floating button (used by the viewer). When false, the
 // parent controls visibility via v-model:open and provides its own trigger
@@ -57,21 +69,33 @@ function toggleMute() {
   }
 }
 let audioCtx: AudioContext | undefined;
+function ensureCtx(): AudioContext | undefined {
+  const Ctx =
+    window.AudioContext ||
+    (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctx) return undefined;
+  if (!audioCtx) audioCtx = new Ctx();
+  return audioCtx;
+}
+// Browsers start an AudioContext "suspended" until a user gesture; if we only
+// create it later (when a message arrives) it never plays. Resume it on the
+// first interaction so the incoming chime works afterwards.
+function unlockAudio() {
+  const ctx = ensureCtx();
+  if (ctx && ctx.state === "suspended") void ctx.resume();
+}
 function playBeep() {
   try {
-    const Ctx =
-      window.AudioContext ||
-      (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!Ctx) return;
-    audioCtx = audioCtx || new Ctx();
-    void audioCtx.resume?.();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
+    const ctx = ensureCtx();
+    if (!ctx) return;
+    if (ctx.state === "suspended") void ctx.resume();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
     osc.connect(gain);
-    gain.connect(audioCtx.destination);
+    gain.connect(ctx.destination);
     osc.type = "sine";
     osc.frequency.value = 680;
-    const t = audioCtx.currentTime;
+    const t = ctx.currentTime;
     gain.gain.setValueAtTime(0.0001, t);
     gain.gain.exponentialRampToValueAtTime(0.14, t + 0.01);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
@@ -172,11 +196,13 @@ function startReply(m: { id: string; fromName: string; text: string; image?: str
     text: m.text || (m.image ? "📷 image" : ""),
   };
   editingId.value = null;
+  closePopovers();
   inputEl.value?.focus();
 }
 function startEdit(m: { id: string; text: string }) {
   editingId.value = m.id;
   replyingTo.value = null;
+  closePopovers();
   draft.value = m.text;
   nextTick(() => inputEl.value?.focus());
 }
@@ -185,6 +211,105 @@ function cancelCompose() {
   editingId.value = null;
   draft.value = "";
 }
+
+// ── Image lightbox ──
+const lightboxSrc = ref<string | null>(null);
+
+// ── Reactions ──
+type ChatMsg = (typeof live.chat)[number];
+// Message id whose quick-reaction bar is open; the full picker targets reactPickerFor.
+const quickReactFor = ref<string | null>(null);
+const reactPickerFor = ref<string | null>(null);
+
+function openReactions(id: string) {
+  quickReactFor.value = quickReactFor.value === id ? null : id;
+  reactPickerFor.value = null;
+}
+function react(id: string, emoji: string) {
+  live.toggleReaction(id, emoji);
+  quickReactFor.value = null;
+  reactPickerFor.value = null;
+}
+function onReactPick(emoji: string) {
+  if (reactPickerFor.value) react(reactPickerFor.value, emoji);
+}
+function reactionList(m: ChatMsg): { emoji: string; count: number; mine: boolean }[] {
+  if (!m.reactions) return [];
+  return Object.entries(m.reactions).map(([emoji, ids]) => ({
+    emoji,
+    count: ids.length,
+    mine: ids.includes(live.myChatId),
+  }));
+}
+
+// ── Swipe-to-reply + long-press-to-react (touch) ──
+const SWIPE_TRIGGER = 56;
+const swipeId = ref<string | null>(null);
+const swipeDx = ref(0);
+let swipeStartX = 0;
+let swipeStartY = 0;
+let swiping = false;
+let longPressTimer: ReturnType<typeof setTimeout> | undefined;
+
+function clearLongPress() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = undefined;
+  }
+}
+function onRowPointerDown(e: PointerEvent, m: ChatMsg) {
+  if (e.pointerType === "mouse") return; // desktop uses hover actions
+  swipeStartX = e.clientX;
+  swipeStartY = e.clientY;
+  swiping = true;
+  swipeId.value = m.id;
+  swipeDx.value = 0;
+  clearLongPress();
+  longPressTimer = setTimeout(() => {
+    swiping = false;
+    swipeId.value = null;
+    swipeDx.value = 0;
+    openReactions(m.id);
+  }, 450);
+}
+function onRowPointerMove(e: PointerEvent) {
+  if (!swiping || swipeId.value === null) return;
+  const dx = e.clientX - swipeStartX;
+  const dy = e.clientY - swipeStartY;
+  if (Math.abs(dx) > 8 || Math.abs(dy) > 8) clearLongPress();
+  if (Math.abs(dy) > Math.abs(dx)) {
+    // Vertical: let the list scroll, abandon the swipe.
+    swiping = false;
+    swipeId.value = null;
+    swipeDx.value = 0;
+    return;
+  }
+  swipeDx.value = Math.max(0, Math.min(dx, 80));
+}
+function onRowPointerUp(m: ChatMsg) {
+  clearLongPress();
+  if (swiping && swipeDx.value >= SWIPE_TRIGGER) startReply(m);
+  swiping = false;
+  swipeId.value = null;
+  swipeDx.value = 0;
+}
+
+function closePopovers() {
+  quickReactFor.value = null;
+  reactPickerFor.value = null;
+}
+function onDocPointerDown(e: PointerEvent) {
+  const t = e.target as HTMLElement;
+  if (t.closest(".chat-quickreact, .chat-react-emoji, .chat-act")) return;
+  closePopovers();
+}
+watch(
+  () => quickReactFor.value ?? reactPickerFor.value,
+  (anyOpen) => {
+    if (anyOpen) document.addEventListener("pointerdown", onDocPointerDown, true);
+    else document.removeEventListener("pointerdown", onDocPointerDown, true);
+  },
+);
 
 // Clicking a reply preview jumps to the original message and flashes it.
 const highlightedId = ref<string | null>(null);
@@ -222,6 +347,7 @@ function scrollToBottom() {
 }
 
 function toggle() {
+  unlockAudio();
   open.value = !open.value;
   if (open.value) {
     live.markChatRead();
@@ -230,6 +356,7 @@ function toggle() {
 }
 
 function send() {
+  unlockAudio();
   const text = draft.value;
   if (!text.trim()) return;
   if (editingId.value) {
@@ -297,10 +424,13 @@ watch(open, (isOpen) => {
   }
 });
 
-// Esc closes the emoji picker first, then the panel (desktop).
+// Esc closes any open popover first, then the panel (desktop).
 function onKeydown(e: KeyboardEvent) {
   if (e.key !== "Escape" || !open.value) return;
-  if (showEmoji.value) {
+  if (quickReactFor.value || reactPickerFor.value) {
+    closePopovers();
+    e.stopPropagation();
+  } else if (showEmoji.value) {
     showEmoji.value = false;
     e.stopPropagation();
   }
@@ -313,7 +443,16 @@ watch(
   },
   { immediate: true },
 );
-onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown, true));
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", onKeydown, true);
+  document.removeEventListener("pointerdown", onDocPointerDown, true);
+});
+
+// Resume audio on the first interaction so the incoming-message chime can play.
+onMounted(() => {
+  window.addEventListener("pointerdown", unlockAudio, { once: true });
+  window.addEventListener("keydown", unlockAudio, { once: true });
+});
 </script>
 
 <template>
@@ -404,23 +543,61 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown, true));
             :data-mid="m.id"
           >
             <div v-if="!m.mine" class="chat-who">{{ m.fromName }}</div>
-            <div class="chat-row">
-              <div class="chat-bubble" :class="{ 'has-image': m.image }">
-                <button
-                  v-if="m.replyTo"
-                  type="button"
-                  class="chat-quote"
-                  @click="jumpToMessage(m.replyTo.id)"
-                  title="Go to replied message"
-                >
-                  <span class="chat-quote-name">{{ m.replyTo.fromName }}</span>
-                  <span class="chat-quote-text">{{ m.replyTo.text }}</span>
-                </button>
-                <img v-if="m.image" :src="m.image" class="chat-img" alt="shared image" loading="lazy" />
-                <span v-if="m.text" class="chat-text">{{ m.text }}</span>
-                <span v-if="m.editedTs" class="chat-edited">edited</span>
+            <div
+              class="chat-row"
+              @pointerdown="onRowPointerDown($event, m)"
+              @pointermove="onRowPointerMove"
+              @pointerup="onRowPointerUp(m)"
+              @pointercancel="onRowPointerUp(m)"
+            >
+              <span
+                class="chat-swipe-hint"
+                :class="{ active: swipeId === m.id && swipeDx > 0, ready: swipeId === m.id && swipeDx >= SWIPE_TRIGGER }"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17 4 12l5-5"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
+              </span>
+              <div
+                class="chat-swipe"
+                :style="swipeId === m.id ? { transform: `translateX(${swipeDx}px)` } : undefined"
+              >
+                <div class="chat-bubble" :class="{ 'has-image': m.image }">
+                  <button
+                    v-if="m.replyTo"
+                    type="button"
+                    class="chat-quote"
+                    @click="jumpToMessage(m.replyTo.id)"
+                    title="Go to replied message"
+                  >
+                    <span class="chat-quote-name">{{ m.replyTo.fromName }}</span>
+                    <span class="chat-quote-text">{{ m.replyTo.text }}</span>
+                  </button>
+                  <img
+                    v-if="m.image"
+                    :src="m.image"
+                    class="chat-img"
+                    alt="shared image"
+                    loading="lazy"
+                    @click="lightboxSrc = m.image ?? null"
+                  />
+                  <span v-if="m.text" class="chat-text">{{ m.text }}</span>
+                  <span v-if="m.editedTs" class="chat-edited">edited</span>
+                </div>
+                <div v-if="reactionList(m).length" class="chat-reactions">
+                  <button
+                    v-for="r in reactionList(m)"
+                    :key="r.emoji"
+                    class="chat-reaction"
+                    :class="{ mine: r.mine }"
+                    @click="react(m.id, r.emoji)"
+                  >
+                    <span>{{ r.emoji }}</span><span class="chat-reaction-n">{{ r.count }}</span>
+                  </button>
+                </div>
               </div>
               <div class="chat-actions">
+                <button class="chat-act" @click="openReactions(m.id)" title="React" aria-label="React">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                </button>
                 <button class="chat-act" @click="startReply(m)" title="Reply" aria-label="Reply">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17 4 12l5-5"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
                 </button>
@@ -430,6 +607,27 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown, true));
               </div>
               <span class="chat-time">{{ formatTime(m.ts) }}</span>
             </div>
+
+            <!-- Quick reactions / full picker for this message -->
+            <div v-if="quickReactFor === m.id" class="chat-quickreact" @pointerdown.stop>
+              <button
+                v-for="e in QUICK_REACTIONS"
+                :key="e"
+                class="chat-qr"
+                @click="react(m.id, e)"
+              >{{ e }}</button>
+              <button
+                class="chat-qr chat-qr-more"
+                @click="reactPickerFor = m.id; quickReactFor = null"
+                aria-label="More emoji"
+                title="More"
+              >+</button>
+            </div>
+            <EmojiPicker
+              v-if="reactPickerFor === m.id"
+              class="chat-emoji chat-react-emoji"
+              @select="onReactPick"
+            />
           </div>
           <div v-if="seenInfo && seenInfo.id === m.id" class="chat-seen">
             Seen by {{ seenInfo.names.join(", ") }}
@@ -505,6 +703,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown, true));
         />
       </form>
     </div>
+
+    <ImageLightbox v-if="lightboxSrc" :src="lightboxSrc" @close="lightboxSrc = null" />
   </div>
 </template>
 
@@ -691,12 +891,44 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown, true));
 }
 
 .chat-row {
+  position: relative;
   display: flex;
   align-items: flex-end;
   gap: var(--space-2);
+  /* Let vertical drags scroll the list while we handle horizontal swipe-to-reply. */
+  touch-action: pan-y;
 }
 .chat-msg.mine .chat-row {
   flex-direction: row-reverse;
+}
+
+/* Swipe-to-reply: the bubble slides, an arrow is revealed behind its left edge. */
+.chat-swipe {
+  min-width: 0;
+  transition: transform 120ms ease;
+}
+.chat-swipe-hint {
+  position: absolute;
+  left: -2px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-3, var(--color-surface-2));
+  color: var(--color-text-muted);
+  opacity: 0;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+.chat-swipe-hint.active {
+  opacity: 0.55;
+}
+.chat-swipe-hint.ready {
+  opacity: 1;
+  color: var(--color-accent);
 }
 
 .chat-bubble {
@@ -722,6 +954,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown, true));
   width: auto;
   height: auto;
   border-radius: var(--radius-md);
+  cursor: zoom-in;
 }
 .chat-bubble.has-image .chat-text {
   padding: 0 var(--space-2) 2px;
@@ -813,6 +1046,81 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown, true));
 .chat-act:hover {
   background: var(--color-surface-2);
   color: var(--color-text);
+}
+
+/* Reaction chips under a bubble. */
+.chat-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.chat-msg.mine .chat-reactions {
+  justify-content: flex-end;
+}
+.chat-reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  font-size: var(--text-xs);
+  line-height: 1;
+  color: var(--color-text);
+}
+.chat-reaction.mine {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
+.chat-reaction-n {
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.chat-reaction.mine .chat-reaction-n {
+  color: var(--color-accent);
+}
+
+/* Quick-reaction bar (long-press on touch, react button on desktop). */
+.chat-quickreact {
+  align-self: flex-start;
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+  padding: 4px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-lg);
+}
+.chat-msg.mine .chat-quickreact {
+  align-self: flex-end;
+}
+.chat-qr {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  font-size: 18px;
+  background: transparent;
+  border: none;
+}
+.chat-qr:hover {
+  background: var(--color-surface-2);
+}
+.chat-qr-more {
+  font-size: 18px;
+  color: var(--color-text-muted);
+}
+.chat-react-emoji {
+  margin-top: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
 }
 
 .chat-seen {
