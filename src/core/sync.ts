@@ -124,10 +124,14 @@ export type SyncMessage =
         image?: string;
         replyTo?: { id: string; fromName: string; text: string };
         editedTs?: number;
+        reactions?: Record<string, string[]>;
       }[];
     }
   // An author edited one of their messages; everyone updates that message's text.
   | { t: "chat-edit"; id: string; text: string; editedTs: number }
+  // A participant toggled an emoji reaction on a message. `fromId` is keyed so a
+  // reaction toggles per-person; `op` adds or removes it.
+  | { t: "chat-reaction"; id: string; emoji: string; fromId: string; op: "add" | "remove" }
   // A participant has read the chat up to `ts` (for "Seen" receipts).
   | { t: "chat-seen"; who: string; name: string; ts: number }
   // A viewer changed its display name (viewer -> host, to update the roster).

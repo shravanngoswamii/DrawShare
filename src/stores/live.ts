@@ -34,6 +34,8 @@ export interface ChatMessage {
   image?: string;
   replyTo?: { id: string; fromName: string; text: string };
   editedTs?: number;
+  // emoji -> list of fromIds who reacted with it.
+  reactions?: Record<string, string[]>;
 }
 
 const HOST_CHAT_ID = "host";
@@ -351,6 +353,9 @@ export const useLiveStore = defineStore("live", {
                   text: m.text,
                   ts: m.ts,
                   ...(m.image ? { image: m.image } : {}),
+                  ...(m.replyTo ? { replyTo: m.replyTo } : {}),
+                  ...(m.editedTs ? { editedTs: m.editedTs } : {}),
+                  ...(m.reactions ? { reactions: m.reactions } : {}),
                 })),
               });
             }
@@ -371,6 +376,10 @@ export const useLiveStore = defineStore("live", {
             }
             if (msg.t === "chat-edit") {
               this.applyChatEdit(msg.id, msg.text, msg.editedTs);
+              return;
+            }
+            if (msg.t === "chat-reaction") {
+              this.applyChatReaction(msg.id, msg.emoji, msg.fromId, msg.op);
               return;
             }
             if (msg.t === "chat-seen") {
@@ -599,6 +608,31 @@ export const useLiveStore = defineStore("live", {
       this.persistChat();
     },
 
+    // Toggle my own emoji reaction on a message, optimistically, and tell everyone.
+    toggleReaction(id: string, emoji: string) {
+      if (this.mode === "off") return;
+      const m = this.chat.find((x) => x.id === id);
+      if (!m) return;
+      const me = this.myChatId;
+      const has = (m.reactions?.[emoji] ?? []).includes(me);
+      const op = has ? "remove" : "add";
+      this.applyChatReaction(id, emoji, me, op);
+      session?.sendAll({ t: "chat-reaction", id, emoji, fromId: me, op });
+    },
+
+    applyChatReaction(id: string, emoji: string, fromId: string, op: "add" | "remove") {
+      const m = this.chat.find((x) => x.id === id);
+      if (!m) return;
+      const reactions: Record<string, string[]> = { ...(m.reactions ?? {}) };
+      const list = new Set(reactions[emoji] ?? []);
+      if (op === "add") list.add(fromId);
+      else list.delete(fromId);
+      if (list.size) reactions[emoji] = [...list];
+      else delete reactions[emoji];
+      m.reactions = reactions;
+      this.persistChat();
+    },
+
     // A participant reported reading up to `ts`.
     applyChatSeen(who: string, name: string, ts: number) {
       if (who === this.myChatId) return;
@@ -624,6 +658,7 @@ export const useLiveStore = defineStore("live", {
         image?: string;
         replyTo?: { id: string; fromName: string; text: string };
         editedTs?: number;
+        reactions?: Record<string, string[]>;
       }[],
     ) {
       const seen = new Set(this.chat.map((m) => m.id));
@@ -1007,6 +1042,9 @@ export const useLiveStore = defineStore("live", {
           break;
         case "chat-edit":
           this.applyChatEdit(msg.id, msg.text, msg.editedTs);
+          break;
+        case "chat-reaction":
+          this.applyChatReaction(msg.id, msg.emoji, msg.fromId, msg.op);
           break;
         case "chat-seen":
           this.applyChatSeen(msg.who, msg.name, msg.ts);
