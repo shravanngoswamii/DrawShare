@@ -48,18 +48,11 @@ router.onError((err) => {
   }
 });
 
-// The on-screen keyboard otherwise leaves an unusable, pannable strip below the
-// app: Safari shrinks the layout viewport to make room, but Chrome/Firefox on
-// iPad keep it full-height, so a fixed full-height app overflows behind the
-// keyboard. Drive the root height from visualViewport.height so the app is
-// always exactly the visible area, and reset any leftover scroll once typing
-// ends (but not mid-typing, so we don't fight the keyboard's scroll-into-view).
+// On iPad the virtual keyboard scrolls the document to reveal the focused input
+// and leaves it stuck-scrolled after closing. Don't resize the app (that left a
+// gap below it in iPad Chrome) — just snap the document back to the top once the
+// input blurs or the keyboard closes, never while an input is still focused.
 function lockKeyboardScroll() {
-  const vv = window.visualViewport;
-  const setHeight = () => {
-    const h = vv?.height ?? window.innerHeight;
-    document.documentElement.style.setProperty("--app-vh", `${h}px`);
-  };
   const isTyping = () => {
     const el = document.activeElement as HTMLElement | null;
     return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
@@ -69,12 +62,7 @@ function lockKeyboardScroll() {
     window.scrollTo(0, 0);
     if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
   };
-  setHeight();
-  vv?.addEventListener("resize", () => {
-    setHeight();
-    reset();
-  });
-  window.addEventListener("orientationchange", () => requestAnimationFrame(setHeight));
+  window.visualViewport?.addEventListener("resize", reset);
   window.addEventListener("focusout", () => requestAnimationFrame(reset));
 }
 

@@ -16,15 +16,6 @@ body,
   touch-action: manipulation;
 }
 
-body,
-#app {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: var(--app-vh, 100%);
-}
-
 html {
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
