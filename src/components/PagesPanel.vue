@@ -16,11 +16,31 @@ import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
 import { useProjectsStore } from "@/stores/projects";
 
-const props = defineProps<{ open?: boolean; collapsed?: boolean }>();
+const props = defineProps<{ open?: boolean; collapsed?: boolean; guest?: boolean }>();
 const emit = defineEmits<{ close: []; toggle: []; share: []; chat: [] }>();
 
 const editor = useEditorStore();
 const live = useLiveStore();
+
+// Live-viewer (guest) connection status, shown in the header in place of the
+// host's save indicator.
+const guestStatus = computed(() => {
+  switch (live.status) {
+    case "connected":
+      return "Live";
+    case "connecting":
+    case "waiting":
+      return "Connecting…";
+    case "reconnecting":
+      return "Reconnecting…";
+    case "disconnected":
+      return "Disconnected";
+    case "error":
+      return "Error";
+    default:
+      return "";
+  }
+});
 const projects = useProjectsStore();
 const { isDark, toggleTheme } = useTheme();
 const { thumbnails, renderThumbnail, loadAndRenderThumbnail } = useThumbnails();
@@ -118,7 +138,7 @@ watch(isDark, () => {
 });
 
 async function commitName() {
-  if (!editor.project) return;
+  if (props.guest || !editor.project) return;
   const trimmed = projectName.value.trim();
   if (!trimmed) {
     projectName.value = editor.project.name;
@@ -159,7 +179,7 @@ function onNameEnter(e: KeyboardEvent) {
 
 async function commitPageName() {
   const page = editor.currentPage;
-  if (!page) return;
+  if (props.guest || !page) return;
   const trimmed = pageName.value.trim();
   if (!trimmed) {
     pageName.value = page.name;
@@ -208,9 +228,11 @@ async function removeLayer(id: string) {
 
 async function select(id: string) {
   // Notebook mode is one continuous canvas — scroll to the sheet instead of
-  // switching pages. Free mode switches the visible page.
+  // switching pages. Free mode switches the visible page. A guest follows the
+  // host's page in free mode (it has no other page loaded), so only scrolling
+  // applies there.
   if (editor.notebookMode !== "off") editor.requestScrollToSheet(id);
-  else await editor.selectPage(id);
+  else if (!props.guest) await editor.selectPage(id);
   emit("close");
 }
 
@@ -342,7 +364,7 @@ function removeSnapshot() {
         </svg>
       </button>
       <button
-        v-if="live.available"
+        v-if="live.available && !props.guest"
         class="dock-btn dock-live"
         :class="{ live: live.isHosting }"
         @click="emit('share')"
@@ -355,7 +377,7 @@ function removeSnapshot() {
         </svg>
       </button>
       <button
-        v-if="live.isHosting"
+        v-if="live.isHosting || props.guest"
         class="dock-btn dock-chat"
         @click="emit('chat')"
         title="Session chat"
@@ -376,11 +398,13 @@ function removeSnapshot() {
           v-model="projectName"
           class="project-name"
           aria-label="Project name"
+          :readonly="props.guest"
           @blur="commitName"
           @keydown.enter="onNameEnter"
           :placeholder="editor.project?.name ?? 'Untitled'"
         />
-        <span class="save-chip" :class="{ saving: editor.saving > 0 }" role="status" aria-live="polite">{{ saveStatus }}</span>
+        <span v-if="props.guest" class="save-chip" :class="{ saving: live.status !== 'connected' }" role="status" aria-live="polite">{{ guestStatus }}</span>
+        <span v-else class="save-chip" :class="{ saving: editor.saving > 0 }" role="status" aria-live="polite">{{ saveStatus }}</span>
         <ThemeMenu />
         <div class="head-menu-wrap">
           <button class="head-icon" @click="menuOpen = !menuOpen" :aria-expanded="menuOpen" aria-haspopup="true" title="More" aria-label="More options">
@@ -425,7 +449,7 @@ function removeSnapshot() {
         <section class="film-section" data-tour="pages">
           <div class="section-head">
             <span class="section-title">Pages</span>
-            <button class="btn-icon" @click="editor.addPage()" title="Add page" aria-label="Add new page">
+            <button v-if="!props.guest" class="btn-icon" @click="editor.addPage()" title="Add page" aria-label="Add new page">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
             </button>
           </div>
@@ -446,7 +470,7 @@ function removeSnapshot() {
             </li>
           </ul>
           <!-- Notebook: scroll the sheet stack vertically or horizontally. -->
-          <div v-if="editor.notebookMode !== 'off'" class="layout-row">
+          <div v-if="editor.notebookMode !== 'off' && !props.guest" class="layout-row">
             <span class="layout-label" id="nb-layout-label">Layout</span>
             <div class="mode-btns layout-btns" role="group" aria-labelledby="nb-layout-label">
               <button class="mode-btn" :class="{ active: editor.notebookLayout === 'vertical' }" :aria-pressed="editor.notebookLayout === 'vertical'" @click="editor.setNotebookLayout('vertical')">Vertical</button>
@@ -461,19 +485,20 @@ function removeSnapshot() {
             v-model="pageName"
             class="page-name-input"
             aria-label="Page name"
+            :readonly="props.guest"
             @blur="commitPageName"
             @keydown.enter="($event.target as HTMLInputElement).blur()"
             :placeholder="editor.currentPage?.name ?? 'Page'"
           />
-          <button v-if="editor.pages.length > 1" class="head-icon" @click="removeCurrentPage" title="Delete page" aria-label="Delete this page">
+          <button v-if="editor.pages.length > 1 && !props.guest" class="head-icon" @click="removeCurrentPage" title="Delete page" aria-label="Delete this page">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
             </svg>
           </button>
         </div>
 
-      <!-- ── Layers ── -->
-      <div class="section layers-section">
+      <!-- ── Layers ── (host-only) -->
+      <div v-if="!props.guest" class="section layers-section">
         <div class="section-head">
           <span class="section-title layers-title">Layers</span>
           <button class="btn-icon" @click="editor.addLayer()" title="Add layer" aria-label="Add layer">
@@ -584,8 +609,8 @@ function removeSnapshot() {
         </div>
       </div>
 
-      <!-- ── Background (collapsible) ── -->
-      <div class="section group-section">
+      <!-- ── Background (collapsible) ── (host-only) -->
+      <div v-if="!props.guest" class="section group-section">
         <button class="group-toggle" :aria-expanded="showSetup" @click="showSetup = !showSetup">
           <span class="section-title">Background</span>
           <svg class="chev" :class="{ open: showSetup }" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
@@ -610,8 +635,8 @@ function removeSnapshot() {
         </div>
       </div>
 
-      <!-- ── Share & export (collapsible: snapshot, record, export, clear) ── -->
-      <div class="section group-section">
+      <!-- ── Share & export (collapsible: snapshot, record, export, clear) ── (host-only) -->
+      <div v-if="!props.guest" class="section group-section">
         <button class="group-toggle" :aria-expanded="showActions" @click="showActions = !showActions">
           <span class="section-title">Share &amp; export</span>
           <svg class="chev" :class="{ open: showActions }" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>

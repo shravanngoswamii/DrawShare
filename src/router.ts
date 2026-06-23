@@ -20,9 +20,10 @@ const routes: RouteRecordRaw[] = [
     props: true,
   },
   {
+    // The live viewer reuses the editor view in guest mode (joins by code).
     path: "/v/:code",
     name: "viewer",
-    component: () => import("./views/ViewerView.vue"),
+    component: () => import("./views/EditorView.vue"),
     props: true,
   },
   {
