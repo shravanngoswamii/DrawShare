@@ -224,6 +224,13 @@ const reactPickerFor = ref<string | null>(null);
 function openReactions(id: string) {
   quickReactFor.value = quickReactFor.value === id ? null : id;
   reactPickerFor.value = null;
+  if (quickReactFor.value) {
+    nextTick(() => {
+      listEl.value
+        ?.querySelector<HTMLElement>(`[data-mid="${CSS.escape(id)}"]`)
+        ?.scrollIntoView({ block: "nearest" });
+    });
+  }
 }
 function react(id: string, emoji: string) {
   live.toggleReaction(id, emoji);
@@ -300,7 +307,7 @@ function closePopovers() {
 }
 function onDocPointerDown(e: PointerEvent) {
   const t = e.target as HTMLElement;
-  if (t.closest(".chat-quickreact, .chat-react-emoji, .chat-act")) return;
+  if (t.closest(".chat-quickreact, .chat-react-picker, .chat-act")) return;
   closePopovers();
 }
 watch(
@@ -543,6 +550,20 @@ onMounted(() => {
             :data-mid="m.id"
           >
             <div v-if="!m.mine" class="chat-who">{{ m.fromName }}</div>
+            <div v-if="quickReactFor === m.id" class="chat-quickreact" @pointerdown.stop>
+              <button
+                v-for="e in QUICK_REACTIONS"
+                :key="e"
+                class="chat-qr"
+                @click="react(m.id, e)"
+              >{{ e }}</button>
+              <button
+                class="chat-qr chat-qr-more"
+                @click="reactPickerFor = m.id; quickReactFor = null"
+                aria-label="More emoji"
+                title="More"
+              >+</button>
+            </div>
             <div
               class="chat-row"
               @pointerdown="onRowPointerDown($event, m)"
@@ -607,27 +628,6 @@ onMounted(() => {
               </div>
               <span class="chat-time">{{ formatTime(m.ts) }}</span>
             </div>
-
-            <!-- Quick reactions / full picker for this message -->
-            <div v-if="quickReactFor === m.id" class="chat-quickreact" @pointerdown.stop>
-              <button
-                v-for="e in QUICK_REACTIONS"
-                :key="e"
-                class="chat-qr"
-                @click="react(m.id, e)"
-              >{{ e }}</button>
-              <button
-                class="chat-qr chat-qr-more"
-                @click="reactPickerFor = m.id; quickReactFor = null"
-                aria-label="More emoji"
-                title="More"
-              >+</button>
-            </div>
-            <EmojiPicker
-              v-if="reactPickerFor === m.id"
-              class="chat-emoji chat-react-emoji"
-              @select="onReactPick"
-            />
           </div>
           <div v-if="seenInfo && seenInfo.id === m.id" class="chat-seen">
             Seen by {{ seenInfo.names.join(", ") }}
@@ -648,8 +648,17 @@ onMounted(() => {
         </button>
       </div>
 
-      <!-- Emoji picker -->
+      <!-- Emoji picker (composer, or choosing a reaction for a message) -->
       <EmojiPicker v-if="showEmoji" class="chat-emoji" @select="insertEmoji" />
+      <div v-else-if="reactPickerFor" class="chat-react-picker">
+        <div class="chat-react-picker-head">
+          <span>Pick a reaction</span>
+          <button class="chat-icon-btn" @click="closePopovers" aria-label="Cancel" title="Cancel">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <EmojiPicker class="chat-emoji" @select="onReactPick" />
+      </div>
 
       <form class="chat-composer" @submit.prevent="send">
         <button
@@ -1116,11 +1125,22 @@ onMounted(() => {
   font-size: 18px;
   color: var(--color-text-muted);
 }
-.chat-react-emoji {
-  margin-top: 4px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
+
+/* Reaction emoji picker, anchored above the composer so it is never clipped by
+   the message list or hidden behind the input. */
+.chat-react-picker {
+  border-top: 1px solid var(--color-border);
+}
+.chat-react-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+.chat-react-picker .chat-emoji {
+  border-top: 1px solid var(--color-border);
 }
 
 .chat-seen {
