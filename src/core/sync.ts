@@ -152,7 +152,34 @@ export type SyncMessage =
   // Images. `src` is downscaled to fit one relay frame (see core/imageSync).
   // host -> viewers, and a permitted viewer -> host (which persists + rebroadcasts).
   | { t: "image-add"; image: ImageItem }
-  | { t: "viewer-image-add"; vid: string; image: ImageItem };
+  | { t: "viewer-image-add"; vid: string; image: ImageItem }
+  // Geometry/lock/z update of an existing image (no src — keeps it small). Used
+  // for moves, resizes, stacking and lock toggles.
+  | {
+      t: "image-update";
+      id: string;
+      pageId: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      z?: number;
+      locked?: boolean;
+    }
+  | {
+      t: "viewer-image-update";
+      vid: string;
+      id: string;
+      pageId: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      z?: number;
+      locked?: boolean;
+    }
+  | { t: "image-delete"; pageId: string; imageId: string }
+  | { t: "viewer-image-delete"; vid: string; imageId: string };
 
 export interface SessionHostHandlers {
   onViewerJoin(viewerId: string, name: string): void;

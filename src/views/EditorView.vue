@@ -147,6 +147,12 @@ watch(
         case "viewer-image-add":
           void editor.commitImage(edit.image);
           break;
+        case "viewer-image-update":
+          void editor.applyViewerImageUpdate(edit);
+          break;
+        case "viewer-image-delete":
+          void editor.deleteImage(edit.imageId);
+          break;
       }
     }
   },

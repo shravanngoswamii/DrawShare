@@ -781,7 +781,12 @@ export const useEditorStore = defineStore("editor", {
     async commitImage(input: ImageItem) {
       this.saving++;
       try {
-        const image: ImageItem = { ...input, layerId: this._layerFor(input.pageId) };
+        // New images are locked by default (a stray drag/eraser won't disturb them).
+        const image: ImageItem = {
+          ...input,
+          locked: input.locked ?? true,
+          layerId: this._layerFor(input.pageId),
+        };
         this.images = [...this.images, image];
         this.history = [...this.history, { kind: "image-add", image }];
         this.redoStack = [];
@@ -813,6 +818,7 @@ export const useEditorStore = defineStore("editor", {
       this.redoStack = [];
       await this.db.deleteImage(imageId);
       this._record({ op: "image-remove", pageId: image.pageId, id: imageId });
+      this._sync({ t: "image-delete", pageId: image.pageId, imageId });
     },
     async moveImage(imageId: string, x: number, y: number) {
       const image = this.images.find((i) => i.id === imageId);
@@ -825,6 +831,7 @@ export const useEditorStore = defineStore("editor", {
       this.redoStack = [];
       await this.db.putImage({ ...image });
       this._record({ op: "image-set", image: { ...image } });
+      this._syncImage(image);
       if (this.project) await useProjectsStore().touch(this.project.id);
       return prev;
     },
@@ -840,6 +847,16 @@ export const useEditorStore = defineStore("editor", {
       this.redoStack = [];
       await this.db.putImage({ ...image });
       this._record({ op: "image-set", image: { ...image } });
+      this._syncImage(image);
+      if (this.project) await useProjectsStore().touch(this.project.id);
+    },
+    // Lock/unlock an image (locked = protected from move/resize/erase). Synced.
+    async setImageLocked(imageId: string, locked: boolean) {
+      const image = this.images.find((i) => i.id === imageId);
+      if (!image || image.locked === locked) return;
+      image.locked = locked;
+      await this.db.putImage({ ...image });
+      this._syncImage(image);
       if (this.project) await useProjectsStore().touch(this.project.id);
     },
     // Move a shape in place (Select tool). Persisted and replay-logged as a
@@ -869,6 +886,7 @@ export const useEditorStore = defineStore("editor", {
       this.redoStack = [];
       await this.db.putImage({ ...image });
       this._record({ op: "image-set", image: { ...image } });
+      this._syncImage(image);
       if (this.project) await useProjectsStore().touch(this.project.id);
     },
     async sendImageToBack(imageId: string) {
@@ -879,7 +897,22 @@ export const useEditorStore = defineStore("editor", {
       this.redoStack = [];
       await this.db.putImage({ ...image });
       this._record({ op: "image-set", image: { ...image } });
+      this._syncImage(image);
       if (this.project) await useProjectsStore().touch(this.project.id);
+    },
+    // Relay an existing image's geometry/z/lock (no src) to the other side.
+    _syncImage(image: ImageItem) {
+      this._sync({
+        t: "image-update",
+        id: image.id,
+        pageId: image.pageId,
+        x: image.x,
+        y: image.y,
+        width: image.width,
+        height: image.height,
+        z: image.z,
+        locked: image.locked,
+      });
     },
     async clearPage() {
       if (!this.currentPageId) return;
@@ -1337,6 +1370,23 @@ export const useEditorStore = defineStore("editor", {
         case "text-commit":
           live.sendViewerEdit({ t: "viewer-text-commit", vid, text: msg.text });
           break;
+        case "image-update":
+          live.sendViewerEdit({
+            t: "viewer-image-update",
+            vid,
+            id: msg.id,
+            pageId: msg.pageId,
+            x: msg.x,
+            y: msg.y,
+            width: msg.width,
+            height: msg.height,
+            z: msg.z,
+            locked: msg.locked,
+          });
+          break;
+        case "image-delete":
+          live.sendViewerEdit({ t: "viewer-image-delete", vid, imageId: msg.imageId });
+          break;
       }
     },
 
@@ -1438,6 +1488,52 @@ export const useEditorStore = defineStore("editor", {
       if (!this.guest) return;
       if (this.images.some((i) => i.id === image.id)) return;
       this.images = [...this.images, image];
+    },
+    applyRemoteImageUpdate(u: {
+      id: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      z?: number;
+      locked?: boolean;
+    }) {
+      if (!this.guest) return;
+      const image = this.images.find((i) => i.id === u.id);
+      if (!image) return;
+      image.x = u.x;
+      image.y = u.y;
+      image.width = u.width;
+      image.height = u.height;
+      image.z = u.z;
+      image.locked = u.locked;
+    },
+    applyRemoteImageDelete(imageId: string) {
+      if (!this.guest) return;
+      this.images = this.images.filter((i) => i.id !== imageId);
+    },
+    // Host applies a permitted viewer's image geometry/lock change: update the
+    // stored image, persist, and re-broadcast to everyone (the round-trip).
+    async applyViewerImageUpdate(u: {
+      id: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      z?: number;
+      locked?: boolean;
+    }) {
+      const image = this.images.find((i) => i.id === u.id);
+      if (!image) return;
+      image.x = u.x;
+      image.y = u.y;
+      image.width = u.width;
+      image.height = u.height;
+      image.z = u.z;
+      image.locked = u.locked;
+      await this.db.putImage({ ...image });
+      this._syncImage(image);
+      if (this.project) await useProjectsStore().touch(this.project.id);
     },
     applyRemotePageSet(pageId: string, pages: Page[], strokes: Stroke[], shapes: Shape[]) {
       if (!this.guest) return;

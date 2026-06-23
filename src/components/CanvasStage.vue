@@ -229,6 +229,16 @@ function deleteSelectedImage() {
   schedule();
 }
 
+// Lock state of the selected image (locked = can't move/resize/erase).
+const selectedImageLocked = computed(() => {
+  const id = selectedImageId.value;
+  return !!(id && editor.images.find((i) => i.id === id)?.locked);
+});
+function toggleSelectedImageLock() {
+  const id = selectedImageId.value;
+  if (id) void editor.setImageLocked(id, !selectedImageLocked.value);
+}
+
 // Delete the selected text or shape (the image has its own path above).
 function deleteSelectedObject() {
   if (selectedTextId.value) {
@@ -903,6 +913,30 @@ function eraseShapesAt(pageId: string, lx: number, ly: number, r: number): boole
   return true;
 }
 
+// Whole-delete unlocked images and text under the eraser (locked images are left
+// alone). Used by both eraser modes — images/text can't be partially erased.
+function eraseImagesAndTextAt(pageId: string, lx: number, ly: number): boolean {
+  let changed = false;
+  for (const img of editor.images) {
+    if (img.pageId !== pageId || img.locked) continue;
+    if (hitImage(img, lx, ly)) {
+      baseRenderer.releaseImage(img.id);
+      if (selectedImageId.value === img.id) selectedImageId.value = null;
+      editor.deleteImage(img.id);
+      changed = true;
+    }
+  }
+  const page = editor.pages.find((p) => p.id === pageId);
+  for (const t of page?.texts ?? []) {
+    if (hitText(t, lx, ly)) {
+      if (selectedTextId.value === t.id) selectedTextId.value = null;
+      editor.deleteText(t.pageId, t.id);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 function eraseAt(wx: number, wy: number) {
   const r = editor.size / cam.zoom;
   // Area erase stays on the sheet it started on (keeps its snapshot coherent).
@@ -914,6 +948,7 @@ function eraseAt(wx: number, wy: number) {
     // the swept part of a shape (survivors stay crisp lines, not pen-rasterized).
     let changed = editor.eraseArea(eraseLockId, lx, ly, r);
     if (editor.eraseAreaShapes(eraseLockId, lx, ly, r)) changed = true;
+    if (eraseImagesAndTextAt(eraseLockId, lx, ly)) changed = true;
     if (changed) {
       areaErased = true;
       dirtyBase = true;
@@ -953,7 +988,8 @@ function eraseAt(wx: number, wy: number) {
   });
   for (const stroke of toDelete) editor.eraseStroke(stroke.id);
   const erasedShape = eraseShapesAt(pageId, lx, ly, r);
-  if (toDelete.length === 0 && !erasedShape) return;
+  const erasedItems = eraseImagesAndTextAt(pageId, lx, ly);
+  if (toDelete.length === 0 && !erasedShape && !erasedItems) return;
   dirtyBase = true;
   schedule();
 }
@@ -1169,7 +1205,7 @@ function handleDown(s: InputSample) {
     // Grabbing a corner handle of the already-selected image starts a resize.
     if (selectedImageId.value) {
       const sel = editor.images.find((i) => i.id === selectedImageId.value);
-      const corner = sel ? imageResizeCornerAt(sel, w.x, w.y) : null;
+      const corner = sel && !sel.locked ? imageResizeCornerAt(sel, w.x, w.y) : null;
       if (sel && corner) {
         imageResize = {
           item: sel,
@@ -1204,8 +1240,12 @@ function handleDown(s: InputSample) {
     }
     const img = editor.images.find((i) => hitImage(i, w.x, w.y));
     if (img) {
+      // Select it either way (so a locked image can be selected and unlocked),
+      // but only a drag-move an unlocked one.
       selectImage(img.id);
-      imageDrag = { item: img, downX: w.x, downY: w.y, origX: img.x, origY: img.y, moved: false };
+      if (!img.locked) {
+        imageDrag = { item: img, downX: w.x, downY: w.y, origX: img.x, origY: img.y, moved: false };
+      }
       return;
     }
     const shp = editor.shapes.find((sh) => hitShape(sh, w.x, w.y));
@@ -2189,14 +2229,19 @@ onBeforeUnmount(() => {
       :style="imageSelStyle"
       aria-hidden="true"
     >
-      <span class="image-handle nw"></span>
-      <span class="image-handle ne"></span>
-      <span class="image-handle sw"></span>
-      <span class="image-handle se"></span>
+      <template v-if="!selectedImageLocked">
+        <span class="image-handle nw"></span>
+        <span class="image-handle ne"></span>
+        <span class="image-handle sw"></span>
+        <span class="image-handle se"></span>
+      </template>
     </div>
     <div v-if="imageBarStyle" class="image-bar" :style="imageBarStyle" @pointerdown.stop>
-      <button type="button" title="Send to back" @click="sendSelectedImageToBack">Back</button>
-      <button type="button" title="Bring to front" @click="bringSelectedImageToFront">Front</button>
+      <button type="button" :title="selectedImageLocked ? 'Unlock image' : 'Lock image'" @click="toggleSelectedImageLock">
+        {{ selectedImageLocked ? "Unlock" : "Lock" }}
+      </button>
+      <button type="button" title="Send to back" @click="sendSelectedImageToBack" :disabled="selectedImageLocked">Back</button>
+      <button type="button" title="Bring to front" @click="bringSelectedImageToFront" :disabled="selectedImageLocked">Front</button>
       <button type="button" class="danger" title="Delete image" @click="deleteSelectedImage">
         Delete
       </button>

@@ -406,7 +406,9 @@ export const useLiveStore = defineStore("live", {
               msg.t === "viewer-text-commit" ||
               msg.t === "viewer-erase-stroke" ||
               msg.t === "viewer-erase-shape" ||
-              msg.t === "viewer-image-add";
+              msg.t === "viewer-image-add" ||
+              msg.t === "viewer-image-update" ||
+              msg.t === "viewer-image-delete";
             if (isPersistEdit) {
               this.pendingViewerEdits = [...this.pendingViewerEdits, msg];
             }
@@ -944,6 +946,12 @@ export const useLiveStore = defineStore("live", {
           break;
         case "image-add":
           editor.applyRemoteImageAdd(msg.image);
+          break;
+        case "image-update":
+          editor.applyRemoteImageUpdate(msg);
+          break;
+        case "image-delete":
+          editor.applyRemoteImageDelete(msg.imageId);
           break;
         case "theme":
           this.viewerHostTheme = msg.themeId;

@@ -115,6 +115,9 @@ export interface ImageItem {
   // shapes/text; > 0 renders in front. Within a band, sorted by z then createdAt.
   // "Send to back" pushes it more negative; "Bring to front" more positive.
   z?: number;
+  // Locked images can't be moved, resized or erased until unlocked. New images
+  // are locked by default so a stray drag or eraser sweep won't disturb them.
+  locked?: boolean;
   createdAt: number;
   layerId?: ID;
 }
