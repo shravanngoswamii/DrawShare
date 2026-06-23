@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { onBeforeRouteLeave, useRouter } from "vue-router";
+import { onBeforeRouteLeave, useRoute, useRouter } from "vue-router";
 import { installPointerProbe } from "@/adapters/input/pointerDebug";
 import { storage } from "@/adapters/storage/indexedDB";
 // biome-ignore lint/style/useImportType: rendered in the template — needs a value import, not `import type` (would break runtime component resolution).
@@ -15,6 +15,7 @@ import Toolbar from "@/components/Toolbar.vue";
 import { useLiveSnapshot } from "@/composables/useLiveSnapshot";
 import { useOnboarding } from "@/composables/useOnboarding";
 import { useTheme } from "@/composables/useTheme";
+import { readFragmentParam } from "@/core/shareLinks";
 import { devMode } from "@/debug";
 import { useEditorStore } from "@/stores/editor";
 import { useLiveStore } from "@/stores/live";
@@ -32,6 +33,7 @@ const live = useLiveStore();
 const projects = useProjectsStore();
 const replay = useReplayStore();
 const router = useRouter();
+const route = useRoute();
 const { maybeStart } = useOnboarding();
 const { activeThemeId, mirrorTheme, pickCount } = useTheme();
 const liveSnapshot = useLiveSnapshot();
@@ -120,9 +122,10 @@ onBeforeRouteLeave(async () => {
 });
 
 onMounted(async () => {
-  // Viewer: join the session; the host's hello seeds the guest board.
+  // Viewer: join the session; the host's hello seeds the guest board. An `#edit`
+  // token in the link asks the host for drawing permission automatically.
   if (props.code) {
-    await live.join(props.code);
+    await live.join(props.code, readFragmentParam(route.hash, "edit") || undefined);
     return;
   }
   if (!projects.loaded) await projects.load();
@@ -166,7 +169,7 @@ function onBack() {
 }
 
 async function reconnectGuest() {
-  if (props.code) await live.join(props.code);
+  if (props.code) await live.join(props.code, readFragmentParam(route.hash, "edit") || undefined);
 }
 
 // Apply edits from permitted viewers. Each editor action persists and

@@ -54,6 +54,9 @@ interface LiveState {
   mode: Mode;
   status: Status;
   code: string;
+  // Host: a secret token that turns the share link into an "edit" link. Anyone
+  // who opens /v/<code>#edit=<token> is auto-granted drawing.
+  editToken: string;
   viewerCount: number;
   error: string;
   disconnectReason: string;
@@ -99,6 +102,8 @@ let hostAwayTimer: ReturnType<typeof setTimeout> | undefined;
 // Viewer ids the host has granted drawing to. Source of truth for both
 // restoring permission when a viewer (re)joins and validating viewer strokes.
 let grantedVids = new Set<string>();
+// The edit token a viewer joined with (from the edit link); re-sent on reconnect.
+let viewerEditToken = "";
 const MAX_RECONNECT_ATTEMPTS = 3;
 // How long a viewer waits for the host to come back (e.g. after a page reload)
 // before showing "disconnected". The relay connection stays open meanwhile, so
@@ -130,6 +135,7 @@ interface HostSession {
   code: string;
   projectId: string;
   granted: string[];
+  editToken: string;
 }
 
 function readHostSession(): HostSession | null {
@@ -141,12 +147,27 @@ function readHostSession(): HostSession | null {
   }
 }
 
-function rememberHostSession(code: string, projectId: string, granted: string[]): void {
+function rememberHostSession(
+  code: string,
+  projectId: string,
+  granted: string[],
+  editToken: string,
+): void {
   try {
-    sessionStorage.setItem(HOST_KEY, JSON.stringify({ code, projectId, granted }));
+    sessionStorage.setItem(HOST_KEY, JSON.stringify({ code, projectId, granted, editToken }));
   } catch {
     /* sessionStorage unavailable; resume-on-reload simply won't work */
   }
+}
+
+// An unguessable token for the edit link (URL-safe, ~19 chars).
+function makeEditToken(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  const bytes = new Uint8Array(19);
+  crypto.getRandomValues(bytes);
+  let s = "";
+  for (const b of bytes) s += chars[b % chars.length];
+  return s;
 }
 
 function forgetHostSession(): void {
@@ -180,7 +201,7 @@ function loadOrCreateViewerIdentity(): ViewerIdentity {
 // across a host reload).
 function persistGranted(): void {
   const s = readHostSession();
-  if (s) rememberHostSession(s.code, s.projectId, [...grantedVids]);
+  if (s) rememberHostSession(s.code, s.projectId, [...grantedVids], s.editToken);
 }
 
 // Ensure a roster display name is unique by appending a counter on collisions.
@@ -211,6 +232,7 @@ export const useLiveStore = defineStore("live", {
     mode: "off",
     status: "idle",
     code: "",
+    editToken: "",
     viewerCount: 0,
     error: "",
     disconnectReason: "",
@@ -273,10 +295,12 @@ export const useLiveStore = defineStore("live", {
           /* ignore */
         }
       }
-      // Restore granted viewers on a resume; start fresh otherwise.
-      grantedVids = resumeCode ? new Set(readHostSession()?.granted ?? []) : new Set();
+      // Restore granted viewers + edit token on a resume; start fresh otherwise.
+      const resumed = resumeCode ? readHostSession() : null;
+      grantedVids = new Set(resumed?.granted ?? []);
+      this.editToken = resumed?.editToken || makeEditToken();
       // Remember the session for this tab so a reload resumes the same code.
-      rememberHostSession(this.code, snapshot().project.id, [...grantedVids]);
+      rememberHostSession(this.code, snapshot().project.id, [...grantedVids], this.editToken);
       try {
         await activeSession.host(this.code, {
           onViewerJoin: (id, name) => {
@@ -362,6 +386,11 @@ export const useLiveStore = defineStore("live", {
                   this.viewers.filter((x) => x.id !== msg.vid).map((x) => x.name),
                 );
               }
+              return;
+            }
+            // A viewer that joined via the edit link presents its token — grant it.
+            if (msg.t === "request-edit") {
+              if (this.editToken && msg.token === this.editToken) this.grantEdit(msg.vid);
               return;
             }
             // Everything below is a permitted-viewer-only action.
@@ -674,6 +703,7 @@ export const useLiveStore = defineStore("live", {
       this.mode = "off";
       this.status = "idle";
       this.code = "";
+      this.editToken = "";
       this.viewerCount = 0;
       this.error = "";
       this.disconnectReason = "";
@@ -711,7 +741,7 @@ export const useLiveStore = defineStore("live", {
       }
     },
 
-    async join(code: string) {
+    async join(code: string, editToken?: string) {
       if (!relayConfigured()) {
         this.mode = "viewer";
         this.code = code.toUpperCase();
@@ -719,12 +749,14 @@ export const useLiveStore = defineStore("live", {
         this.status = "error";
         return;
       }
-      // If this is a fresh join (not an auto-reconnect), reset everything.
+      // If this is a fresh join (not an auto-reconnect), reset everything. The
+      // edit token (from the edit link) is kept across reconnects.
       const isReconnect = this.mode === "viewer" && this.status === "reconnecting";
       if (!isReconnect) {
         if (this.mode !== "off") this.stop();
         this.reconnectAttempt = 0;
         this.disconnectReason = "";
+        viewerEditToken = editToken ?? "";
       }
       // Close any existing session before creating a new one.
       session?.close();
@@ -744,6 +776,10 @@ export const useLiveStore = defineStore("live", {
             this.status = "connected";
             this.reconnectAttempt = 0;
             this.disconnectReason = "";
+            // Joined via the edit link — ask the host for drawing permission.
+            if (viewerEditToken) {
+              session?.send({ t: "request-edit", vid: this.viewerId, token: viewerEditToken });
+            }
           },
           onMessage: (msg) => {
             if (session !== activeSession) return;

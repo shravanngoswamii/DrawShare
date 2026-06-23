@@ -913,28 +913,14 @@ function eraseShapesAt(pageId: string, lx: number, ly: number, r: number): boole
   return true;
 }
 
-// Whole-delete unlocked images and text under the eraser (locked images are left
-// alone). Used by both eraser modes — images/text can't be partially erased.
-function eraseImagesAndTextAt(pageId: string, lx: number, ly: number): boolean {
-  let changed = false;
-  for (const img of editor.images) {
-    if (img.pageId !== pageId || img.locked) continue;
-    if (hitImage(img, lx, ly)) {
-      baseRenderer.releaseImage(img.id);
-      if (selectedImageId.value === img.id) selectedImageId.value = null;
-      editor.deleteImage(img.id);
-      changed = true;
-    }
-  }
-  const page = editor.pages.find((p) => p.id === pageId);
-  for (const t of page?.texts ?? []) {
-    if (hitText(t, lx, ly)) {
-      if (selectedTextId.value === t.id) selectedTextId.value = null;
-      editor.deleteText(t.pageId, t.id);
-      changed = true;
-    }
-  }
-  return changed;
+// Throttle live preview broadcasts (image drag, area-erase sweep) to ~16/s so a
+// gesture streams in real time without flooding the relay.
+let lastLiveSync = 0;
+function liveThrottle(): boolean {
+  const now = Date.now();
+  if (now - lastLiveSync < 60) return false;
+  lastLiveSync = now;
+  return true;
 }
 
 function eraseAt(wx: number, wy: number) {
@@ -948,11 +934,11 @@ function eraseAt(wx: number, wy: number) {
     // the swept part of a shape (survivors stay crisp lines, not pen-rasterized).
     let changed = editor.eraseArea(eraseLockId, lx, ly, r);
     if (editor.eraseAreaShapes(eraseLockId, lx, ly, r)) changed = true;
-    if (eraseImagesAndTextAt(eraseLockId, lx, ly)) changed = true;
     if (changed) {
       areaErased = true;
       dirtyBase = true;
       schedule();
+      if (liveThrottle()) editor.streamErasePreview(eraseLockId);
     }
     return;
   }
@@ -988,8 +974,7 @@ function eraseAt(wx: number, wy: number) {
   });
   for (const stroke of toDelete) editor.eraseStroke(stroke.id);
   const erasedShape = eraseShapesAt(pageId, lx, ly, r);
-  const erasedItems = eraseImagesAndTextAt(pageId, lx, ly);
-  if (toDelete.length === 0 && !erasedShape && !erasedItems) return;
+  if (toDelete.length === 0 && !erasedShape) return;
   dirtyBase = true;
   schedule();
 }
@@ -1390,6 +1375,7 @@ function handleMove(samples: InputSample[]) {
       updateSelectionOverlays();
       dirtyBase = true;
       schedule();
+      if (liveThrottle()) editor.streamImageGeometry(imageDrag.item);
     }
     return;
   }

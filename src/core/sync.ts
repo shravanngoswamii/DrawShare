@@ -132,6 +132,9 @@ export type SyncMessage =
   | { t: "chat-seen"; who: string; name: string; ts: number }
   // A viewer changed its display name (viewer -> host, to update the roster).
   | { t: "viewer-rename"; vid: string; name: string }
+  // A viewer joined via the edit link and presents its token; the host grants
+  // drawing if the token matches the session's edit token.
+  | { t: "request-edit"; vid: string; token: string }
   | { t: "viewer-stroke-begin"; vid: string; stroke: Stroke }
   | {
       t: "viewer-stroke-points";

@@ -900,6 +900,24 @@ export const useEditorStore = defineStore("editor", {
       this._syncImage(image);
       if (this.project) await useProjectsStore().touch(this.project.id);
     },
+    // Live preview broadcasts (host only — no persist, no history). Streamed
+    // during a drag/sweep so viewers see it in real time; the final state is
+    // persisted + synced when the gesture ends. Guests sync on release only (a
+    // live stream would make the host persist every intermediate).
+    streamImageGeometry(image: ImageItem) {
+      if (this.guest) return;
+      this._syncImage(image);
+    },
+    streamErasePreview(pageId: string) {
+      if (this.guest) return;
+      this._sync({
+        t: "page-set",
+        pageId,
+        pages: [...this.pages],
+        strokes: this.strokes.filter((s) => s.pageId === pageId),
+        shapes: this.shapes.filter((s) => s.pageId === pageId),
+      });
+    },
     // Relay an existing image's geometry/z/lock (no src) to the other side.
     _syncImage(image: ImageItem) {
       this._sync({

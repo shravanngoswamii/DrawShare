@@ -12,11 +12,29 @@ const snapshot = useLiveSnapshot();
 const copied = ref(false);
 
 const joinUrl = computed(() => (live.code ? buildShareUrl(`v/${live.code}`) : ""));
+// Edit link: the token rides in the fragment so it isn't sent to the relay/server.
+const editUrl = computed(() =>
+  live.code && live.editToken ? buildShareUrl(`v/${live.code}`, { edit: live.editToken }) : "",
+);
 
-const qrUrl = computed(() => {
-  if (!joinUrl.value) return "";
-  return `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(joinUrl.value)}&bgcolor=ffffff&margin=2`;
-});
+function qr(url: string): string {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}&bgcolor=ffffff&margin=2`;
+}
+const qrUrl = computed(() => (joinUrl.value ? qr(joinUrl.value) : ""));
+const editQrUrl = computed(() => (editUrl.value ? qr(editUrl.value) : ""));
+
+const showEdit = ref(false);
+const editCopied = ref(false);
+async function copyEditUrl() {
+  if (!editUrl.value) return;
+  try {
+    await navigator.clipboard.writeText(editUrl.value);
+    editCopied.value = true;
+    setTimeout(() => (editCopied.value = false), 1500);
+  } catch {
+    /* noop */
+  }
+}
 
 const canShare = computed(() => typeof navigator.share === "function");
 
@@ -145,6 +163,23 @@ async function share() {
                 <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
               </svg>
             </button>
+          </div>
+          <div class="code-hint muted">This link is view-only.</div>
+
+          <!-- Invite to edit (collapsed): the edit link auto-grants drawing. -->
+          <div class="edit-share">
+            <button class="edit-toggle" @click="showEdit = !showEdit" :aria-expanded="showEdit">
+              <svg class="chev" :class="{ open: showEdit }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+              Invite someone to edit
+            </button>
+            <div v-if="showEdit" class="edit-body">
+              <p class="muted edit-hint">Anyone who opens this link can draw on the board — share it only with people you want editing.</p>
+              <img v-if="editQrUrl" :src="editQrUrl" class="qr" width="150" height="150" alt="Scan to join with edit access" loading="lazy" />
+              <div class="url-row">
+                <input class="input url" :value="editUrl" readonly @focus="($event.target as HTMLInputElement).select()" aria-label="Edit link" />
+                <button class="btn copy-btn" @click="copyEditUrl">{{ editCopied ? "Copied" : "Copy" }}</button>
+              </div>
+            </div>
           </div>
         </template>
 
@@ -353,6 +388,44 @@ async function share() {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--color-text-muted);
+}
+
+/* ── Invite to edit ── */
+.edit-share {
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-3);
+}
+.edit-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+.edit-toggle:hover {
+  color: var(--color-text);
+}
+.chev {
+  transition: transform 160ms ease;
+}
+.chev.open {
+  transform: rotate(90deg);
+}
+.edit-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+.edit-hint {
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  margin: 0;
 }
 
 /* ── Actions ── */
