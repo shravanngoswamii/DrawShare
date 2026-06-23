@@ -390,6 +390,9 @@ onBeforeUnmount(() => removeProbe?.());
 .editor {
   height: 100vh;
   height: 100dvh;
+  /* Follow the visual viewport (set in main.ts) so the on-screen keyboard
+     doesn't push the bottom controls into a clipped, pannable dead strip. */
+  height: var(--app-vh, 100dvh);
   display: flex;
   flex-direction: column;
   overflow: hidden;

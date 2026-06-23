@@ -16,14 +16,13 @@ body,
   touch-action: manipulation;
 }
 
-/* Pin the document so iOS Safari can't scroll the whole page up to reveal a
-   focused input under the virtual keyboard (and leave it stuck scrolled after
-   the keyboard closes). The app's own panels scroll internally. */
 body,
 #app {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
   width: 100%;
+  height: var(--app-vh, 100%);
 }
 
 html {
