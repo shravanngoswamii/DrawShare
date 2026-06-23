@@ -62,6 +62,17 @@ function onEraserClick() {
   }
 }
 
+// Pen / highlighter own their size (and pen nib): selecting the tool the first
+// time just activates it; tapping the already-active tool opens its size popover.
+function onPenToolClick(id: Tool) {
+  if (editor.tool === id) {
+    toggle("size");
+  } else {
+    editor.setTool(id);
+    popover.value = null;
+  }
+}
+
 function setSize(v: number) {
   editor.setSize(Math.max(1, Math.min(200, Math.round(v) || 1)));
 }
@@ -345,25 +356,53 @@ onMounted(() => {
             <path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" />
           </svg>
         </button>
-        <button
-          v-for="t in penTools"
-          :key="t.id"
-          class="tool"
-          :class="{ active: editor.tool === t.id }"
-          :aria-pressed="editor.tool === t.id"
-          :title="t.label"
-          @click="editor.setTool(t.id)"
-        >
-          <svg v-if="t.icon === 'pen'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /><path d="m15 5 4 4" />
-          </svg>
-          <svg v-else-if="t.icon === 'highlight'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="m9 11-6 6v3h9l3-3" /><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4" />
-          </svg>
-          <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M4 7V5h16v2" /><path d="M12 5v14" /><path d="M9 19h6" />
-          </svg>
-        </button>
+        <div v-for="t in penTools" :key="t.id" class="pop-wrap">
+          <button
+            class="tool"
+            :class="{ active: editor.tool === t.id }"
+            :aria-pressed="editor.tool === t.id"
+            :aria-expanded="popover === 'size' && editor.tool === t.id"
+            :title="`${t.label} — tap again for size`"
+            @click="onPenToolClick(t.id)"
+          >
+            <svg v-if="t.icon === 'pen'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /><path d="m15 5 4 4" />
+            </svg>
+            <svg v-else-if="t.icon === 'highlight'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m9 11-6 6v3h9l3-3" /><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4" />
+            </svg>
+            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 7V5h16v2" /><path d="M12 5v14" /><path d="M9 19h6" />
+            </svg>
+          </button>
+          <div
+            v-if="popover === 'size' && editor.tool === t.id"
+            class="popover"
+            :class="`pop-${dock}`"
+            role="dialog"
+            :aria-label="`${t.label} settings`"
+          >
+            <div class="pop-title">Size</div>
+            <div class="size-row">
+              <input class="range" type="range" min="1" max="40" :value="editor.size" :aria-label="`${t.label} size slider`" @input="setSize(Number(($event.target as HTMLInputElement).value))" />
+              <input class="num" type="number" min="1" max="200" :value="editor.size" :aria-label="`${t.label} size value`" @input="setSize(Number(($event.target as HTMLInputElement).value))" />
+            </div>
+            <template v-if="t.id === 'pen'">
+              <div class="pop-sub" id="pen-type-label">Pen</div>
+              <div class="flyout-row" role="group" aria-labelledby="pen-type-label">
+                <button class="pen-type-btn" :class="{ active: editor.penType === 'ballpoint' }" title="Ballpoint" aria-label="Ballpoint" :aria-pressed="editor.penType === 'ballpoint'" @click="editor.setPenType('ballpoint')">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20 C7 16 12 11 20 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                </button>
+                <button class="pen-type-btn" :class="{ active: editor.penType === 'brush' }" title="Brush" aria-label="Brush" :aria-pressed="editor.penType === 'brush'" @click="editor.setPenType('brush')">
+                  <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21 C6 17 10 13 14 9 C17 6 20 4 21 3 C20 5 17 8 14 11 C10 15 7 18 4 22 Z" fill="currentColor"/></svg>
+                </button>
+                <button class="pen-type-btn" :class="{ active: editor.penType === 'marker' }" title="Marker" aria-label="Marker" :aria-pressed="editor.penType === 'marker'" @click="editor.setPenType('marker')">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20 L19 5" stroke="currentColor" stroke-width="7" stroke-linecap="square"/></svg>
+                </button>
+              </div>
+            </template>
+          </div>
+        </div>
 
         <!-- Eraser with its own popover (size + mode) -->
         <div class="pop-wrap">
@@ -423,8 +462,8 @@ onMounted(() => {
 
       <div class="divider"></div>
 
-      <!-- Stroke size (hidden for eraser, which has its own) -->
-      <div v-if="editor.tool !== 'eraser'" class="pop-wrap group">
+      <!-- Stroke size for shapes (pen/highlighter carry their own; eraser too) -->
+      <div v-if="isShapeTool" class="pop-wrap group">
         <button class="tool" :class="{ active: popover === 'size' }" title="Stroke size" aria-label="Stroke size" :aria-expanded="popover === 'size'" @click="toggle('size')">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r="2.75" /><circle cx="19.5" cy="12" r="4" />
@@ -436,21 +475,6 @@ onMounted(() => {
             <input class="range" type="range" min="1" max="40" :value="editor.size" aria-label="Stroke size slider" @input="setSize(Number(($event.target as HTMLInputElement).value))" />
             <input class="num" type="number" min="1" max="200" :value="editor.size" aria-label="Stroke size value" @input="setSize(Number(($event.target as HTMLInputElement).value))" />
           </div>
-          <!-- Pen nib lives with the pen's other properties -->
-          <template v-if="editor.tool === 'pen'">
-            <div class="pop-sub" id="pen-type-label">Pen</div>
-            <div class="flyout-row" role="group" aria-labelledby="pen-type-label">
-              <button class="pen-type-btn" :class="{ active: editor.penType === 'ballpoint' }" title="Ballpoint" aria-label="Ballpoint" :aria-pressed="editor.penType === 'ballpoint'" @click="editor.setPenType('ballpoint')">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20 C7 16 12 11 20 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-              </button>
-              <button class="pen-type-btn" :class="{ active: editor.penType === 'brush' }" title="Brush" aria-label="Brush" :aria-pressed="editor.penType === 'brush'" @click="editor.setPenType('brush')">
-                <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21 C6 17 10 13 14 9 C17 6 20 4 21 3 C20 5 17 8 14 11 C10 15 7 18 4 22 Z" fill="currentColor"/></svg>
-              </button>
-              <button class="pen-type-btn" :class="{ active: editor.penType === 'marker' }" title="Marker" aria-label="Marker" :aria-pressed="editor.penType === 'marker'" @click="editor.setPenType('marker')">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20 L19 5" stroke="currentColor" stroke-width="7" stroke-linecap="square"/></svg>
-              </button>
-            </div>
-          </template>
         </div>
       </div>
 
