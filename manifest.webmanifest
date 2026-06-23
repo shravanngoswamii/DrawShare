@@ -3,7 +3,7 @@
   "short_name": "DrawShare",
   "description": "Local-first collaborative whiteboard that streams your live writing to any screen over the local network.",
   "theme_color": "#0f172a",
-  "background_color": "#ffffff",
+  "background_color": "#0f172a",
   "display": "standalone",
   "orientation": "any",
   "start_url": "./projects",
