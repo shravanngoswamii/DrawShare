@@ -415,7 +415,7 @@ onBeforeUnmount(() => {
             </button>
             <a href="https://github.com/shravanngoswamii/DrawShare" target="_blank" rel="noopener" class="btn btn-ghost btn-lg">View on GitHub</a>
           </div>
-          <p class="hero-meta mono">no account · works offline · open source</p>
+          <p class="hero-meta mono">no account · saves locally · open source</p>
         </div>
 
         <!-- Signature: live host → viewer ink mirror -->
@@ -601,9 +601,9 @@ onBeforeUnmount(() => {
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
                 </svg>
               </span>
-              <h3 class="feat-title h-display">Offline &amp; export</h3>
+              <h3 class="feat-title h-display">Export &amp; backup</h3>
             </div>
-            <p class="feat-desc">Runs fully offline as a PWA. Export pages to PNG or PDF, back everything up as portable JSON.</p>
+            <p class="feat-desc">Drawings are saved locally on your device. Export pages to PNG or PDF, back everything up as portable JSON.</p>
           </article>
         </div>
       </div>
@@ -653,7 +653,7 @@ onBeforeUnmount(() => {
           </svg>
           <span class="footer-name h-display">DrawShare</span>
         </a>
-        <p class="footer-tagline">Local-first whiteboard. Draw, organise pages, and share live — no account, works offline.</p>
+        <p class="footer-tagline">Collaborative whiteboard. Draw, organise pages, and share live — no account needed.</p>
         <nav class="footer-links" aria-label="Footer">
           <a href="https://github.com/shravanngoswamii/DrawShare" target="_blank" rel="noopener" class="footer-link">GitHub</a>
           <a href="https://github.com/shravanngoswamii/DrawShare/issues" target="_blank" rel="noopener" class="footer-link">Issues</a>
@@ -662,7 +662,7 @@ onBeforeUnmount(() => {
         </nav>
         <div class="footer-divider" aria-hidden="true"></div>
         <p class="footer-meta mono">
-          MIT licensed · Works offline · Built by
+          MIT licensed · Saves locally · Built by
           <a href="https://github.com/shravanngoswamii" target="_blank" rel="noopener">Shravan Goswami</a>
         </p>
       </div>

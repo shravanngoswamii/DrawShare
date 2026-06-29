@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/code_style-Biome-60a5fa.svg" alt="Biome" />
 </p>
 
-A local-first collaborative whiteboard. Write with a pen, stylus, or mouse on any device and another screen renders your strokes live over the local network, no screen mirroring or AirPlay lag. Everything is saved on-device, so it works offline too.
+A collaborative whiteboard for drawing and note-taking. Your work is saved locally on your device. Start a live session and share your canvas in real time — viewers join with a session code, no account needed. Live sessions go through a Cloudflare WebSocket relay; solo drawing works offline.
 
 Live: https://shravangoswami.com/DrawShare/
 
@@ -22,8 +22,8 @@ Live: https://shravangoswami.com/DrawShare/
 - Pinia for state, vue-router for routing
 - `perfect-freehand` for stroke smoothing
 - `idb` for IndexedDB persistence
-- WebRTC for live sharing
-- A small hand-written service worker for offline/PWA support
+- Cloudflare Worker + Durable Object WebSocket relay for live sessions
+- A hand-written service worker for PWA installability and offline solo drawing
 
 ## Develop
 
@@ -32,7 +32,7 @@ npm install
 npm run dev
 ```
 
-To draw from another device, open the dev URL with the machine's LAN IP instead of `localhost`, on the same Wi-Fi.
+To test live sessions locally, open the dev URL with the machine's LAN IP instead of `localhost` (same Wi-Fi), or set `VITE_LIVE_RELAY_URL` in `.env.local` to point at the relay.
 
 ## Build
 

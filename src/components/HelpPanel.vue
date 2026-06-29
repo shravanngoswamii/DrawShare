@@ -33,7 +33,7 @@ const shortcuts = [
 const faqs = [
   {
     q: "Does DrawShare work offline?",
-    a: "Yes — all data lives in your browser (IndexedDB). Install it as a PWA and it loads and runs fully offline.",
+    a: "Solo drawing works offline — all data lives in your browser (IndexedDB). Live sessions require an internet connection to reach the relay.",
   },
   {
     q: "Where is my data stored?",
@@ -41,7 +41,7 @@ const faqs = [
   },
   {
     q: "How does live sharing work?",
-    a: "The host broadcasts strokes over WebRTC. Viewers join with a 4-character code — no account or server needed.",
+    a: "Strokes are relayed in real time through a Cloudflare WebSocket relay. Viewers join with a 6-character code — no account or sign-in needed.",
   },
   {
     q: "How do I export my work?",

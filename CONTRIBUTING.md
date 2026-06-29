@@ -1,6 +1,6 @@
 # Contributing to DrawShare
 
-Thanks for your interest in contributing! DrawShare is a local-first collaborative drawing app built with Vue 3, TypeScript, and Pinia.
+Thanks for your interest in contributing! DrawShare is a collaborative whiteboard and drawing app built with Vue 3, TypeScript, and Pinia.
 
 ## Getting started
 

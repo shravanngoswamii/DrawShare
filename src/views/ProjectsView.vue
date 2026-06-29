@@ -224,8 +224,8 @@ function formatDate(ts: number): string {
 
       <!-- ── Hero strip — shown until the user has projects ── -->
       <section v-if="projects.loaded && projects.activeProjects.length === 0" class="hero">
-        <h1 class="hero-title">A local-first collaborative whiteboard</h1>
-        <p class="hero-sub">Draw on an infinite canvas, share your screen live over the local network, and keep everything on your device — no account needed.</p>
+        <h1 class="hero-title">A collaborative whiteboard</h1>
+        <p class="hero-sub">Draw on an infinite canvas, share your canvas live with a session code, and keep everything on your device — no account needed.</p>
         <div class="hero-features">
           <div class="feat">
             <div class="feat-icon" aria-hidden="true">
@@ -246,7 +246,7 @@ function formatDate(ts: number): string {
             </div>
             <div>
               <div class="feat-label">Share live</div>
-              <div class="feat-desc muted">Real-time streaming over local Wi-Fi</div>
+              <div class="feat-desc muted">Real-time streaming with a session code</div>
             </div>
           </div>
           <div class="feat">
@@ -256,7 +256,7 @@ function formatDate(ts: number): string {
               </svg>
             </div>
             <div>
-              <div class="feat-label">Works offline</div>
+              <div class="feat-label">Saves locally</div>
               <div class="feat-desc muted">All data stays on your device</div>
             </div>
           </div>

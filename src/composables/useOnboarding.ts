@@ -51,7 +51,7 @@ function projectsSteps(): Step[] {
     {
       title: "Welcome to DrawShare 👋",
       intro:
-        "A local-first whiteboard — draw, organise pages, and share live. Nothing leaves your device unless you start a session. Here's a quick tour.",
+        "A collaborative whiteboard — draw, organise pages, and share live. Your drawings are saved on your device; live sessions go through a relay. Here's a quick tour.",
     },
   ];
   const newBtn = find("new-project");

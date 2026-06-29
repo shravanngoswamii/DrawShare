@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Local-first collaborative whiteboard that streams your live writing to any screen over the local network.",
+  "description": "Collaborative whiteboard that saves everything on-device and streams your canvas live via a session code.",
   "author": "Shravan Goswami",
   "license": "MIT",
   "homepage": "https://shravangoswami.com/DrawShare/",

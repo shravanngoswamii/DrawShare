@@ -14,10 +14,9 @@
 
       <section class="lead">
         <p>
-          DrawShare is a local-first whiteboard. Your drawings live on your own device, and
-          nothing is uploaded anywhere unless you choose to — by starting a live session,
-          publishing a snapshot link, or turning on cloud backup. There are no accounts, no
-          tracking, and no advertising.
+          DrawShare is a collaborative whiteboard. Your drawings live on your own device, and
+          nothing is uploaded anywhere unless you choose to — by starting a live session or
+          publishing a snapshot link. There are no accounts, no tracking, and no advertising.
         </p>
       </section>
 
@@ -25,8 +24,9 @@
       <p>
         Everything you create — projects, pages, strokes, shapes, images, text, and your
         settings such as the theme — is stored locally in your browser (IndexedDB and
-        localStorage) on the device you use. It never leaves your device on its own. DrawShare
-        has no server and no database, so we cannot see your boards.
+        localStorage) on the device you use. It never leaves your device on its own. We run no
+        central database and cannot see your boards; strokes are only transmitted during a live
+        session (see below).
       </p>
 
       <h2>No accounts, tracking, or cookies</h2>
