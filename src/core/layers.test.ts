@@ -5,7 +5,7 @@ import type { ImageItem, Layer, Shape, Stroke } from "./types";
 function layer(id: string, index: number): Layer {
   return { id, pageId: "p", name: id, index, visible: true, locked: false, createdAt: 1 };
 }
-function stroke(id: string, layerId?: string): Stroke {
+function stroke(id: string, layerId?: string, tool: Stroke["tool"] = "pen"): Stroke {
   return {
     id,
     pageId: "p",
@@ -14,7 +14,7 @@ function stroke(id: string, layerId?: string): Stroke {
     color: "#000",
     size: 4,
     opacity: 1,
-    tool: "pen",
+    tool,
     createdAt: 1,
   };
 }
@@ -86,5 +86,20 @@ describe("orderByLayer", () => {
     ];
     const out = orderByLayer([layer("L", 0)], [stroke("ink", "L")], [] as Shape[], imgs, []);
     expect(out.map((r) => r.item.id)).toEqual(["behind", "ink", "front"]);
+  });
+
+  it("draws highlighter strokes behind pen strokes within the same layer", () => {
+    const strokes = [stroke("pen", "L", "pen"), stroke("marker", "L", "highlighter")];
+    const out = orderByLayer([layer("L", 0)], strokes, [], [], []);
+    expect(out.map((r) => (r.item as Stroke).id)).toEqual(["marker", "pen"]);
+  });
+
+  it("does not let a highlighter in a higher layer jump ahead of a lower layer's pen stroke", () => {
+    const strokes = [
+      stroke("pen-bottom", "bottom", "pen"),
+      stroke("marker-top", "top", "highlighter"),
+    ];
+    const out = orderByLayer([layer("bottom", 0), layer("top", 1)], strokes, [], [], []);
+    expect(out.map((r) => (r.item as Stroke).id)).toEqual(["pen-bottom", "marker-top"]);
   });
 });

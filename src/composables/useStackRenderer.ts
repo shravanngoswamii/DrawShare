@@ -1,4 +1,5 @@
 import { splitImageLayers } from "@/core/images";
+import { sortHighlightersBehind } from "@/core/layers";
 import { PAGE_H, PAGE_W, sheetWorldPos } from "@/core/layout";
 import type { Renderer } from "@/core/ports";
 import type { ImageItem, NotebookLayout, Page, Shape, Stroke } from "@/core/types";
@@ -81,7 +82,7 @@ export function drawStack(
     const { behind, front } = splitImageLayers(imagesByPage.get(page.id) ?? []);
     for (const img of behind) renderer.drawImageItem(img);
     const ps = byPage.get(page.id);
-    if (ps) for (const s of ps) renderer.drawStroke(s);
+    if (ps) for (const s of sortHighlightersBehind(ps)) renderer.drawStroke(s);
     const shs = shapesByPage.get(page.id);
     if (shs) for (const sh of shs) renderer.drawShape(sh);
     const texts = page.texts;

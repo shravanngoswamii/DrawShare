@@ -41,10 +41,20 @@ export function orderByLayer(
   for (const b of buckets) {
     const { behind, front } = splitImageLayers(b.images);
     for (const im of behind) out.push({ kind: "image", item: im });
-    for (const s of b.strokes) out.push({ kind: "stroke", item: s });
+    for (const s of sortHighlightersBehind(b.strokes)) out.push({ kind: "stroke", item: s });
     for (const sh of b.shapes) out.push({ kind: "shape", item: sh });
     for (const t of b.texts) out.push({ kind: "text", item: t });
     for (const im of front) out.push({ kind: "image", item: im });
   }
   return out;
+}
+
+// Highlighter ink is meant to sit under pen/pencil strokes rather than occlude
+// them, so within a layer it always draws first regardless of creation order.
+export function sortHighlightersBehind(strokes: Stroke[]): Stroke[] {
+  return [...strokes].sort((a, b) => {
+    if (a.tool === "highlighter" && b.tool !== "highlighter") return -1;
+    if (a.tool !== "highlighter" && b.tool === "highlighter") return 1;
+    return 0;
+  });
 }
