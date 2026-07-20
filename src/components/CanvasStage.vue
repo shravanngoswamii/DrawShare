@@ -1124,6 +1124,7 @@ function handleDown(s: InputSample) {
     laserStart(s.x, s.y);
     return;
   }
+  if (s.pointerType === "pen" && s.pressure < 0.1) return;
   // Can't create content on a locked or hidden layer; the eraser and the select
   // tool stay free (erase/select existing content on other layers).
   const layer = editor.currentLayer;
@@ -1484,6 +1485,7 @@ function appendFinalPoint(stroke: Stroke, sample?: InputSample) {
     stroke.points.push(point);
     return;
   }
+  if (point.p < 0.05 && Math.hypot(point.x - last.x, point.y - last.y) < 1) return;
   if (last.x !== point.x || last.y !== point.y) {
     stroke.points.push(point);
     return;
