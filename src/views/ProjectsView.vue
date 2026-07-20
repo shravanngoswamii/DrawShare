@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import HelpPanel from "@/components/HelpPanel.vue";
 import NewProjectDialog from "@/components/NewProjectDialog.vue";
+import SettingsPanel from "@/components/SettingsPanel.vue";
 import ThemeMenu from "@/components/ThemeMenu.vue";
 import { alertDialog, confirmDialog } from "@/composables/useDialog";
 import { useOnboarding } from "@/composables/useOnboarding";
@@ -25,6 +26,7 @@ const importInput = ref<HTMLInputElement | null>(null);
 const importing = ref(false);
 const query = ref("");
 const helpOpen = ref(false);
+const settingsOpen = ref(false);
 const renamingId = ref<string | null>(null);
 const renameValue = ref("");
 const joinCode = ref("");
@@ -385,16 +387,36 @@ function formatDate(ts: number): string {
       </section>
     </main>
     <button
+      class="settings-fab"
+      :class="{ active: settingsOpen }"
+      @click="
+        settingsOpen = !settingsOpen;
+        if (settingsOpen) helpOpen = false;
+      "
+      :aria-expanded="settingsOpen"
+      title="Settings"
+      aria-label="Settings"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      </svg>
+    </button>
+    <button
       class="help-fab"
       data-tour="help"
       :class="{ active: helpOpen }"
-      @click="helpOpen = !helpOpen"
+      @click="
+        helpOpen = !helpOpen;
+        if (helpOpen) settingsOpen = false;
+      "
       :aria-expanded="helpOpen"
       title="Help"
       aria-label="Help"
     >?</button>
   </div>
   <HelpPanel :open="helpOpen" @close="helpOpen = false" />
+  <SettingsPanel :open="settingsOpen" @close="settingsOpen = false" />
 
   <NewProjectDialog :open="showCreate" @close="showCreate = false" />
 </template>
@@ -477,6 +499,28 @@ function formatDate(ts: number): string {
 }
 .help-fab:hover { box-shadow: var(--shadow-md); color: var(--color-text); }
 .help-fab.active { background: var(--color-accent-soft); color: var(--color-accent); border-color: var(--color-accent); }
+
+.settings-fab {
+  position: fixed;
+  bottom: 16px;
+  right: 56px;
+  z-index: 20;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--color-glass-bg-strong);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-glass-border);
+  box-shadow: 0 2px 8px var(--color-glass-shadow);
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: box-shadow 150ms, color 80ms, background 80ms;
+}
+.settings-fab:hover { box-shadow: var(--shadow-md); color: var(--color-text); }
+.settings-fab.active { background: var(--color-accent-soft); color: var(--color-accent); border-color: var(--color-accent); }
 
 .search {
   width: 260px;
