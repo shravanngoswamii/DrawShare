@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from "vue";
+import { useFeatures } from "@/composables/useFeatures";
 import type { ShapeType, Tool } from "@/core/types";
 import { useEditorStore } from "@/stores/editor";
 
@@ -7,12 +8,20 @@ const props = defineProps<{ collapsed?: boolean; panelOpen?: boolean; guest?: bo
 const emit = defineEmits<{ toggle: []; "image-import": [] }>();
 
 const editor = useEditorStore();
+const { flags } = useFeatures();
 
 const penTools: { id: Tool; label: string; icon: string }[] = [
   { id: "pen", label: "Pen", icon: "pen" },
   { id: "highlighter", label: "Highlighter", icon: "highlight" },
   { id: "text", label: "Text", icon: "text" },
 ];
+const visiblePenTools = computed(() =>
+  penTools.filter((t) => {
+    if (t.id === "highlighter") return flags.highlighter;
+    if (t.id === "text") return flags.text;
+    return true;
+  }),
+);
 
 const shapeTools: { id: ShapeType; label: string }[] = [
   { id: "rect", label: "Rectangle" },
@@ -365,7 +374,7 @@ onMounted(() => {
             <path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" />
           </svg>
         </button>
-        <div v-for="t in penTools" :key="t.id" class="pop-wrap">
+        <div v-for="t in visiblePenTools" :key="t.id" class="pop-wrap">
           <button
             class="tool"
             :class="{ active: editor.tool === t.id }"
@@ -414,7 +423,7 @@ onMounted(() => {
         </div>
 
         <!-- Eraser with its own popover (size + mode) -->
-        <div class="pop-wrap">
+        <div v-if="flags.eraser" class="pop-wrap">
           <button class="tool" :class="{ active: editor.tool === 'eraser' }" :aria-pressed="editor.tool === 'eraser'" title="Eraser" aria-label="Eraser" @click="onEraserClick">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" /><path d="M22 21H7" /><path d="m5 11 9 9" />
@@ -440,7 +449,7 @@ onMounted(() => {
         </div>
 
         <!-- Flood fill with its own opacity popover -->
-        <div class="pop-wrap">
+        <div v-if="flags.fill" class="pop-wrap">
           <button
             class="tool"
             :class="{ active: editor.tool === 'fill' }"
@@ -465,10 +474,10 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="divider"></div>
+      <div v-if="flags.shapes" class="divider"></div>
 
       <!-- Shapes: one button opens a flyout with the four shapes -->
-      <div class="pop-wrap group">
+      <div v-if="flags.shapes" class="pop-wrap group">
         <button
           class="tool"
           :class="{ active: isShapeTool }"
@@ -536,9 +545,9 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="divider"></div>
+      <div v-if="flags.imageImport" class="divider"></div>
 
-      <div class="group">
+      <div v-if="flags.imageImport" class="group">
         <button class="tool" title="Import image (or paste / drag & drop)" @click="emit('image-import')" aria-label="Import image">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
@@ -563,11 +572,11 @@ onMounted(() => {
         </button>
       </div>
 
-      <div v-if="!props.guest" class="divider"></div>
+      <div v-if="!props.guest && flags.presenterTools" class="divider"></div>
 
       <!-- Presenter aids: one button opens a flyout with laser + spotlight.
            Host-only — hidden for live-session guests. -->
-      <div v-if="!props.guest" class="pop-wrap group">
+      <div v-if="!props.guest && flags.presenterTools" class="pop-wrap group">
         <button
           class="tool"
           :class="{ active: editor.presenterMode !== 'off' }"
