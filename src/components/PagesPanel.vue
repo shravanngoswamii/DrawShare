@@ -2,11 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import ThemeMenu from "@/components/ThemeMenu.vue";
 import { confirmDialog } from "@/composables/useDialog";
-import {
-  exportNotebookPdf as exportNotebookPdfToPrint,
-  exportPageAsPdf,
-  exportPageAsPng,
-} from "@/composables/useExport";
+import { exportNotebookPdf, exportPageAsPdf, exportPageAsPng } from "@/composables/useExport";
 import { encodeSnapshot } from "@/composables/useSnapshot";
 import { useTheme } from "@/composables/useTheme";
 import { useThumbnails } from "@/composables/useThumbnails";
@@ -260,7 +256,7 @@ async function exportCurrentPage() {
 async function exportPdf() {
   if (editor.notebookMode !== "off") {
     if (editor.pages.length === 0) return;
-    await exportNotebookPdfToPrint(editor.pages, editor.strokes, editor.shapes, editor.images);
+    await exportNotebookPdf(editor.pages, editor.strokes, editor.shapes, editor.images);
     return;
   }
   const page = editor.currentPage;

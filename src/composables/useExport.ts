@@ -1,3 +1,4 @@
+import { jsPDF } from "jspdf";
 import { getStroke } from "perfect-freehand";
 import { splitImageLayers } from "@/core/images";
 import type { ImageItem, Page, Shape, Stroke, TextItem } from "@/core/types";
@@ -6,6 +7,16 @@ const PADDING = 32;
 // A4 fallback for sheets with no stored size; real sheets use page.width/height.
 const A4_W = 794;
 const A4_H = 1123;
+
+// Upscale exports for crisper PNG/PDF output, but back off on very large
+// drawings so the OffscreenCanvas doesn't blow past browser size limits.
+const MAX_EXPORT_SCALE = 4;
+const MAX_EXPORT_DIMENSION = 8000;
+
+export function exportScale(w: number, h: number): number {
+  const longest = Math.max(w, h);
+  return Math.min(MAX_EXPORT_SCALE, Math.max(1, Math.floor(MAX_EXPORT_DIMENSION / longest)));
+}
 
 const PEN_OPTIONS = {
   size: 1,
@@ -247,12 +258,14 @@ async function renderPageBlob(
   );
   const w = Math.ceil(maxX - minX + 2 * PADDING);
   const h = Math.ceil(maxY - minY + 2 * PADDING);
+  const scale = exportScale(w, h);
 
   // World → canvas: world(minX, minY) → canvas(PADDING, PADDING).
-  const canvas = new OffscreenCanvas(w, h);
+  const canvas = new OffscreenCanvas(w * scale, h * scale);
   const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D;
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, w, h);
+  ctx.fillRect(0, 0, w * scale, h * scale);
+  ctx.scale(scale, scale);
   ctx.translate(-minX + PADDING, -minY + PADDING);
   drawBackground(ctx, page);
   // Images split into behind/front bands, matching canvas layer order.
@@ -285,9 +298,8 @@ export async function exportPageAsPng(
   URL.revokeObjectURL(url);
 }
 
-// Export the current page's drawing as a single-page PDF (free canvas). The page
-// is sized to the drawing's aspect ratio, longest side ~297mm, via the print
-// window — same dependency-free approach as the notebook PDF.
+// Export the current page's drawing as a single-page PDF (free canvas). The
+// page is sized to the drawing's aspect ratio, longest side 297mm.
 export async function exportPageAsPdf(
   page: Page,
   strokes: Stroke[],
@@ -301,34 +313,13 @@ export async function exportPageAsPdf(
   const wMm = w >= h ? long : Math.round(((long * w) / h) * 10) / 10;
   const hMm = w >= h ? Math.round(((long * h) / w) * 10) / 10 : long;
 
-  const win = window.open("", "_blank");
-  if (!win) {
-    downloadDataUrl(dataUrl, `${safeName}.png`);
-    return;
-  }
-  win.document.write(`<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>${safeName}</title>
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-@page { size: ${wMm}mm ${hMm}mm; margin: 0; }
-html, body { background: #fff; }
-.sheet { width: ${wMm}mm; height: ${hMm}mm; overflow: hidden; }
-img { width: ${wMm}mm; height: ${hMm}mm; display: block; }
-@media screen {
-  body { background: #e5e7eb; display: flex; justify-content: center; padding: 12px; }
-  .sheet { box-shadow: 0 4px 24px rgba(0,0,0,.18); }
-}
-</style>
-</head>
-<body><div class="sheet"><img src="${dataUrl}" alt=""></div></body>
-</html>`);
-  win.document.close();
-  win.addEventListener("load", () => {
-    setTimeout(() => win.print(), 300);
+  const pdf = new jsPDF({
+    orientation: wMm >= hMm ? "landscape" : "portrait",
+    unit: "mm",
+    format: [wMm, hMm],
   });
+  pdf.addImage(dataUrl, "PNG", 0, 0, wMm, hMm);
+  pdf.save(`${safeName}.pdf`);
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -339,7 +330,7 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
-// Render one notebook sheet to a 2×-resolution A4 PNG. Strokes/texts are stored
+// Render one notebook sheet to a high-res A4 PNG. Strokes/texts are stored
 // page-local (0,0)..(A4_W,A4_H), so no world offset is needed — just clip to the
 // sheet box and paint.
 async function renderSheet(
@@ -348,10 +339,10 @@ async function renderSheet(
   shapes: Shape[],
   images: ImageItem[],
 ): Promise<string> {
-  const scale = 2;
   // Sheets are the project's paper size; strokes are page-local in that space.
   const w = page.width || A4_W;
   const h = page.height || A4_H;
+  const scale = exportScale(w, h);
   const canvas = new OffscreenCanvas(w * scale, h * scale);
   const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D;
   ctx.fillStyle = "#ffffff";
@@ -373,18 +364,9 @@ async function renderSheet(
   return blobToDataUrl(await canvas.convertToBlob({ type: "image/png" }));
 }
 
-function downloadDataUrl(dataUrl: string, name: string): void {
-  const a = document.createElement("a");
-  a.href = dataUrl;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-}
-
-// Export the whole notebook as a print-ready multi-page PDF (one A4 page per
-// sheet) via the browser's "Save as PDF". No PDF dependency — each sheet is an
-// A4 image laid out one-per-printed-page with CSS page breaks.
+// Export the whole notebook as a multi-page PDF, one page per sheet, sized
+// 210mm wide with height scaled to the sheet's aspect ratio (A4 lands back at
+// 297mm; Letter/Legal/Square keep their own proportions).
 export async function exportNotebookPdf(
   pages: Page[],
   strokes: Stroke[],
@@ -393,47 +375,19 @@ export async function exportNotebookPdf(
 ): Promise<void> {
   if (pages.length === 0) return;
   const sheetUrls = await Promise.all(pages.map((p) => renderSheet(p, strokes, shapes, images)));
-  // Printed page size: 210mm wide, height scaled to the sheet's aspect ratio, so
-  // A4/Letter/Legal/Square all keep their proportions (A4 lands back at 297mm).
   const w0 = pages[0].width || A4_W;
   const h0 = pages[0].height || A4_H;
   const pwMm = 210;
   const phMm = Math.round(((210 * h0) / w0) * 10) / 10;
 
-  const win = window.open("", "_blank");
-  if (!win) {
-    // Popup blocked: download each sheet as a PNG instead.
-    sheetUrls.forEach((src, i) => {
-      downloadDataUrl(src, `page-${i + 1}.png`);
-    });
-    return;
-  }
-
-  const sheets = sheetUrls
-    .map((src) => `<div class="sheet"><img src="${src}" alt=""></div>`)
-    .join("");
-  win.document.write(`<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>Notebook</title>
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-@page { size: ${pwMm}mm ${phMm}mm; margin: 0; }
-html, body { background: #fff; }
-.sheet { width: ${pwMm}mm; height: ${phMm}mm; overflow: hidden; page-break-after: always; }
-.sheet:last-child { page-break-after: auto; }
-img { width: ${pwMm}mm; height: ${phMm}mm; display: block; }
-@media screen {
-  body { background: #e5e7eb; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 12px; }
-  .sheet { box-shadow: 0 4px 24px rgba(0,0,0,.18); }
-}
-</style>
-</head>
-<body>${sheets}</body>
-</html>`);
-  win.document.close();
-  win.addEventListener("load", () => {
-    setTimeout(() => win.print(), 300);
+  const pdf = new jsPDF({
+    orientation: pwMm >= phMm ? "landscape" : "portrait",
+    unit: "mm",
+    format: [pwMm, phMm],
   });
+  sheetUrls.forEach((src, i) => {
+    if (i > 0) pdf.addPage([pwMm, phMm]);
+    pdf.addImage(src, "PNG", 0, 0, pwMm, phMm);
+  });
+  pdf.save("notebook.pdf");
 }
