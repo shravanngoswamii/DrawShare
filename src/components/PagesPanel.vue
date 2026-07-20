@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import ThemeMenu from "@/components/ThemeMenu.vue";
 import { confirmDialog } from "@/composables/useDialog";
 import { exportNotebookPdf, exportPageAsPdf, exportPageAsPng } from "@/composables/useExport";
+import { useFeatures } from "@/composables/useFeatures";
 import { encodeSnapshot } from "@/composables/useSnapshot";
 import { useTheme } from "@/composables/useTheme";
 import { useThumbnails } from "@/composables/useThumbnails";
@@ -17,6 +18,7 @@ const emit = defineEmits<{ close: []; toggle: []; share: []; chat: [] }>();
 
 const editor = useEditorStore();
 const live = useLiveStore();
+const { flags } = useFeatures();
 
 // Live-viewer (guest) connection status, shown in the header in place of the
 // host's save indicator.
@@ -360,7 +362,7 @@ function removeSnapshot() {
         </svg>
       </button>
       <button
-        v-if="live.available && !props.guest"
+        v-if="live.available && !props.guest && flags.liveShare"
         class="dock-btn dock-live"
         :class="{ live: live.isHosting }"
         @click="emit('share')"
@@ -415,7 +417,7 @@ function removeSnapshot() {
               </svg>
               <span>{{ isFullscreen ? 'Exit fullscreen' : 'Fullscreen' }}</span>
             </button>
-            <button class="head-menu-item" :class="{ 'is-on': devMode }" role="menuitemcheckbox" :aria-checked="devMode" @click="setDevMode(!devMode); menuOpen = false">
+            <button v-if="flags.devMode" class="head-menu-item" :class="{ 'is-on': devMode }" role="menuitemcheckbox" :aria-checked="devMode" @click="setDevMode(!devMode); menuOpen = false">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="m8 9-3 3 3 3" /><path d="m16 9 3 3-3 3" /><path d="M13.5 7.5 10 17" />
               </svg>
@@ -494,7 +496,7 @@ function removeSnapshot() {
         </div>
 
       <!-- ── Layers ── (host-only) -->
-      <div v-if="!props.guest" class="section layers-section">
+      <div v-if="!props.guest && flags.layers" class="section layers-section">
         <div class="section-head">
           <span class="section-title layers-title">Layers</span>
           <button class="btn-icon" @click="editor.addLayer()" title="Add layer" aria-label="Add layer">
@@ -606,7 +608,7 @@ function removeSnapshot() {
       </div>
 
       <!-- ── Background (collapsible) ── (host-only) -->
-      <div v-if="!props.guest" class="section group-section">
+      <div v-if="!props.guest && flags.background" class="section group-section">
         <button class="group-toggle" :aria-expanded="showSetup" @click="showSetup = !showSetup">
           <span class="section-title">Background</span>
           <svg class="chev" :class="{ open: showSetup }" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
@@ -639,7 +641,7 @@ function removeSnapshot() {
         </button>
         <div v-if="showActions" class="group-body">
           <!-- Live session -->
-          <button v-if="live.available" class="share-btn" data-tour="share" :class="{ live: live.isHosting }" @click="emit('share')" :title="live.isHosting ? `Live session: ${live.code}` : 'Start a live session'" :aria-label="live.isHosting ? `Live session active, code: ${live.code}` : 'Start a live session'">
+          <button v-if="live.available && flags.liveShare" class="share-btn" data-tour="share" :class="{ live: live.isHosting }" @click="emit('share')" :title="live.isHosting ? `Live session: ${live.code}` : 'Start a live session'" :aria-label="live.isHosting ? `Live session active, code: ${live.code}` : 'Start a live session'">
             <span v-if="live.isHosting" class="live-dot" aria-hidden="true"></span>
             <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9" /><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5" /><circle cx="12" cy="12" r="2" /><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5" /><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1" />
@@ -691,7 +693,7 @@ function removeSnapshot() {
           </div>
 
           <!-- Record session -->
-          <div class="subsection">
+          <div v-if="flags.replayRecording" class="subsection">
             <div class="record-row">
               <span class="sub-title">Record session</span>
               <button class="rec-toggle" role="switch" aria-label="Record session" :aria-checked="editor.recordReplay" :class="{ on: editor.recordReplay }" @click="editor.setRecordReplay(!editor.recordReplay)">
@@ -705,7 +707,7 @@ function removeSnapshot() {
           </div>
 
           <!-- Snapshot link -->
-          <div class="subsection">
+          <div v-if="flags.snapshotLink" class="subsection">
             <div class="sub-title">Snapshot link</div>
             <template v-if="!snapshotUrl">
               <button class="share-btn" @click="publishSnapshot">
