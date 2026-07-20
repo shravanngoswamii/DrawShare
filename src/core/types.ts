@@ -2,7 +2,7 @@ export type ID = string;
 
 export type ShapeType = "rect" | "ellipse" | "line" | "arrow";
 
-export type Tool = "select" | "pen" | "highlighter" | "eraser" | "text" | ShapeType;
+export type Tool = "select" | "pen" | "highlighter" | "eraser" | "text" | "fill" | ShapeType;
 
 export type PenType = "ballpoint" | "brush" | "marker";
 

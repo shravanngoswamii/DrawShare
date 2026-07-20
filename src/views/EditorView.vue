@@ -247,6 +247,7 @@ function onKey(e: KeyboardEvent) {
   } else if (e.key === "1") editor.setTool("pen");
   else if (e.key === "2") editor.setTool("highlighter");
   else if (e.key === "3") editor.setTool("eraser");
+  else if (e.key === "4") editor.setTool("fill");
   else if (e.key === "Escape") {
     panelOpen.value = false;
     helpOpen.value = false;

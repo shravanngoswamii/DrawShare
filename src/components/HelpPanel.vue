@@ -22,6 +22,7 @@ const shortcuts = [
   { keys: ["1"], action: "Pen tool" },
   { keys: ["2"], action: "Highlighter" },
   { keys: ["3"], action: "Eraser" },
+  { keys: ["4"], action: "Flood fill" },
   { keys: ["Ctrl", "Z"], action: "Undo" },
   { keys: ["Ctrl", "⇧", "Z"], action: "Redo" },
   { keys: ["Space", "drag"], action: "Pan canvas" },

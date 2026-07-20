@@ -134,6 +134,7 @@ export const useEditorStore = defineStore("editor", {
       highlighter: 20,
       eraser: 24,
       text: 4,
+      fill: 4,
       rect: 2,
       ellipse: 2,
       line: 2,
@@ -1051,6 +1052,9 @@ export const useEditorStore = defineStore("editor", {
     },
     setSize(s: number) {
       this.toolSizes[this.tool] = s;
+    },
+    setOpacity(o: number) {
+      this.opacity = o;
     },
     setEraserMode(mode: "stroke" | "area") {
       this.eraserMode = mode;

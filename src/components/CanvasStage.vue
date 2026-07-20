@@ -4,6 +4,7 @@ import { PointerInputAdapter } from "@/adapters/input/pointerInput";
 import { Canvas2DRenderer } from "@/adapters/render/canvas2d";
 import { drawStack, resolveSheetColors, type SheetColors } from "@/composables/useStackRenderer";
 import { useTheme } from "@/composables/useTheme";
+import { floodFill } from "@/core/floodFill";
 import { newId } from "@/core/ids";
 import { splitImageLayers } from "@/core/images";
 import { adaptInk } from "@/core/ink";
@@ -333,6 +334,16 @@ let strictBlocked = false;
 let eraseLockId: string | undefined;
 let eraseOffX = 0;
 let eraseOffY = 0;
+
+// A fill click resolves on pointer-up (not pointer-down) since the flood fill
+// itself is async; this holds the target point/sheet until then.
+let fillPending: {
+  wx: number;
+  wy: number;
+  targetPageId: string;
+  offX: number;
+  offY: number;
+} | null = null;
 
 // Navigation state (plain booleans – not reactive)
 let spaceHeld = false;
@@ -1205,6 +1216,11 @@ function handleDown(s: InputSample) {
       drawOffsetY = o.y;
     }
   }
+  if (editor.tool === "fill") {
+    fillPending = { wx: w.x, wy: w.y, targetPageId, offX: drawOffsetX, offY: drawOffsetY };
+    editor.setDrawing(true);
+    return;
+  }
   if (editor.tool === "select") {
     if (editing.value) commitEditing();
     // Grabbing a corner handle of the already-selected image starts a resize.
@@ -1547,6 +1563,47 @@ function appendStrictAwareFinalPoint(
 }
 
 async function handleUp(sample?: InputSample) {
+  if (fillPending) {
+    const fp = fillPending;
+    fillPending = null;
+    editor.setDrawing(false);
+    const layerId = editor.currentLayer?.id;
+    const pageStrokes = editor.strokes.filter(
+      (s) => s.pageId === fp.targetPageId && (!layerId || s.layerId === layerId),
+    );
+    const pageShapes = editor.shapes.filter(
+      (s) => s.pageId === fp.targetPageId && (!layerId || s.layerId === layerId),
+    );
+    const result = await floodFill(
+      fp.wx,
+      fp.wy,
+      editor.color,
+      pageStrokes,
+      pageShapes,
+      fp.offX,
+      fp.offY,
+      isDark.value,
+      editor.opacity,
+    );
+    if (result) {
+      const img: ImageItem = {
+        id: newId(),
+        pageId: fp.targetPageId,
+        layerId,
+        x: result.x + fp.offX,
+        y: result.y + fp.offY,
+        width: result.width,
+        height: result.height,
+        src: result.dataURL,
+        createdAt: Date.now(),
+      };
+      await baseRenderer.loadImage(img);
+      await editor.commitImage(img);
+      dirtyBase = true;
+      schedule();
+    }
+    return;
+  }
   if (editor.presenterMode === "laser") {
     laserEnd();
     return;
@@ -1640,6 +1697,11 @@ async function handleUp(sample?: InputSample) {
 }
 
 async function handleCancel(sample?: InputSample) {
+  if (fillPending) {
+    fillPending = null;
+    editor.setDrawing(false);
+    return;
+  }
   if (editor.presenterMode === "laser") {
     laserEnd();
     return;
@@ -2197,7 +2259,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="stage" ref="wrap" :class="{ 'pan-cursor': panCursor, 'is-notebook': editor.notebookMode !== 'off' }" :style="hoverCursor ? { cursor: hoverCursor } : undefined" @mousemove="onPresenterMove" @mouseleave="onPresenterLeave">
+  <div class="stage" ref="wrap" :class="{ 'pan-cursor': panCursor, 'fill-cursor': editor.tool === 'fill', 'is-notebook': editor.notebookMode !== 'off' }" :style="hoverCursor ? { cursor: hoverCursor } : undefined" @mousemove="onPresenterMove" @mouseleave="onPresenterLeave">
     <div v-if="editor.notebookMode === 'off'" class="page-bg" :class="`bg-${props.page.background}`" :style="bgStyle" aria-hidden="true"></div>
     <canvas ref="baseEl" class="layer base"></canvas>
     <canvas ref="liveEl" class="layer live"></canvas>
@@ -2309,6 +2371,10 @@ onBeforeUnmount(() => {
 
 .stage.pan-cursor:active {
   cursor: grabbing;
+}
+
+.stage.fill-cursor {
+  cursor: crosshair;
 }
 
 /* Notebook mode: a neutral "desk" backdrop behind the white A4 sheets. */

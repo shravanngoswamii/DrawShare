@@ -34,7 +34,7 @@ const presetColors = [
   "#a16207",
 ];
 
-type Popover = "color" | "size" | "eraser" | "shapes" | "present" | null;
+type Popover = "color" | "size" | "eraser" | "shapes" | "present" | "fill-opacity" | null;
 const popover = ref<Popover>(null);
 function toggle(p: Exclude<Popover, null>) {
   popover.value = popover.value === p ? null : p;
@@ -59,6 +59,15 @@ function onEraserClick() {
     popover.value = "eraser";
   } else {
     toggle("eraser");
+  }
+}
+
+function onFillClick() {
+  if (editor.tool !== "fill") {
+    editor.setTool("fill");
+    popover.value = "fill-opacity";
+  } else {
+    toggle("fill-opacity");
   }
 }
 
@@ -429,6 +438,31 @@ onMounted(() => {
             </div>
           </div>
         </div>
+
+        <!-- Flood fill with its own opacity popover -->
+        <div class="pop-wrap">
+          <button
+            class="tool"
+            :class="{ active: editor.tool === 'fill' }"
+            :aria-pressed="editor.tool === 'fill'"
+            :aria-expanded="popover === 'fill-opacity'"
+            title="Flood fill (4) — tap an enclosed area to fill it"
+            aria-label="Flood fill"
+            @click="onFillClick"
+          >
+            <svg width="18" height="18" viewBox="0 0 48 48" fill="currentColor" aria-hidden="true">
+              <path d="M16.5,2.6A1.8,1.8,0,0,0,15.1,2a2,2,0,0,0-1.4.6,1.9,1.9,0,0,0,0,2.8L19.4,11,6.2,24.1a3.9,3.9,0,0,0,0,5.6L19.4,42.8A3.8,3.8,0,0,0,22.2,44,3.9,3.9,0,0,0,25,42.8L41,26.9ZM9.1,26.9l13.1-13,13,13Z" />
+              <path d="M41,32s-4,5.8-4,8a4,4,0,0,0,8,0C45,37.8,41,32,41,32Z" />
+            </svg>
+          </button>
+          <div v-if="popover === 'fill-opacity'" class="popover" :class="`pop-${dock}`" role="dialog" aria-label="Fill opacity">
+            <div class="pop-title">Fill opacity</div>
+            <div class="size-row">
+              <input class="range" type="range" min="10" max="100" :value="Math.round(editor.opacity * 100)" aria-label="Fill opacity slider" @input="editor.setOpacity(Number(($event.target as HTMLInputElement).value) / 100)" />
+              <span class="opacity-value">{{ Math.round(editor.opacity * 100) }}%</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="divider"></div>
@@ -736,6 +770,15 @@ onMounted(() => {
   font-variant-numeric: tabular-nums;
 }
 .num:focus, .hex:focus { outline: none; border-color: var(--color-focus); box-shadow: 0 0 0 3px var(--color-focus-ring); }
+
+.opacity-value {
+  width: 36px;
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+  text-align: right;
+}
 
 .seg { display: flex; gap: 4px; }
 .seg button {
