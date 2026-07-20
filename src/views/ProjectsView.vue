@@ -6,6 +6,7 @@ import NewProjectDialog from "@/components/NewProjectDialog.vue";
 import SettingsPanel from "@/components/SettingsPanel.vue";
 import ThemeMenu from "@/components/ThemeMenu.vue";
 import { alertDialog, confirmDialog } from "@/composables/useDialog";
+import { useFeatures } from "@/composables/useFeatures";
 import { useOnboarding } from "@/composables/useOnboarding";
 import { useProjectBackup } from "@/composables/useProjectBackup";
 import { useTheme } from "@/composables/useTheme";
@@ -19,6 +20,7 @@ const projects = useProjectsStore();
 const live = useLiveStore();
 const router = useRouter();
 const { isDark } = useTheme();
+const { flags } = useFeatures();
 const { exportAll, exportProject, importAll } = useProjectBackup();
 const { projectThumbnails, renderProjectThumbnail } = useThumbnails();
 const { maybeStart } = useOnboarding();
@@ -192,7 +194,7 @@ function formatDate(ts: number): string {
             placeholder="Search projects"
           />
           <!-- Export all projects -->
-          <button class="btn btn-ghost btn-icon" title="Export all projects" aria-label="Export all projects" @click="exportAll">
+          <button v-if="flags.backupRestore" class="btn btn-ghost btn-icon" title="Export all projects" aria-label="Export all projects" @click="exportAll">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -201,7 +203,7 @@ function formatDate(ts: number): string {
             </svg>
           </button>
           <!-- Import projects -->
-          <button class="btn btn-ghost btn-icon" title="Import projects from backup" aria-label="Import projects from backup" @click="importInput?.click()" :disabled="importing">
+          <button v-if="flags.backupRestore" class="btn btn-ghost btn-icon" title="Import projects from backup" aria-label="Import projects from backup" @click="importInput?.click()" :disabled="importing">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -209,7 +211,7 @@ function formatDate(ts: number): string {
               <line x1="12" y1="5" x2="12" y2="17" />
             </svg>
           </button>
-          <input ref="importInput" type="file" accept=".json" class="sr-only" @change="handleImport" aria-hidden="true" />
+          <input v-if="flags.backupRestore" ref="importInput" type="file" accept=".json" class="sr-only" @change="handleImport" aria-hidden="true" />
           <ThemeMenu />
           <button class="btn btn-primary new-btn" data-tour="new-project" @click="showCreate = true">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -341,7 +343,7 @@ function formatDate(ts: number): string {
               <button class="btn btn-ghost btn-sm" @click="startRename(p.id, p.name)">
                 Rename
               </button>
-              <button class="btn btn-ghost btn-sm" @click="exportProject(p.id)" title="Export this project as JSON backup">
+              <button v-if="flags.backupRestore" class="btn btn-ghost btn-sm" @click="exportProject(p.id)" title="Export this project as JSON backup">
                 Export
               </button>
               <button class="btn btn-ghost btn-sm card-danger" @click="remove(p.id, p.name)">

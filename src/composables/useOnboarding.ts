@@ -1,6 +1,7 @@
 import introJs from "intro.js";
 import "intro.js/introjs.css";
 import "@/styles/introjs.css";
+import { useFeatures } from "@/composables/useFeatures";
 
 // intro.js-driven product tours. Two element-anchored tours: a short welcome on
 // the projects screen and a feature walkthrough the first time a board opens.
@@ -147,10 +148,11 @@ function run(name: TourName) {
 }
 
 export function useOnboarding() {
+  const { flags } = useFeatures();
   // Auto-start on first visit. requestAnimationFrame lets the anchored elements
   // paint before intro.js measures them.
   function maybeStart(name: TourName, delayMs = 0) {
-    if (hasSeen(name)) return;
+    if (!flags.onboarding || hasSeen(name)) return;
     if (delayMs > 0) setTimeout(() => requestAnimationFrame(() => run(name)), delayMs);
     else requestAnimationFrame(() => run(name));
   }

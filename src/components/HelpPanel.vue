@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useRoute } from "vue-router";
+import { useFeatures } from "@/composables/useFeatures";
 import { useOnboarding } from "@/composables/useOnboarding";
 import { devMode, setDevMode } from "@/debug";
 
@@ -7,6 +8,7 @@ defineProps<{ open: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
 const route = useRoute();
+const { flags } = useFeatures();
 const { replay } = useOnboarding();
 // Replay the tour for whichever screen the panel is open on.
 function replayTour() {
@@ -106,7 +108,7 @@ const faqs = [
         </section>
 
         <!-- Replay tour -->
-        <section class="help-section">
+        <section v-if="flags.onboarding" class="help-section">
           <button class="replay-btn" @click="replayTour">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.36 2.64L3 8"/><path d="M3 3v5h5"/>
@@ -118,6 +120,7 @@ const faqs = [
         <!-- Dev mode & credit -->
         <section class="help-section help-foot">
           <button
+            v-if="flags.devMode"
             class="dev-toggle"
             :class="{ active: devMode }"
             @click="setDevMode(!devMode)"

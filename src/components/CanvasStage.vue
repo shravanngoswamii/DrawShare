@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { PointerInputAdapter } from "@/adapters/input/pointerInput";
 import { Canvas2DRenderer } from "@/adapters/render/canvas2d";
+import { useFeatures } from "@/composables/useFeatures";
 import { drawStack, resolveSheetColors, type SheetColors } from "@/composables/useStackRenderer";
 import { useTheme } from "@/composables/useTheme";
 import { floodFill } from "@/core/floodFill";
@@ -46,6 +47,7 @@ const editor = useEditorStore();
 const live = useLiveStore();
 const replay = useReplayStore();
 const { isDark, activeThemeId } = useTheme();
+const { flags } = useFeatures();
 
 function applyInkAdapter() {
   baseRenderer.setInkAdapter((c) => adaptInk(c, isDark.value));
@@ -394,6 +396,7 @@ function hitImage(img: ImageItem, wx: number, wy: number): boolean {
 }
 
 async function placeImageFile(file: File, worldX?: number, worldY?: number): Promise<void> {
+  if (!flags.imageImport) return;
   const src = await new Promise<string>((res, rej) => {
     const reader = new FileReader();
     reader.onload = () => res(reader.result as string);
