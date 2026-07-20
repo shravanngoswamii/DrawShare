@@ -51,7 +51,7 @@ const faqs = [
 </script>
 
 <template>
-  <div v-if="open" class="help-backdrop" aria-hidden="true"></div>
+  <div v-if="open" class="help-backdrop" aria-hidden="true" @click="emit('close')"></div>
   <div v-if="open" class="help-panel" role="dialog" aria-label="Help" aria-modal="true">
       <div class="help-head">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
@@ -140,7 +140,6 @@ const faqs = [
   inset: 0;
   z-index: 90;
   background: transparent;
-  pointer-events: none;
 }
 
 .help-panel {
