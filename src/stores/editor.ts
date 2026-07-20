@@ -1063,7 +1063,7 @@ export const useEditorStore = defineStore("editor", {
     // are cut exactly at the boundary, so ink passing through with no recorded
     // point inside is still erased, and points outside are kept (no over-erase).
     // In-memory and synchronous (called rapidly during a drag); persist via flushPage.
-    eraseArea(pageId: string, wx: number, wy: number, radius: number): boolean {
+    eraseArea(pageId: string, wx: number, wy: number, radius: number, layerId?: string): boolean {
       const square = this.eraserShape === "square";
       const r2 = radius * radius;
       const insideAt = (x: number, y: number): boolean =>
@@ -1083,7 +1083,11 @@ export const useEditorStore = defineStore("editor", {
       const survivors: Stroke[] = [];
       let changed = false;
       for (const stroke of this.strokes) {
-        if (stroke.pageId !== pageId || this._isLayerLocked(stroke.layerId)) {
+        if (
+          stroke.pageId !== pageId ||
+          this._isLayerLocked(stroke.layerId) ||
+          (layerId && stroke.layerId !== layerId)
+        ) {
           survivors.push(stroke);
           continue;
         }
@@ -1173,12 +1177,22 @@ export const useEditorStore = defineStore("editor", {
     // eraser and keep the surviving pieces as crisp `line` shapes, so erasing a
     // part removes only that part while the rest stays sharp (not pen-rasterized).
     // In-memory + synchronous; persisted by flushPage. Mirrors eraseArea.
-    eraseAreaShapes(pageId: string, wx: number, wy: number, radius: number): boolean {
+    eraseAreaShapes(
+      pageId: string,
+      wx: number,
+      wy: number,
+      radius: number,
+      layerId?: string,
+    ): boolean {
       const square = this.eraserShape === "square";
       const survivors: Shape[] = [];
       let changed = false;
       for (const shape of this.shapes) {
-        if (shape.pageId !== pageId || this._isLayerLocked(shape.layerId)) {
+        if (
+          shape.pageId !== pageId ||
+          this._isLayerLocked(shape.layerId) ||
+          (layerId && shape.layerId !== layerId)
+        ) {
           survivors.push(shape);
           continue;
         }

@@ -19,7 +19,7 @@ vi.mock("@/adapters/storage/indexedDB", () => ({
 
 import { useEditorStore } from "./editor";
 
-function line(id: string, pts: Array<[number, number]>): Stroke {
+function line(id: string, pts: Array<[number, number]>, layerId = "L1"): Stroke {
   return {
     id,
     pageId: "pg1",
@@ -29,7 +29,7 @@ function line(id: string, pts: Array<[number, number]>): Stroke {
     opacity: 1,
     points: pts.map(([x, y]) => ({ x, y, p: 1, t: 0 })),
     createdAt: 0,
-    layerId: "L1",
+    layerId,
   };
 }
 
@@ -84,5 +84,18 @@ describe("editor.eraseArea", () => {
         expect(Math.hypot(pt.x, pt.y)).toBeGreaterThanOrEqual(10 - 1e-6);
       }
     }
+  });
+
+  it("only erases strokes on the given layer when one is specified", () => {
+    const editor = useEditorStore();
+    editor.strokes = [
+      line("on-target-layer", [[0, 0]], "L1"),
+      line("on-other-layer", [[0, 0]], "L2"),
+    ];
+
+    const changed = editor.eraseArea("pg1", 0, 0, 10, "L1");
+
+    expect(changed).toBe(true);
+    expect(editor.strokes.map((s) => s.id)).toEqual(["on-other-layer"]);
   });
 });

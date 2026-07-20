@@ -897,9 +897,33 @@ function shapeHitByEraser(s: Shape, lx: number, ly: number, r: number): boolean 
 // Whole-delete any shape whose outline the eraser touches on the given sheet.
 // Used by the "whole" eraser mode — a tap removes the entire shape.
 function eraseShapesAt(pageId: string, lx: number, ly: number, r: number): boolean {
-  const hit = editor.shapes.filter((s) => s.pageId === pageId && shapeHitByEraser(s, lx, ly, r));
+  const layerId = editor.currentLayer?.id;
+  const hit = editor.shapes.filter(
+    (s) =>
+      s.pageId === pageId && (!layerId || s.layerId === layerId) && shapeHitByEraser(s, lx, ly, r),
+  );
   if (hit.length === 0) return false;
   for (const s of hit) editor.deleteShape(s.id);
+  return true;
+}
+
+function eraseImagesAt(pageId: string, lx: number, ly: number, r: number): boolean {
+  const layerId = editor.currentLayer?.id;
+  const hit = editor.images.filter((img) => {
+    if (img.pageId !== pageId) return false;
+    if (layerId && img.layerId !== layerId) return false;
+    return (
+      lx + r >= img.x &&
+      lx - r <= img.x + img.width &&
+      ly + r >= img.y &&
+      ly - r <= img.y + img.height
+    );
+  });
+  if (hit.length === 0) return false;
+  for (const img of hit) {
+    baseRenderer.releaseImage(img.id);
+    editor.deleteImage(img.id);
+  }
   return true;
 }
 
@@ -922,8 +946,10 @@ function eraseAt(wx: number, wy: number) {
     const ly = wy - eraseOffY;
     // Clip both ink and shape outlines under the eraser, so a sweep removes only
     // the swept part of a shape (survivors stay crisp lines, not pen-rasterized).
-    let changed = editor.eraseArea(eraseLockId, lx, ly, r);
-    if (editor.eraseAreaShapes(eraseLockId, lx, ly, r)) changed = true;
+    const eraseLayerId = editor.currentLayer?.id;
+    let changed = editor.eraseArea(eraseLockId, lx, ly, r, eraseLayerId);
+    if (editor.eraseAreaShapes(eraseLockId, lx, ly, r, eraseLayerId)) changed = true;
+    if (eraseImagesAt(eraseLockId, lx, ly, r)) changed = true;
     if (changed) {
       areaErased = true;
       dirtyBase = true;
@@ -952,8 +978,10 @@ function eraseAt(wx: number, wy: number) {
     lx = wx - o.x;
     ly = wy - o.y;
   }
+  const layerId = editor.currentLayer?.id;
   const toDelete = editor.strokes.filter((stroke) => {
     if (stroke.pageId !== pageId) return false;
+    if (layerId && stroke.layerId !== layerId) return false;
     const pts = stroke.points;
     if (pts.length === 0) return false;
     if (pts.length === 1) return Math.hypot(pts[0].x - lx, pts[0].y - ly) < r;
@@ -964,7 +992,8 @@ function eraseAt(wx: number, wy: number) {
   });
   for (const stroke of toDelete) editor.eraseStroke(stroke.id);
   const erasedShape = eraseShapesAt(pageId, lx, ly, r);
-  if (toDelete.length === 0 && !erasedShape) return;
+  const erasedImage = eraseImagesAt(pageId, lx, ly, r);
+  if (toDelete.length === 0 && !erasedShape && !erasedImage) return;
   dirtyBase = true;
   schedule();
 }
