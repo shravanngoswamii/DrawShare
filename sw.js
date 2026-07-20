@@ -2,7 +2,7 @@
 // vite.config.ts: CACHE gets a per-build id (so every deploy installs a fresh
 // worker and purges old caches) and PRECACHE is filled with the build's real
 // asset URLs. The defaults below are only used by the dev server.
-const CACHE = "drawshare-2a2988b9";
+const CACHE = "drawshare-85916f0a";
 const PRECACHE = ["/DrawShare/","/DrawShare/apple-touch-icon.png","/DrawShare/assets/EditorView-D5C1dn-4.js","/DrawShare/assets/EmojiPicker-D9hEACfJ.js","/DrawShare/assets/HelpPanel-BoEomZHU.js","/DrawShare/assets/ImageLightbox-oZMU9r-I.js","/DrawShare/assets/LandingView-B6kzAmjp.js","/DrawShare/assets/NewProjectDialog-31un92r_.js","/DrawShare/assets/NotFoundView-Cata5pp2.js","/DrawShare/assets/PrivacyView-Cl4zk3gt.js","/DrawShare/assets/ProjectsView-DGy4Nifw.js","/DrawShare/assets/SnapshotView-BzkLobE5.js","/DrawShare/assets/html2canvas-DX29vFqt.js","/DrawShare/assets/index-cTYOIIWb.js","/DrawShare/assets/index.es-DDYh8KlV.js","/DrawShare/assets/ink-DDm6X6Ja.js","/DrawShare/assets/module-DzZxRChD.js","/DrawShare/assets/native-Cqs-2kTC.js","/DrawShare/assets/notiflix-aio-3.2.8.min-E7rlFpdm.js","/DrawShare/assets/purify.es-adlwq8Pz.js","/DrawShare/assets/shareLinks-CDEVvS6L.js","/DrawShare/assets/style-BbylN880.css","/DrawShare/assets/typeof-B5XbjTb1.js","/DrawShare/assets/useThumbnails-DY4YOA2J.js","/DrawShare/favicon.svg","/DrawShare/icon-192.png","/DrawShare/icon-512.png","/DrawShare/index.html","/DrawShare/manifest.webmanifest","/DrawShare/og-image.png"];
 
 self.addEventListener("install", (event) => {
