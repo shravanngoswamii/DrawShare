@@ -92,7 +92,7 @@
   --header-h: 52px;
   --toolbar-w: 56px;
   --toolbar-h: 56px;
-  --sidepanel-w: 248px;
+  --sidepanel-w: 280px;
 
   /* Safe areas (iOS) */
   --safe-top: env(safe-area-inset-top, 0px);
