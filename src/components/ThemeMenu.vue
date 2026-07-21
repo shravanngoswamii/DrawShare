@@ -175,6 +175,7 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-md) 0 0 var(--radius-md);
 }
 .tm-toggle:only-child {
+  border: none;
   border-radius: var(--radius-md);
 }
 .tm-caret {

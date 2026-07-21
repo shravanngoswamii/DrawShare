@@ -213,27 +213,57 @@ const active = () => categories.find((c) => c.id === activeId.value) ?? categori
           </div>
 
           <div v-if="activeId === 'appearance' && !flags.themeChoices" class="default-theme-pickers">
-            <div class="default-theme-row">
-              <label class="default-theme-label" for="default-light-theme">Default light theme</label>
-              <select
-                id="default-light-theme"
-                class="default-theme-select"
-                :value="defaultLightId"
-                @change="setDefaultLight(($event.target as HTMLSelectElement).value)"
-              >
-                <option v-for="t in lightThemes" :key="t.id" :value="t.id">{{ t.name }}</option>
-              </select>
+            <div class="default-theme-group">
+              <div class="default-theme-label">Default light theme</div>
+              <div class="theme-grid" role="radiogroup" aria-label="Default light theme">
+                <button
+                  v-for="t in lightThemes"
+                  :key="t.id"
+                  class="theme-tile"
+                  :class="{ active: defaultLightId === t.id }"
+                  role="radio"
+                  :aria-checked="defaultLightId === t.id"
+                  @click="setDefaultLight(t.id)"
+                >
+                  <span class="theme-prev" :style="{ background: t.bg }" aria-hidden="true">
+                    <span class="theme-prev-card" :style="{ background: t.surface }">
+                      <span class="theme-prev-bar" :style="{ background: t.swatch }"></span>
+                      <span class="theme-prev-line" :style="{ background: t.text }"></span>
+                      <span class="theme-prev-line theme-prev-line-short" :style="{ background: t.text }"></span>
+                    </span>
+                  </span>
+                  <span class="theme-tile-row">
+                    <span class="theme-tile-name">{{ t.name }}</span>
+                    <svg v-if="defaultLightId === t.id" class="theme-tile-check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+                  </span>
+                </button>
+              </div>
             </div>
-            <div class="default-theme-row">
-              <label class="default-theme-label" for="default-dark-theme">Default dark theme</label>
-              <select
-                id="default-dark-theme"
-                class="default-theme-select"
-                :value="defaultDarkId"
-                @change="setDefaultDark(($event.target as HTMLSelectElement).value)"
-              >
-                <option v-for="t in darkThemes" :key="t.id" :value="t.id">{{ t.name }}</option>
-              </select>
+            <div class="default-theme-group">
+              <div class="default-theme-label">Default dark theme</div>
+              <div class="theme-grid" role="radiogroup" aria-label="Default dark theme">
+                <button
+                  v-for="t in darkThemes"
+                  :key="t.id"
+                  class="theme-tile"
+                  :class="{ active: defaultDarkId === t.id }"
+                  role="radio"
+                  :aria-checked="defaultDarkId === t.id"
+                  @click="setDefaultDark(t.id)"
+                >
+                  <span class="theme-prev" :style="{ background: t.bg }" aria-hidden="true">
+                    <span class="theme-prev-card" :style="{ background: t.surface }">
+                      <span class="theme-prev-bar" :style="{ background: t.swatch }"></span>
+                      <span class="theme-prev-line" :style="{ background: t.text }"></span>
+                      <span class="theme-prev-line theme-prev-line-short" :style="{ background: t.text }"></span>
+                    </span>
+                  </span>
+                  <span class="theme-tile-row">
+                    <span class="theme-tile-name">{{ t.name }}</span>
+                    <svg v-if="defaultDarkId === t.id" class="theme-tile-check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -415,31 +445,104 @@ const active = () => categories.find((c) => c.id === activeId.value) ?? categori
 .default-theme-pickers {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-5);
   padding-top: var(--space-3);
 }
 
-.default-theme-row {
+.default-theme-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-2);
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: var(--space-2);
+}
+
+.theme-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px;
+  border-radius: var(--radius-md);
+  text-align: left;
+  transition: background 80ms ease;
+}
+.theme-tile:hover {
+  background: var(--color-surface-2);
+}
+
+/* Mini theme sample: a "page" (bg) holding a surface card with an accent pill
+   and two ink lines — a real glance of the palette, matching ThemeMenu's grid. */
+.theme-prev {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.default-theme-label {
-  font-size: var(--text-sm);
-  color: var(--color-text);
-}
-
-.default-theme-select {
-  height: 32px;
-  padding: 0 var(--space-2);
+  justify-content: center;
+  height: 46px;
+  padding: 7px;
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border-strong);
-  background: var(--color-surface);
+  box-shadow: var(--shadow-xs);
+  transition: box-shadow 80ms ease, transform 80ms ease;
+}
+.theme-tile:hover .theme-prev {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+.theme-tile.active .theme-prev {
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-accent);
+}
+.theme-prev-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.theme-prev-bar {
+  width: 42%;
+  height: 5px;
+  border-radius: var(--radius-pill);
+}
+.theme-prev-line {
+  width: 80%;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  opacity: 0.45;
+}
+.theme-prev-line-short {
+  width: 55%;
+}
+.theme-tile-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px;
+}
+.theme-tile-name {
+  flex: 1;
+  font-size: var(--text-xs);
+  font-weight: 550;
   color: var(--color-text);
-  font-size: var(--text-sm);
-  min-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.theme-tile-check {
+  flex-shrink: 0;
+  color: var(--color-accent);
+}
+.theme-tile.active .theme-tile-name {
+  color: var(--color-accent);
 }
 
 .settings-foot {
