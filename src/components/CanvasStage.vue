@@ -2047,6 +2047,19 @@ function onKeyDown(e: KeyboardEvent) {
       e.preventDefault();
       deleteSelectedObject();
     }
+    return;
+  }
+  if (!e.metaKey && !e.ctrlKey) {
+    if (e.key === "+" || e.key === "=") {
+      e.preventDefault();
+      zoomIn();
+    } else if (e.key === "-" || e.key === "_") {
+      e.preventDefault();
+      zoomOut();
+    } else if (e.key === "0") {
+      e.preventDefault();
+      resetView();
+    }
   }
 }
 
@@ -2338,7 +2351,7 @@ onBeforeUnmount(() => {
       :style="{ '--sx': `${presenterPos.x}px`, '--sy': `${presenterPos.y}px` }"
       aria-hidden="true"
     ></div>
-    <div class="cam-controls" :class="{ quiet: editor.isDrawing }">
+    <div v-if="flags.zoomControls" class="cam-controls" :class="{ quiet: editor.isDrawing }">
       <button class="cam-btn" title="Zoom out" @click="zoomOut">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
           <path d="M5 12h14"/>
