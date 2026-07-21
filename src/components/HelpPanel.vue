@@ -42,6 +42,7 @@ const shortcuts = computed(() =>
       { keys: ["L"], action: "Toggle laser pointer", show: flags.presenterTools },
       { keys: ["C"], action: "Toggle session chat" },
       { keys: ["Q"], action: "Back / leave session" },
+      { keys: ["Z"], action: "Toggle zen mode (hide everything)" },
       { keys: ["Ctrl", "Z"], action: "Undo" },
       { keys: ["Ctrl", "⇧", "Z"], action: "Redo" },
       { keys: ["Space", "drag"], action: "Pan canvas" },
@@ -50,7 +51,7 @@ const shortcuts = computed(() =>
       { keys: ["+"], action: "Zoom in" },
       { keys: ["-"], action: "Zoom out" },
       { keys: ["0"], action: "Reset zoom" },
-      { keys: ["Esc"], action: "Close overlay / text" },
+      { keys: ["Esc"], action: "Close overlay / text / zen mode" },
     ] as { keys: string[]; action: string; show?: boolean }[]
   ).filter((s) => s.show !== false),
 );
