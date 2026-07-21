@@ -1,4 +1,5 @@
 import { computed, ref } from "vue";
+import { useFeatures } from "@/composables/useFeatures";
 import {
   buildThemesCss,
   DEFAULT_DARK_ID,
@@ -38,6 +39,24 @@ if (typeof window !== "undefined") {
 }
 
 const preference = ref<string>(stored());
+const { flags } = useFeatures();
+
+// When "multiple theme choices" is disabled in settings, the sun/moon toggle
+// flips between exactly these two themes instead of preserving the current
+// colour family — the user picks these once and the family picker stays hidden.
+const DEFAULT_LIGHT_KEY = "drawshare-theme-default-light";
+const DEFAULT_DARK_KEY = "drawshare-theme-default-dark";
+
+function storedDefault(key: string, fallback: string, mode: "light" | "dark"): string {
+  try {
+    const v = localStorage.getItem(key);
+    if (v && getTheme(v)?.mode === mode) return v;
+  } catch {}
+  return fallback;
+}
+
+const defaultLightId = ref(storedDefault(DEFAULT_LIGHT_KEY, DEFAULT_LIGHT_ID, "light"));
+const defaultDarkId = ref(storedDefault(DEFAULT_DARK_KEY, DEFAULT_DARK_ID, "dark"));
 
 // A transient theme that overrides the saved preference for the current view
 // without persisting it — the live viewer uses this to mirror the host. null
@@ -47,6 +66,11 @@ const transient = ref<string | null>(null);
 
 function effective(): string {
   return transient.value ?? preference.value;
+}
+
+function currentMode(): "light" | "dark" {
+  const id = effective();
+  return id === "system" ? (systemDark.value ? "dark" : "light") : modeOf(id);
 }
 
 // Inject the generated theme stylesheet once (covers every non-default theme).
@@ -98,6 +122,24 @@ function mirrorTheme(id: string | null) {
   applyEffective();
 }
 
+function setDefaultLight(id: string) {
+  if (getTheme(id)?.mode !== "light") return;
+  defaultLightId.value = id;
+  try {
+    localStorage.setItem(DEFAULT_LIGHT_KEY, id);
+  } catch {}
+  if (!flags.themeChoices && currentMode() === "light") persist(id);
+}
+
+function setDefaultDark(id: string) {
+  if (getTheme(id)?.mode !== "dark") return;
+  defaultDarkId.value = id;
+  try {
+    localStorage.setItem(DEFAULT_DARK_KEY, id);
+  } catch {}
+  if (!flags.themeChoices && currentMode() === "dark") persist(id);
+}
+
 export function useTheme() {
   const isDark = computed(() =>
     effective() === "system" ? systemDark.value : modeOf(effective()) === "dark",
@@ -117,6 +159,10 @@ export function useTheme() {
   // the mirrored theme on the viewer, not the hidden saved one). From "system"
   // it commits to an explicit slate.
   function toggleTheme() {
+    if (!flags.themeChoices) {
+      persist(currentMode() === "dark" ? defaultLightId.value : defaultDarkId.value);
+      return;
+    }
     const current = effective();
     if (current === "system") {
       persist(systemDark.value ? DEFAULT_LIGHT_ID : DEFAULT_DARK_ID);
@@ -142,5 +188,9 @@ export function useTheme() {
     setTheme,
     useSystemTheme,
     mirrorTheme,
+    defaultLightId,
+    defaultDarkId,
+    setDefaultLight,
+    setDefaultDark,
   };
 }

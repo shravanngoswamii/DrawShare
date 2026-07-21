@@ -23,6 +23,7 @@ export interface FeatureFlags {
   backupRestore: boolean;
   backButton: boolean;
   zoomControls: boolean;
+  themeChoices: boolean;
 }
 
 const KEY = "drawshare:features";
@@ -46,6 +47,7 @@ const DEFAULTS: FeatureFlags = {
   backupRestore: true,
   backButton: true,
   zoomControls: true,
+  themeChoices: true,
 };
 
 function stored(): FeatureFlags {

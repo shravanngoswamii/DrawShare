@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from "vue";
+import { useFeatures } from "@/composables/useFeatures";
 import { useTheme } from "@/composables/useTheme";
 import { getTheme, type Mode } from "@/core/themes";
 
 const { isDark, isSystem, activeThemeId, themes, toggleTheme, setTheme, useSystemTheme } =
   useTheme();
+const { flags } = useFeatures();
 
 const open = ref(false);
 const root = ref<HTMLElement | null>(null);
@@ -96,6 +98,7 @@ onBeforeUnmount(() => {
       </svg>
     </button>
     <button
+      v-if="flags.themeChoices"
       class="tm-caret"
       :class="{ open }"
       @click="open = !open"
@@ -111,7 +114,7 @@ onBeforeUnmount(() => {
 
     <Teleport to="body">
       <div
-        v-if="open"
+        v-if="open && flags.themeChoices"
         ref="pop"
         class="tm-pop"
         role="menu"
@@ -170,6 +173,9 @@ onBeforeUnmount(() => {
 .tm-toggle {
   width: 32px;
   border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+.tm-toggle:only-child {
+  border-radius: var(--radius-md);
 }
 .tm-caret {
   width: 22px;

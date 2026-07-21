@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import type { FeatureFlags } from "@/composables/useFeatures";
 import { useFeatures } from "@/composables/useFeatures";
+import { useTheme } from "@/composables/useTheme";
 import { useEditorStore } from "@/stores/editor";
 
 const props = defineProps<{ open: boolean }>();
@@ -21,6 +22,10 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 
 const { flags, setFeature, resetFeatures } = useFeatures();
 const editor = useEditorStore();
+const { themes, defaultLightId, defaultDarkId, setDefaultLight, setDefaultDark } = useTheme();
+
+const lightThemes = computed(() => themes.filter((t) => t.mode === "light"));
+const darkThemes = computed(() => themes.filter((t) => t.mode === "dark"));
 
 // Tools map 1:1 to an editor.tool value; if the active tool's feature gets
 // turned off, fall back to pen so the canvas isn't left on a hidden tool.
@@ -52,6 +57,18 @@ interface Category {
 }
 
 const categories: Category[] = [
+  {
+    id: "appearance",
+    title: "Appearance",
+    rows: [
+      {
+        key: "themeChoices",
+        label: "Multiple theme choices",
+        description:
+          "Pick from every colour family and signature theme. Turn off to reduce the theme button to a plain light/dark switch.",
+      },
+    ],
+  },
   {
     id: "drawing",
     title: "Drawing tools",
@@ -193,6 +210,31 @@ const active = () => categories.find((c) => c.id === activeId.value) ?? categori
             >
               <span class="switch-thumb"></span>
             </button>
+          </div>
+
+          <div v-if="activeId === 'appearance' && !flags.themeChoices" class="default-theme-pickers">
+            <div class="default-theme-row">
+              <label class="default-theme-label" for="default-light-theme">Default light theme</label>
+              <select
+                id="default-light-theme"
+                class="default-theme-select"
+                :value="defaultLightId"
+                @change="setDefaultLight(($event.target as HTMLSelectElement).value)"
+              >
+                <option v-for="t in lightThemes" :key="t.id" :value="t.id">{{ t.name }}</option>
+              </select>
+            </div>
+            <div class="default-theme-row">
+              <label class="default-theme-label" for="default-dark-theme">Default dark theme</label>
+              <select
+                id="default-dark-theme"
+                class="default-theme-select"
+                :value="defaultDarkId"
+                @change="setDefaultDark(($event.target as HTMLSelectElement).value)"
+              >
+                <option v-for="t in darkThemes" :key="t.id" :value="t.id">{{ t.name }}</option>
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -368,6 +410,36 @@ const active = () => categories.find((c) => c.id === activeId.value) ?? categori
 }
 .switch[aria-checked="true"] .switch-thumb {
   transform: translateX(16px);
+}
+
+.default-theme-pickers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+}
+
+.default-theme-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.default-theme-label {
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+
+.default-theme-select {
+  height: 32px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  min-width: 160px;
 }
 
 .settings-foot {
