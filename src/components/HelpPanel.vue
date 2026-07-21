@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { useRoute } from "vue-router";
 import { useFeatures } from "@/composables/useFeatures";
 import { useOnboarding } from "@/composables/useOnboarding";
@@ -20,18 +21,39 @@ function replayTour() {
 
 const GITHUB_URL = "https://github.com/shravanngoswamii/DrawShare";
 
-const shortcuts = [
-  { keys: ["1"], action: "Pen tool" },
-  { keys: ["2"], action: "Highlighter" },
-  { keys: ["3"], action: "Eraser" },
-  { keys: ["4"], action: "Flood fill" },
-  { keys: ["Ctrl", "Z"], action: "Undo" },
-  { keys: ["Ctrl", "⇧", "Z"], action: "Redo" },
-  { keys: ["Space", "drag"], action: "Pan canvas" },
-  { keys: ["Ctrl", "scroll"], action: "Zoom" },
-  { keys: ["Pinch"], action: "Zoom (touch)" },
-  { keys: ["Esc"], action: "Close overlay / text" },
-];
+const shortcuts = computed(() =>
+  (
+    [
+      { keys: ["1"], action: "Pen tool" },
+      { keys: ["P"], action: "Pen tool" },
+      { keys: ["2"], action: "Highlighter", show: flags.highlighter },
+      { keys: ["H"], action: "Highlighter", show: flags.highlighter },
+      { keys: ["3"], action: "Eraser", show: flags.eraser },
+      { keys: ["E"], action: "Eraser", show: flags.eraser },
+      { keys: ["4"], action: "Flood fill", show: flags.fill },
+      { keys: ["F"], action: "Flood fill", show: flags.fill },
+      { keys: ["5"], action: "Rectangle", show: flags.shapes },
+      { keys: ["6"], action: "Ellipse", show: flags.shapes },
+      { keys: ["7"], action: "Line", show: flags.shapes },
+      { keys: ["8"], action: "Arrow", show: flags.shapes },
+      { keys: ["V"], action: "Select tool" },
+      { keys: ["T"], action: "Text tool", show: flags.text },
+      { keys: ["I"], action: "Import image", show: flags.imageImport },
+      { keys: ["L"], action: "Toggle laser pointer", show: flags.presenterTools },
+      { keys: ["C"], action: "Toggle session chat" },
+      { keys: ["Q"], action: "Back / leave session" },
+      { keys: ["Ctrl", "Z"], action: "Undo" },
+      { keys: ["Ctrl", "⇧", "Z"], action: "Redo" },
+      { keys: ["Space", "drag"], action: "Pan canvas" },
+      { keys: ["Ctrl", "scroll"], action: "Zoom" },
+      { keys: ["Pinch"], action: "Zoom (touch)" },
+      { keys: ["+"], action: "Zoom in" },
+      { keys: ["-"], action: "Zoom out" },
+      { keys: ["0"], action: "Reset zoom" },
+      { keys: ["Esc"], action: "Close overlay / text" },
+    ] as { keys: string[]; action: string; show?: boolean }[]
+  ).filter((s) => s.show !== false),
+);
 
 const faqs = [
   {
