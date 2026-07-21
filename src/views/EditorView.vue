@@ -10,7 +10,6 @@ import DebugConsole from "@/components/DebugConsole.vue";
 import HelpPanel from "@/components/HelpPanel.vue";
 import PagesPanel from "@/components/PagesPanel.vue";
 import ReplayControls from "@/components/ReplayControls.vue";
-import SettingsPanel from "@/components/SettingsPanel.vue";
 import ShareSessionModal from "@/components/ShareSessionModal.vue";
 import Toolbar from "@/components/Toolbar.vue";
 import { useFeatures } from "@/composables/useFeatures";
@@ -88,7 +87,6 @@ const toolbarCollapsed = ref(false);
 const pagesCollapsed = ref(false);
 const shareOpen = ref(false);
 const helpOpen = ref(false);
-const settingsOpen = ref(false);
 const chatOpen = ref(false);
 
 // Whether the collapsed mini-dock is showing (mirrors PagesPanel). When it is,
@@ -255,7 +253,6 @@ function onKey(e: KeyboardEvent) {
   else if (e.key === "Escape") {
     panelOpen.value = false;
     helpOpen.value = false;
-    settingsOpen.value = false;
   }
 }
 
@@ -284,7 +281,7 @@ onBeforeUnmount(() => removeProbe?.());
     <div class="body">
       <!-- Toolbar: always for the host; for a guest only once the host grants drawing. -->
       <Toolbar v-if="!isGuest || live.viewerCanEdit" :guest="isGuest" :collapsed="toolbarCollapsed" :panel-open="!pagesCollapsed" @toggle="toolbarCollapsed = !toolbarCollapsed" @image-import="canvasStage?.triggerFileImport()" />
-      <main id="canvas-main" class="stage-wrap" aria-label="Drawing canvas" @pointerdown="helpOpen = false; settingsOpen = false">
+      <main id="canvas-main" class="stage-wrap" aria-label="Drawing canvas" @pointerdown="helpOpen = false">
         <CanvasStage v-if="editor.currentPage && !guestBlocked" ref="canvasStage" :page="editor.currentPage" />
         <!-- Guest connection states (joining / disconnected / error). -->
         <div v-else-if="isGuest" class="guest-state">
@@ -360,28 +357,9 @@ onBeforeUnmount(() => removeProbe?.());
         <span v-if="live.unreadChat > 0" class="chat-fab-badge" aria-hidden="true"></span>
       </button>
       <button
-        class="settings-fab"
-        :class="{ quiet: editor.isDrawing, active: settingsOpen, shifted: !pagesCollapsed }"
-        @click="
-          settingsOpen = !settingsOpen;
-          if (settingsOpen) helpOpen = false;
-        "
-        title="Settings"
-        aria-label="Settings"
-        :aria-expanded="settingsOpen"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-      </button>
-      <button
         class="help-fab"
         :class="{ quiet: editor.isDrawing, active: helpOpen, shifted: !pagesCollapsed }"
-        @click="
-          helpOpen = !helpOpen;
-          if (helpOpen) settingsOpen = false;
-        "
+        @click="helpOpen = !helpOpen"
         title="Help"
         aria-label="Help"
         :aria-expanded="helpOpen"
@@ -389,7 +367,6 @@ onBeforeUnmount(() => removeProbe?.());
     </div>
   </div>
   <HelpPanel :open="helpOpen" @close="helpOpen = false" />
-  <SettingsPanel :open="settingsOpen" @close="settingsOpen = false" />
   <ShareSessionModal v-if="!isGuest" :open="shareOpen" @close="shareOpen = false" />
   <ChatPanel v-if="inSession" :fab="false" v-model:open="chatOpen" />
   <DebugConsole v-if="devMode" />
@@ -668,36 +645,11 @@ onBeforeUnmount(() => removeProbe?.());
   border: 2px solid var(--color-surface);
 }
 
-/* Settings FAB: same glass pill, sitting just left of chat/help. */
-.settings-fab {
-  position: absolute;
-  bottom: 16px;
-  right: 96px;
-  z-index: 20;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--color-glass-bg-strong);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--color-glass-border);
-  box-shadow: 0 2px 8px var(--color-glass-shadow);
-  color: var(--color-text-muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: box-shadow 150ms, color 80ms, background 80ms, opacity 150ms, right 200ms ease;
-}
-.settings-fab:hover { box-shadow: var(--shadow-md); color: var(--color-text); }
-.settings-fab.active { background: var(--color-accent-soft); color: var(--color-accent); border-color: var(--color-accent); }
-.settings-fab.quiet { opacity: 0.06; pointer-events: none; }
-
 /* When the pages panel is open on desktop it owns the right edge, so slide the
    corner FABs left to sit just clear of it. (Mobile panel is a drawer — no shift.) */
 @media (min-width: 768px) {
   .help-fab.shifted { right: calc(var(--sidepanel-w) + 20px); }
   .chat-fab.shifted { right: calc(var(--sidepanel-w) + 60px); }
-  .settings-fab.shifted { right: calc(var(--sidepanel-w) + 100px); }
   .replay-fab.shifted { right: calc(var(--sidepanel-w) + 16px); }
 }
 
@@ -721,9 +673,6 @@ onBeforeUnmount(() => removeProbe?.());
   .chat-fab {
     bottom: calc(var(--safe-bottom, 0px) + 72px);
   }
-  .settings-fab {
-    bottom: calc(var(--safe-bottom, 0px) + 72px);
-  }
   .replay-fab {
     bottom: calc(var(--safe-bottom, 0px) + 118px);
   }
@@ -734,9 +683,6 @@ onBeforeUnmount(() => removeProbe?.());
   /* Beside the help button (which sits at right:12 on mobile). */
   .chat-fab.shifted {
     right: 52px;
-  }
-  .settings-fab.shifted {
-    right: 92px;
   }
 }
 </style>
