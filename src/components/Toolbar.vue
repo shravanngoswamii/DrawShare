@@ -10,10 +10,10 @@ const emit = defineEmits<{ toggle: []; "image-import": [] }>();
 const editor = useEditorStore();
 const { flags } = useFeatures();
 
-const penTools: { id: Tool; label: string; icon: string }[] = [
-  { id: "pen", label: "Pen", icon: "pen" },
-  { id: "highlighter", label: "Highlighter", icon: "highlight" },
-  { id: "text", label: "Text", icon: "text" },
+const penTools: { id: Tool; label: string; icon: string; shortcut: string }[] = [
+  { id: "pen", label: "Pen", icon: "pen", shortcut: "P or 1" },
+  { id: "highlighter", label: "Highlighter", icon: "highlight", shortcut: "H or 2" },
+  { id: "text", label: "Text", icon: "text", shortcut: "T" },
 ];
 const visiblePenTools = computed(() =>
   penTools.filter((t) => {
@@ -23,11 +23,11 @@ const visiblePenTools = computed(() =>
   }),
 );
 
-const shapeTools: { id: ShapeType; label: string }[] = [
-  { id: "rect", label: "Rectangle" },
-  { id: "ellipse", label: "Ellipse" },
-  { id: "line", label: "Line" },
-  { id: "arrow", label: "Arrow" },
+const shapeTools: { id: ShapeType; label: string; shortcut: string }[] = [
+  { id: "rect", label: "Rectangle", shortcut: "5" },
+  { id: "ellipse", label: "Ellipse", shortcut: "6" },
+  { id: "line", label: "Line", shortcut: "7" },
+  { id: "arrow", label: "Arrow", shortcut: "8" },
 ];
 
 const isShapeTool = computed(() => shapeTools.some((t) => t.id === editor.tool));
@@ -366,7 +366,7 @@ onMounted(() => {
           class="tool"
           :class="{ active: editor.tool === 'select' }"
           :aria-pressed="editor.tool === 'select'"
-          title="Select — move, resize or delete images, text and shapes"
+          title="Select (V) — move, resize or delete images, text and shapes"
           aria-label="Select tool"
           @click="editor.setTool('select')"
         >
@@ -380,7 +380,7 @@ onMounted(() => {
             :class="{ active: editor.tool === t.id }"
             :aria-pressed="editor.tool === t.id"
             :aria-expanded="popover === 'size' && editor.tool === t.id"
-            :title="`${t.label} — tap again for size`"
+            :title="`${t.label} (${t.shortcut}) — tap again for size`"
             @click="onPenToolClick(t.id)"
           >
             <svg v-if="t.icon === 'pen'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -424,7 +424,7 @@ onMounted(() => {
 
         <!-- Eraser with its own popover (size + mode) -->
         <div v-if="flags.eraser" class="pop-wrap">
-          <button class="tool" :class="{ active: editor.tool === 'eraser' }" :aria-pressed="editor.tool === 'eraser'" title="Eraser" aria-label="Eraser" @click="onEraserClick">
+          <button class="tool" :class="{ active: editor.tool === 'eraser' }" :aria-pressed="editor.tool === 'eraser'" title="Eraser (E or 3)" aria-label="Eraser" @click="onEraserClick">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" /><path d="M22 21H7" /><path d="m5 11 9 9" />
             </svg>
@@ -455,7 +455,7 @@ onMounted(() => {
             :class="{ active: editor.tool === 'fill' }"
             :aria-pressed="editor.tool === 'fill'"
             :aria-expanded="popover === 'fill-opacity'"
-            title="Flood fill (4) — tap an enclosed area to fill it"
+            title="Flood fill (F or 4) — tap an enclosed area to fill it"
             aria-label="Flood fill"
             @click="onFillClick"
           >
@@ -483,7 +483,7 @@ onMounted(() => {
           :class="{ active: isShapeTool }"
           :aria-pressed="isShapeTool"
           :aria-expanded="popover === 'shapes'"
-          title="Shapes"
+          title="Shapes (5-8)"
           aria-label="Shapes"
           @click="toggle('shapes')"
         >
@@ -493,7 +493,7 @@ onMounted(() => {
         </button>
         <div v-if="popover === 'shapes'" class="popover" :class="`pop-${dock}`" role="dialog" aria-label="Shapes">
           <div class="flyout-row">
-            <button v-for="t in shapeTools" :key="t.id" class="tool" :class="{ active: editor.tool === t.id }" :aria-pressed="editor.tool === t.id" :title="t.label" :aria-label="t.label" @click="pickShape(t.id)">
+            <button v-for="t in shapeTools" :key="t.id" class="tool" :class="{ active: editor.tool === t.id }" :aria-pressed="editor.tool === t.id" :title="`${t.label} (${t.shortcut})`" :aria-label="t.label" @click="pickShape(t.id)">
               <svg v-if="t.id === 'rect'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
               <svg v-else-if="t.id === 'ellipse'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="10" ry="6"/></svg>
               <svg v-else-if="t.id === 'line'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="20" x2="20" y2="4"/></svg>
@@ -548,7 +548,7 @@ onMounted(() => {
       <div v-if="flags.imageImport" class="divider"></div>
 
       <div v-if="flags.imageImport" class="group">
-        <button class="tool" title="Import image (or paste / drag & drop)" @click="emit('image-import')" aria-label="Import image">
+        <button class="tool" title="Import image (I, or paste / drag & drop)" @click="emit('image-import')" aria-label="Import image">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
             <circle cx="9" cy="9" r="2"/>
@@ -560,12 +560,12 @@ onMounted(() => {
       <div class="divider"></div>
 
       <div class="group">
-        <button class="tool" title="Undo" aria-label="Undo" @click="editor.undo()" :disabled="editor.history.length === 0">
+        <button class="tool" title="Undo (Ctrl+Z)" aria-label="Undo" @click="editor.undo()" :disabled="editor.history.length === 0">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11" />
           </svg>
         </button>
-        <button class="tool" title="Redo" aria-label="Redo" @click="editor.redo()" :disabled="editor.redoStack.length === 0">
+        <button class="tool" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" @click="editor.redo()" :disabled="editor.redoStack.length === 0">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="m15 14 5-5-5-5" /><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5v0A5.5 5.5 0 0 0 9.5 20H13" />
           </svg>
@@ -595,7 +595,7 @@ onMounted(() => {
         <div v-if="popover === 'present'" class="popover" :class="`pop-${dock}`" role="dialog" aria-label="Presenter tools">
           <div class="pop-title">Present</div>
           <div class="present-list">
-            <button class="present-item" :class="{ active: editor.presenterMode === 'laser' }" :aria-pressed="editor.presenterMode === 'laser'" @click="pickPresenter('laser')">
+            <button class="present-item" :class="{ active: editor.presenterMode === 'laser' }" :aria-pressed="editor.presenterMode === 'laser'" title="Laser pointer (L)" @click="pickPresenter('laser')">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <circle cx="12" cy="12" r="3" /><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>
               </svg>
