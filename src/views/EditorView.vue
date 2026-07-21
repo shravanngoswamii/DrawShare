@@ -243,14 +243,36 @@ function onKey(e: KeyboardEvent) {
   if (mod && e.key === "z" && !e.shiftKey) {
     e.preventDefault();
     editor.undo();
-  } else if (mod && (e.key === "y" || (e.key === "z" && e.shiftKey))) {
+    return;
+  }
+  if (mod && (e.key === "y" || (e.key === "z" && e.shiftKey))) {
     e.preventDefault();
     editor.redo();
-  } else if (e.key === "1") editor.setTool("pen");
-  else if (e.key === "2" && flags.highlighter) editor.setTool("highlighter");
-  else if (e.key === "3" && flags.eraser) editor.setTool("eraser");
-  else if (e.key === "4" && flags.fill) editor.setTool("fill");
-  else if (e.key === "Escape") {
+    return;
+  }
+  // Every shortcut below is a bare key — a held Ctrl/Cmd means the user wants
+  // the browser's own shortcut (copy, paste, find...), not ours.
+  if (mod) return;
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (key === "1" || key === "p") editor.setTool("pen");
+  else if (key === "2" && flags.highlighter) editor.setTool("highlighter");
+  else if (key === "3" && flags.eraser) editor.setTool("eraser");
+  else if (key === "4" && flags.fill) editor.setTool("fill");
+  else if (key === "5" && flags.shapes) editor.setTool("rect");
+  else if (key === "6" && flags.shapes) editor.setTool("ellipse");
+  else if (key === "7" && flags.shapes) editor.setTool("line");
+  else if (key === "8" && flags.shapes) editor.setTool("arrow");
+  else if (key === "h" && flags.highlighter) editor.setTool("highlighter");
+  else if (key === "e" && flags.eraser) editor.setTool("eraser");
+  else if (key === "f" && flags.fill) editor.setTool("fill");
+  else if (key === "v") editor.setTool("select");
+  else if (key === "t" && flags.text) editor.setTool("text");
+  else if (key === "i" && flags.imageImport) canvasStage.value?.triggerFileImport();
+  else if (key === "l" && flags.presenterTools && !isGuest.value) {
+    editor.setPresenterMode(editor.presenterMode === "laser" ? "off" : "laser");
+  } else if (key === "c" && inSession.value) chatOpen.value = !chatOpen.value;
+  else if (key === "q") onBack();
+  else if (key === "Escape") {
     panelOpen.value = false;
     helpOpen.value = false;
   }
@@ -313,7 +335,7 @@ onBeforeUnmount(() => removeProbe?.());
       </main>
       <PagesPanel :open="panelOpen" :collapsed="pagesCollapsed" :guest="isGuest" @close="panelOpen = false" @toggle="onPanelToggle" @share="shareOpen = true" @chat="chatOpen = !chatOpen" />
       <!-- Back to projects (top-left); a guest leaves the session first. -->
-      <button class="back-fab" :class="{ quiet: editor.isDrawing }" @click="onBack" :title="isGuest ? 'Leave session' : 'Back to projects'" :aria-label="isGuest ? 'Leave session' : 'Back to projects'">
+      <button v-if="flags.backButton" class="back-fab" :class="{ quiet: editor.isDrawing }" @click="onBack" :title="isGuest ? 'Leave session' : 'Back to projects'" :aria-label="isGuest ? 'Leave session' : 'Back to projects'">
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="m12 19-7-7 7-7" /><path d="M19 12H5" />
         </svg>
@@ -334,7 +356,7 @@ onBeforeUnmount(() => removeProbe?.());
         aria-label="Replay how this page was drawn"
         @click="startReplay()"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M8 5v14l11-7z"/>
         </svg>
       </button>
@@ -550,36 +572,29 @@ onBeforeUnmount(() => removeProbe?.());
   pointer-events: none;
 }
 
+/* Same glass pill as help/chat, sitting in the same bottom-right row (one
+   slot further left than chat) instead of stacked above at a mismatched size. */
 .replay-fab {
   position: absolute;
-  /* Bottom-right, stacked above the help button — clear of the canvas, the
-     zoom controls (bottom-left) and the pages panel (top-right). */
-  bottom: 60px;
-  right: 12px;
+  bottom: 16px;
+  right: 96px;
   z-index: 20;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-pill);
   background: var(--color-glass-bg-strong);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--color-glass-border);
-  box-shadow: 0 4px 14px var(--color-glass-shadow), 0 1px 2px var(--color-glass-shadow);
+  box-shadow: 0 2px 8px var(--color-glass-shadow);
   color: var(--color-accent);
-  transition: transform 100ms ease, box-shadow 150ms ease, opacity 150ms ease, right 200ms ease;
+  transition: box-shadow 150ms, color 80ms, background 80ms, opacity 150ms, right 200ms ease;
 }
 
-.replay-fab:hover {
-  transform: scale(1.05);
-  box-shadow: var(--shadow-md);
-}
-
-.replay-fab:active {
-  transform: scale(0.96);
-}
+.replay-fab:hover { box-shadow: var(--shadow-md); }
 
 .replay-fab.quiet {
   opacity: 0.06;
@@ -650,7 +665,7 @@ onBeforeUnmount(() => removeProbe?.());
 @media (min-width: 768px) {
   .help-fab.shifted { right: calc(var(--sidepanel-w) + 20px); }
   .chat-fab.shifted { right: calc(var(--sidepanel-w) + 60px); }
-  .replay-fab.shifted { right: calc(var(--sidepanel-w) + 16px); }
+  .replay-fab.shifted { right: calc(var(--sidepanel-w) + 100px); }
 }
 
 @media (max-width: 767px) {
@@ -674,15 +689,17 @@ onBeforeUnmount(() => removeProbe?.());
     bottom: calc(var(--safe-bottom, 0px) + 72px);
   }
   .replay-fab {
-    bottom: calc(var(--safe-bottom, 0px) + 118px);
+    bottom: calc(var(--safe-bottom, 0px) + 72px);
   }
-  .help-fab.shifted,
-  .replay-fab.shifted {
+  .help-fab.shifted {
     right: 12px;
   }
   /* Beside the help button (which sits at right:12 on mobile). */
   .chat-fab.shifted {
     right: 52px;
+  }
+  .replay-fab.shifted {
+    right: 92px;
   }
 }
 </style>
