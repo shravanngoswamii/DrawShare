@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
+import type { FeatureFlags } from "./useFeatures";
 import { useFeatures } from "./useFeatures";
 
+// Experimental features default off; every other flag defaults on.
+const EXPERIMENTAL: (keyof FeatureFlags)[] = ["replayRecording"];
+
 describe("useFeatures", () => {
-  it("defaults every feature on", () => {
+  it("defaults every feature on except the experimental ones", () => {
     const { flags } = useFeatures();
-    for (const value of Object.values(flags)) expect(value).toBe(true);
+    for (const [key, value] of Object.entries(flags)) {
+      expect(value).toBe(!EXPERIMENTAL.includes(key as keyof FeatureFlags));
+    }
   });
 
   it("setFeature updates the shared flags object", () => {
@@ -18,9 +24,11 @@ describe("useFeatures", () => {
     const { flags, setFeature, resetFeatures } = useFeatures();
     setFeature("layers", false);
     setFeature("devMode", false);
+    setFeature("replayRecording", true);
     resetFeatures();
     expect(flags.layers).toBe(true);
     expect(flags.devMode).toBe(true);
+    expect(flags.replayRecording).toBe(false);
   });
 
   it("returns the same reactive flags object across calls", () => {

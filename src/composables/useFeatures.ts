@@ -39,7 +39,8 @@ const DEFAULTS: FeatureFlags = {
   presenterTools: true,
   liveShare: true,
   snapshotLink: true,
-  replayRecording: true,
+  // Experimental — off by default until it's had more real-world testing.
+  replayRecording: false,
   onboarding: true,
   devMode: true,
   backupRestore: true,
