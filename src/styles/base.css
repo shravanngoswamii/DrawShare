@@ -200,3 +200,48 @@ a {
     font-size: var(--text-md);
   }
 }
+
+/* Custom tooltip (see src/directives/tooltip.ts) — a single shared node
+   appended directly to <body>, positioned via inline top/left. Themed through
+   the same custom properties as the rest of the app, so it follows light/dark
+   and every colour family automatically. */
+.app-tooltip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 240px;
+  padding: 5px 9px;
+  border-radius: var(--radius-md);
+  background: var(--color-glass-bg-strong);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--color-glass-border);
+  box-shadow: var(--shadow-md);
+  color: var(--color-text);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 1.35;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(2px);
+  transition:
+    opacity 90ms ease,
+    transform 90ms ease,
+    visibility 90ms;
+}
+.app-tooltip.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-tooltip {
+    transition: opacity 60ms ease;
+  }
+}
+@media (max-width: 767px) {
+  /* Hover tooltips don't make sense on touch — nothing hovers before a tap. */
+  .app-tooltip {
+    display: none;
+  }
+}

@@ -2316,15 +2316,15 @@ onBeforeUnmount(() => {
       <span class="image-handle se"></span>
     </div>
     <div v-if="imageBarStyle" class="image-bar" :style="imageBarStyle" @pointerdown.stop>
-      <button type="button" title="Send to back" @click="sendSelectedImageToBack">Back</button>
-      <button type="button" title="Bring to front" @click="bringSelectedImageToFront">Front</button>
-      <button type="button" class="danger" title="Delete image" @click="deleteSelectedImage">
+      <button type="button" v-tooltip="'Send to back'" @click="sendSelectedImageToBack">Back</button>
+      <button type="button" v-tooltip="'Bring to front'" @click="bringSelectedImageToFront">Front</button>
+      <button type="button" class="danger" v-tooltip="'Delete image'" @click="deleteSelectedImage">
         Delete
       </button>
     </div>
     <div v-if="objSelStyle" class="obj-sel" :style="objSelStyle" aria-hidden="true"></div>
     <div v-if="objBarStyle" class="image-bar" :style="objBarStyle" @pointerdown.stop>
-      <button type="button" class="danger" title="Delete" @click="deleteSelectedObject">Delete</button>
+      <button type="button" class="danger" v-tooltip="'Delete'" @click="deleteSelectedObject">Delete</button>
     </div>
     <div
       v-if="eraseCursor"
@@ -2352,15 +2352,15 @@ onBeforeUnmount(() => {
       aria-hidden="true"
     ></div>
     <div v-if="flags.zoomControls && !props.zen" class="cam-controls" :class="{ quiet: editor.isDrawing }">
-      <button class="cam-btn" title="Zoom out" @click="zoomOut">
+      <button class="cam-btn" v-tooltip="'Zoom out'" @click="zoomOut">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
           <path d="M5 12h14"/>
         </svg>
       </button>
-      <button class="cam-btn cam-zoom-label" title="Reset view" @click="resetView">
+      <button class="cam-btn cam-zoom-label" v-tooltip="'Reset view'" @click="resetView">
         {{ zoomLabel }}
       </button>
-      <button class="cam-btn" title="Zoom in" @click="zoomIn">
+      <button class="cam-btn" v-tooltip="'Zoom in'" @click="zoomIn">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
           <path d="M12 5v14M5 12h14"/>
         </svg>

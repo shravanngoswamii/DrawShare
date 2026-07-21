@@ -352,7 +352,7 @@ onMounted(() => {
     :style="Object.keys(dragStyle).length > 0 ? dragStyle : dockStyle"
     aria-label="Drawing tools"
   >
-    <button class="grip" @pointerdown="onGripDown" title="Drag to move, tap to collapse" aria-label="Move or collapse toolbar">
+    <button class="grip" @pointerdown="onGripDown" v-tooltip="'Drag to move, tap to collapse'" aria-label="Move or collapse toolbar">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
         <circle cx="9" cy="6" r="1.4" /><circle cx="15" cy="6" r="1.4" />
         <circle cx="9" cy="12" r="1.4" /><circle cx="15" cy="12" r="1.4" />
@@ -366,7 +366,7 @@ onMounted(() => {
           class="tool"
           :class="{ active: editor.tool === 'select' }"
           :aria-pressed="editor.tool === 'select'"
-          title="Select (V) — move, resize or delete images, text and shapes"
+          v-tooltip="'Select (V) — move, resize or delete images, text and shapes'"
           aria-label="Select tool"
           @click="editor.setTool('select')"
         >
@@ -380,7 +380,7 @@ onMounted(() => {
             :class="{ active: editor.tool === t.id }"
             :aria-pressed="editor.tool === t.id"
             :aria-expanded="popover === 'size' && editor.tool === t.id"
-            :title="`${t.label} (${t.shortcut}) — tap again for size`"
+            v-tooltip="`${t.label} (${t.shortcut}) — tap again for size`"
             @click="onPenToolClick(t.id)"
           >
             <svg v-if="t.icon === 'pen'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -408,13 +408,13 @@ onMounted(() => {
             <template v-if="t.id === 'pen'">
               <div class="pop-sub" id="pen-type-label">Pen</div>
               <div class="flyout-row" role="group" aria-labelledby="pen-type-label">
-                <button class="pen-type-btn" :class="{ active: editor.penType === 'ballpoint' }" title="Ballpoint" aria-label="Ballpoint" :aria-pressed="editor.penType === 'ballpoint'" @click="editor.setPenType('ballpoint')">
+                <button class="pen-type-btn" :class="{ active: editor.penType === 'ballpoint' }" v-tooltip="'Ballpoint'" aria-label="Ballpoint" :aria-pressed="editor.penType === 'ballpoint'" @click="editor.setPenType('ballpoint')">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20 C7 16 12 11 20 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
                 </button>
-                <button class="pen-type-btn" :class="{ active: editor.penType === 'brush' }" title="Brush" aria-label="Brush" :aria-pressed="editor.penType === 'brush'" @click="editor.setPenType('brush')">
+                <button class="pen-type-btn" :class="{ active: editor.penType === 'brush' }" v-tooltip="'Brush'" aria-label="Brush" :aria-pressed="editor.penType === 'brush'" @click="editor.setPenType('brush')">
                   <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21 C6 17 10 13 14 9 C17 6 20 4 21 3 C20 5 17 8 14 11 C10 15 7 18 4 22 Z" fill="currentColor"/></svg>
                 </button>
-                <button class="pen-type-btn" :class="{ active: editor.penType === 'marker' }" title="Marker" aria-label="Marker" :aria-pressed="editor.penType === 'marker'" @click="editor.setPenType('marker')">
+                <button class="pen-type-btn" :class="{ active: editor.penType === 'marker' }" v-tooltip="'Marker'" aria-label="Marker" :aria-pressed="editor.penType === 'marker'" @click="editor.setPenType('marker')">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20 L19 5" stroke="currentColor" stroke-width="7" stroke-linecap="square"/></svg>
                 </button>
               </div>
@@ -424,7 +424,7 @@ onMounted(() => {
 
         <!-- Eraser with its own popover (size + mode) -->
         <div v-if="flags.eraser" class="pop-wrap">
-          <button class="tool" :class="{ active: editor.tool === 'eraser' }" :aria-pressed="editor.tool === 'eraser'" title="Eraser (E or 3)" aria-label="Eraser" @click="onEraserClick">
+          <button class="tool" :class="{ active: editor.tool === 'eraser' }" :aria-pressed="editor.tool === 'eraser'" v-tooltip="'Eraser (E or 3)'" aria-label="Eraser" @click="onEraserClick">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" /><path d="M22 21H7" /><path d="m5 11 9 9" />
             </svg>
@@ -455,7 +455,7 @@ onMounted(() => {
             :class="{ active: editor.tool === 'fill' }"
             :aria-pressed="editor.tool === 'fill'"
             :aria-expanded="popover === 'fill-opacity'"
-            title="Flood fill (F or 4) — tap an enclosed area to fill it"
+            v-tooltip="'Flood fill (F or 4) — tap an enclosed area to fill it'"
             aria-label="Flood fill"
             @click="onFillClick"
           >
@@ -483,7 +483,7 @@ onMounted(() => {
           :class="{ active: isShapeTool }"
           :aria-pressed="isShapeTool"
           :aria-expanded="popover === 'shapes'"
-          title="Shapes (5-8)"
+          v-tooltip="'Shapes (5-8)'"
           aria-label="Shapes"
           @click="toggle('shapes')"
         >
@@ -493,7 +493,7 @@ onMounted(() => {
         </button>
         <div v-if="popover === 'shapes'" class="popover" :class="`pop-${dock}`" role="dialog" aria-label="Shapes">
           <div class="flyout-row">
-            <button v-for="t in shapeTools" :key="t.id" class="tool" :class="{ active: editor.tool === t.id }" :aria-pressed="editor.tool === t.id" :title="`${t.label} (${t.shortcut})`" :aria-label="t.label" @click="pickShape(t.id)">
+            <button v-for="t in shapeTools" :key="t.id" class="tool" :class="{ active: editor.tool === t.id }" :aria-pressed="editor.tool === t.id" v-tooltip="`${t.label} (${t.shortcut})`" :aria-label="t.label" @click="pickShape(t.id)">
               <svg v-if="t.id === 'rect'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
               <svg v-else-if="t.id === 'ellipse'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="10" ry="6"/></svg>
               <svg v-else-if="t.id === 'line'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="20" x2="20" y2="4"/></svg>
@@ -507,7 +507,7 @@ onMounted(() => {
 
       <!-- Stroke size for shapes (pen/highlighter carry their own; eraser too) -->
       <div v-if="isShapeTool" class="pop-wrap group">
-        <button class="tool" :class="{ active: popover === 'size' }" title="Stroke size" aria-label="Stroke size" :aria-expanded="popover === 'size'" @click="toggle('size')">
+        <button class="tool" :class="{ active: popover === 'size' }" v-tooltip="'Stroke size'" aria-label="Stroke size" :aria-expanded="popover === 'size'" @click="toggle('size')">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r="2.75" /><circle cx="19.5" cy="12" r="4" />
           </svg>
@@ -523,18 +523,18 @@ onMounted(() => {
 
       <!-- Colour (hidden for eraser) -->
       <div v-if="editor.tool !== 'eraser'" class="pop-wrap group">
-        <button class="tool color-trigger" :class="{ active: popover === 'color' }" :title="`Stroke colour: ${editor.color}`" :aria-label="`Stroke colour: ${editor.color}`" :aria-expanded="popover === 'color'" @click="toggle('color')">
+        <button class="tool color-trigger" :class="{ active: popover === 'color' }" v-tooltip="`Stroke colour: ${editor.color}`" :aria-label="`Stroke colour: ${editor.color}`" :aria-expanded="popover === 'color'" @click="toggle('color')">
           <span class="color-chip" :style="{ background: editor.color }"></span>
         </button>
         <div v-if="popover === 'color'" class="popover" :class="`pop-${dock}`">
           <div class="pop-title">Colour</div>
           <div class="swatches" role="group" aria-label="Preset colours">
-            <button v-for="c in presetColors" :key="c" class="swatch" :class="{ active: editor.color.toLowerCase() === c }" :style="{ background: c }" :title="c" :aria-label="`Colour ${c}`" :aria-pressed="editor.color.toLowerCase() === c" @click="chooseColor(c)"></button>
+            <button v-for="c in presetColors" :key="c" class="swatch" :class="{ active: editor.color.toLowerCase() === c }" :style="{ background: c }" v-tooltip="c" :aria-label="`Colour ${c}`" :aria-pressed="editor.color.toLowerCase() === c" @click="chooseColor(c)"></button>
           </div>
           <template v-if="recentColors.length">
             <div class="pop-sub">Recent</div>
             <div class="swatches" role="group" aria-label="Recent colours">
-              <button v-for="c in recentColors" :key="`r-${c}`" class="swatch" :class="{ active: editor.color === c }" :style="{ background: c }" :title="c" :aria-label="`Colour ${c}`" :aria-pressed="editor.color === c" @click="chooseColor(c)"></button>
+              <button v-for="c in recentColors" :key="`r-${c}`" class="swatch" :class="{ active: editor.color === c }" :style="{ background: c }" v-tooltip="c" :aria-label="`Colour ${c}`" :aria-pressed="editor.color === c" @click="chooseColor(c)"></button>
             </div>
           </template>
           <div class="pop-sub">Custom</div>
@@ -548,7 +548,7 @@ onMounted(() => {
       <div v-if="flags.imageImport" class="divider"></div>
 
       <div v-if="flags.imageImport" class="group">
-        <button class="tool" title="Import image (I, or paste / drag & drop)" @click="emit('image-import')" aria-label="Import image">
+        <button class="tool" v-tooltip="'Import image (I, or paste / drag & drop)'" @click="emit('image-import')" aria-label="Import image">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
             <circle cx="9" cy="9" r="2"/>
@@ -560,12 +560,12 @@ onMounted(() => {
       <div class="divider"></div>
 
       <div class="group">
-        <button class="tool" title="Undo (Ctrl+Z)" aria-label="Undo" @click="editor.undo()" :disabled="editor.history.length === 0">
+        <button class="tool" v-tooltip="'Undo (Ctrl+Z)'" aria-label="Undo" @click="editor.undo()" :disabled="editor.history.length === 0">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11" />
           </svg>
         </button>
-        <button class="tool" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" @click="editor.redo()" :disabled="editor.redoStack.length === 0">
+        <button class="tool" v-tooltip="'Redo (Ctrl+Shift+Z)'" aria-label="Redo" @click="editor.redo()" :disabled="editor.redoStack.length === 0">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="m15 14 5-5-5-5" /><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5v0A5.5 5.5 0 0 0 9.5 20H13" />
           </svg>
@@ -582,7 +582,7 @@ onMounted(() => {
           :class="{ active: editor.presenterMode !== 'off' }"
           :aria-pressed="editor.presenterMode !== 'off'"
           :aria-expanded="popover === 'present'"
-          title="Present"
+          v-tooltip="'Present'"
           aria-label="Presenter tools"
           @click="toggle('present')"
         >
@@ -595,13 +595,13 @@ onMounted(() => {
         <div v-if="popover === 'present'" class="popover" :class="`pop-${dock}`" role="dialog" aria-label="Presenter tools">
           <div class="pop-title">Present</div>
           <div class="present-list">
-            <button class="present-item" :class="{ active: editor.presenterMode === 'laser' }" :aria-pressed="editor.presenterMode === 'laser'" title="Laser pointer (L)" @click="pickPresenter('laser')">
+            <button class="present-item" :class="{ active: editor.presenterMode === 'laser' }" :aria-pressed="editor.presenterMode === 'laser'" v-tooltip="'Laser pointer (L)'" @click="pickPresenter('laser')">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <circle cx="12" cy="12" r="3" /><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>
               </svg>
               <span>Laser pointer</span>
             </button>
-            <button class="present-item" :class="{ active: editor.presenterMode === 'spotlight' }" :aria-pressed="editor.presenterMode === 'spotlight'" @click="pickPresenter('spotlight')">
+            <button class="present-item" :class="{ active: editor.presenterMode === 'spotlight' }" :aria-pressed="editor.presenterMode === 'spotlight'" v-tooltip="'Spotlight'" @click="pickPresenter('spotlight')">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <circle cx="12" cy="12" r="4" /><circle cx="12" cy="12" r="9" stroke-dasharray="3 3" stroke-opacity="0.5" />
               </svg>

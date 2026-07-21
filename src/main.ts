@@ -2,6 +2,7 @@ import { createPinia } from "pinia";
 import { createApp } from "vue";
 import App from "./App.vue";
 import { storage } from "./adapters/storage/indexedDB";
+import { vTooltip } from "./directives/tooltip";
 import { router } from "./router";
 import "./styles/tokens.css";
 import "./styles/base.css";
@@ -72,6 +73,7 @@ async function bootstrap() {
   const app = createApp(App);
   app.use(createPinia());
   app.use(router);
+  app.directive("tooltip", vTooltip);
   app.mount("#app");
 }
 

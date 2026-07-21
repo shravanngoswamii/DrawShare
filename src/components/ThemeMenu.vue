@@ -85,7 +85,7 @@ onBeforeUnmount(() => {
     <button
       class="tm-toggle"
       @click="toggleTheme()"
-      :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
+      v-tooltip="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
       :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
     >
       <svg v-if="isDark" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -101,7 +101,7 @@ onBeforeUnmount(() => {
       @click="open = !open"
       :aria-expanded="open"
       aria-haspopup="menu"
-      title="Choose theme"
+      v-tooltip="'Choose theme'"
       aria-label="Choose theme"
     >
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

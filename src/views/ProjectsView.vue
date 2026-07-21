@@ -173,7 +173,7 @@ function formatDate(ts: number): string {
   <div class="page">
     <header class="header">
       <div class="header-inner">
-        <button class="brand" type="button" @click="router.push({ name: 'landing' })" title="Back to home" aria-label="Back to home">
+        <button class="brand" type="button" @click="router.push({ name: 'landing' })" v-tooltip="'Back to home'" aria-label="Back to home">
           <svg class="brand-mark" width="28" height="28" viewBox="0 0 1024 1024" aria-hidden="true">
             <path d="M916.668 273.393l-66.711 66.711-168.533-168.532 66.712-66.712c52.639-52.639 132.855-57.328 179.24-10.942 23.311 23.309 33.783 55.149 31.698 87.511-1.802 32.647-16.207 65.765-42.406 91.964z" fill="#FF3B30"/>
             <path d="M762.348 163.22c-2.195 0-4.427-0.49-6.534-1.518-7.41-3.613-10.494-12.555-6.877-19.972 21.34-43.746 70.902-63.624 110.446-44.341 7.41 3.618 10.494 12.558 6.876 19.973-3.623 7.408-12.551 10.484-19.976 6.879-24.737-12.065-56.382 1.652-70.494 30.588-2.589 5.305-7.906 8.391-13.441 8.391z" fill="#FFFFFF"/>
@@ -194,7 +194,7 @@ function formatDate(ts: number): string {
             placeholder="Search projects"
           />
           <!-- Export all projects -->
-          <button v-if="flags.backupRestore" class="btn btn-ghost btn-icon" title="Export all projects" aria-label="Export all projects" @click="exportAll">
+          <button v-if="flags.backupRestore" class="btn btn-ghost btn-icon" v-tooltip="'Export all projects'" aria-label="Export all projects" @click="exportAll">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -203,7 +203,7 @@ function formatDate(ts: number): string {
             </svg>
           </button>
           <!-- Import projects -->
-          <button v-if="flags.backupRestore" class="btn btn-ghost btn-icon" title="Import projects from backup" aria-label="Import projects from backup" @click="importInput?.click()" :disabled="importing">
+          <button v-if="flags.backupRestore" class="btn btn-ghost btn-icon" v-tooltip="'Import projects from backup'" aria-label="Import projects from backup" @click="importInput?.click()" :disabled="importing">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -343,7 +343,7 @@ function formatDate(ts: number): string {
               <button class="btn btn-ghost btn-sm" @click="startRename(p.id, p.name)">
                 Rename
               </button>
-              <button v-if="flags.backupRestore" class="btn btn-ghost btn-sm" @click="exportProject(p.id)" title="Export this project as JSON backup">
+              <button v-if="flags.backupRestore" class="btn btn-ghost btn-sm" @click="exportProject(p.id)" v-tooltip="'Export this project as JSON backup'">
                 Export
               </button>
               <button class="btn btn-ghost btn-sm card-danger" @click="remove(p.id, p.name)">
@@ -396,7 +396,7 @@ function formatDate(ts: number): string {
         if (settingsOpen) helpOpen = false;
       "
       :aria-expanded="settingsOpen"
-      title="Settings"
+      v-tooltip="'Settings'"
       aria-label="Settings"
     >
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -413,7 +413,7 @@ function formatDate(ts: number): string {
         if (helpOpen) settingsOpen = false;
       "
       :aria-expanded="helpOpen"
-      title="Help"
+      v-tooltip="'Help'"
       aria-label="Help"
     >?</button>
   </div>

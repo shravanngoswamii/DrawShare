@@ -354,13 +354,13 @@ onBeforeUnmount(() => removeProbe?.());
       </main>
       <PagesPanel v-if="!zenMode" :open="panelOpen" :collapsed="pagesCollapsed" :guest="isGuest" @close="panelOpen = false" @toggle="onPanelToggle" @share="shareOpen = true" @chat="chatOpen = !chatOpen" @overlap="panelOverlapsFabs = $event" />
       <!-- Back to projects (top-left); a guest leaves the session first. -->
-      <button v-if="flags.backButton && !zenMode" class="back-fab" :class="{ quiet: editor.isDrawing }" @click="onBack" :title="(isGuest ? 'Leave session' : 'Back to projects') + ' (Q)'" :aria-label="isGuest ? 'Leave session' : 'Back to projects'">
+      <button v-if="flags.backButton && !zenMode" class="back-fab" :class="{ quiet: editor.isDrawing }" @click="onBack" v-tooltip="(isGuest ? 'Leave session' : 'Back to projects') + ' (Q)'" :aria-label="isGuest ? 'Leave session' : 'Back to projects'">
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="m12 19-7-7 7-7" /><path d="M19 12H5" />
         </svg>
       </button>
       <!-- Sidebar re-open pills -->
-      <button v-if="toolbarCollapsed && (!isGuest || live.viewerCanEdit) && !zenMode" class="pencil-fab" :class="{ quiet: editor.isDrawing }" @click="toolbarCollapsed = false" title="Show tools" aria-label="Show tools">
+      <button v-if="toolbarCollapsed && (!isGuest || live.viewerCanEdit) && !zenMode" class="pencil-fab" :class="{ quiet: editor.isDrawing }" @click="toolbarCollapsed = false" v-tooltip="'Show tools'" aria-label="Show tools">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
           <path d="m15 5 4 4" />
@@ -371,7 +371,7 @@ onBeforeUnmount(() => removeProbe?.());
         v-if="flags.replayRecording && hasContent && !replay.active && !isGuest && !zenMode"
         class="replay-fab"
         :class="{ quiet: editor.isDrawing, shifted: fabsShifted }"
-        title="Replay how this page was drawn"
+        v-tooltip="'Replay how this page was drawn'"
         aria-label="Replay how this page was drawn"
         @click="startReplay()"
       >
@@ -387,7 +387,7 @@ onBeforeUnmount(() => removeProbe?.());
         class="chat-fab"
         :class="{ quiet: editor.isDrawing, active: chatOpen, shifted: fabsShifted }"
         @click="chatOpen = !chatOpen"
-        title="Session chat (C)"
+        v-tooltip="'Session chat (C)'"
         aria-label="Open session chat"
         :aria-expanded="chatOpen"
       >
@@ -402,7 +402,7 @@ onBeforeUnmount(() => removeProbe?.());
         class="help-fab"
         :class="{ quiet: editor.isDrawing, active: helpOpen, shifted: fabsShifted }"
         @click="helpOpen = !helpOpen"
-        title="Help"
+        v-tooltip="'Help'"
         aria-label="Help"
         :aria-expanded="helpOpen"
       >?</button>
@@ -413,7 +413,7 @@ onBeforeUnmount(() => removeProbe?.());
         class="zen-exit-fab"
         :class="{ quiet: editor.isDrawing }"
         @click="toggleZenMode"
-        title="Exit zen mode (Z or Esc)"
+        v-tooltip="'Exit zen mode (Z or Esc)'"
         aria-label="Exit zen mode"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

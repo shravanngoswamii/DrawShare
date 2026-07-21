@@ -79,7 +79,7 @@ function setSpeed(v: ReplaySpeed) {
       <button
         class="replay-play-btn"
         :aria-label="replay.playing ? 'Pause' : 'Play'"
-        :title="replay.playing ? 'Pause' : 'Play'"
+        v-tooltip="replay.playing ? 'Pause' : 'Play'"
         @click="togglePlay"
       >
         <!-- Pause icon -->
@@ -105,7 +105,7 @@ function setSpeed(v: ReplaySpeed) {
           class="replay-speed-btn"
           :class="{ active: replay.speed === spd }"
           :aria-pressed="replay.speed === spd"
-          :title="`${spd}× speed`"
+          v-tooltip="`${spd}× speed`"
           @click="setSpeed(spd)"
         >{{ spd }}×</button>
       </div>
@@ -113,7 +113,7 @@ function setSpeed(v: ReplaySpeed) {
       <!-- Exit replay -->
       <button
         class="replay-exit-btn"
-        title="Exit replay"
+        v-tooltip="'Exit replay'"
         aria-label="Exit replay"
         @click="replay.stop()"
       >

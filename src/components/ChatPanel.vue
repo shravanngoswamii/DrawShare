@@ -469,7 +469,7 @@ onMounted(() => {
       class="chat-fab"
       @click="toggle"
       :aria-label="live.unreadChat ? `Open chat, ${live.unreadChat} unread` : 'Open chat'"
-      title="Chat"
+      v-tooltip="'Chat'"
     >
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
         stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -486,7 +486,7 @@ onMounted(() => {
             class="chat-icon-btn"
             @click="toggleMute"
             :aria-label="muted ? 'Unmute chat sound' : 'Mute chat sound'"
-            :title="muted ? 'Unmute sound' : 'Mute sound'"
+            v-tooltip="muted ? 'Unmute sound' : 'Mute sound'"
           >
             <svg v-if="!muted" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -501,7 +501,7 @@ onMounted(() => {
             class="chat-icon-btn"
             @click="full = !full"
             :aria-label="full ? 'Exit fullscreen chat' : 'Fullscreen chat'"
-            :title="full ? 'Exit fullscreen' : 'Fullscreen'"
+            v-tooltip="full ? 'Exit fullscreen' : 'Fullscreen'"
           >
             <svg v-if="!full" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -514,7 +514,7 @@ onMounted(() => {
               <path d="M3 16h3a2 2 0 0 1 2 2v3" /><path d="M16 21v-3a2 2 0 0 1 2-2h3" />
             </svg>
           </button>
-          <button class="chat-icon-btn" @click="toggle" aria-label="Close chat" title="Close">
+          <button class="chat-icon-btn" @click="toggle" aria-label="Close chat" v-tooltip="'Close'">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M18 6 6 18M6 6l12 12" />
@@ -525,7 +525,7 @@ onMounted(() => {
 
       <div class="chat-name-row">
         <span class="chat-name-label">You:</span>
-        <button v-if="!editingName" class="chat-name" @click="startEditName" title="Change your name">
+        <button v-if="!editingName" class="chat-name" @click="startEditName" v-tooltip="'Change your name'">
           <span>{{ live.myName }}</span>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
         </button>
@@ -561,7 +561,7 @@ onMounted(() => {
                 class="chat-qr chat-qr-more"
                 @click="reactPickerFor = m.id; quickReactFor = null"
                 aria-label="More emoji"
-                title="More"
+                v-tooltip="'More'"
               >+</button>
             </div>
             <div
@@ -587,7 +587,7 @@ onMounted(() => {
                     type="button"
                     class="chat-quote"
                     @click="jumpToMessage(m.replyTo.id)"
-                    title="Go to replied message"
+                    v-tooltip="'Go to replied message'"
                   >
                     <span class="chat-quote-name">{{ m.replyTo.fromName }}</span>
                     <span class="chat-quote-text">{{ m.replyTo.text }}</span>
@@ -616,13 +616,13 @@ onMounted(() => {
                 </div>
               </div>
               <div class="chat-actions">
-                <button class="chat-act" @click="openReactions(m.id)" title="React" aria-label="React">
+                <button class="chat-act" @click="openReactions(m.id)" v-tooltip="'React'" aria-label="React">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
                 </button>
-                <button class="chat-act" @click="startReply(m)" title="Reply" aria-label="Reply">
+                <button class="chat-act" @click="startReply(m)" v-tooltip="'Reply'" aria-label="Reply">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17 4 12l5-5"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
                 </button>
-                <button v-if="m.mine && !m.image" class="chat-act" @click="startEdit(m)" title="Edit" aria-label="Edit">
+                <button v-if="m.mine && !m.image" class="chat-act" @click="startEdit(m)" v-tooltip="'Edit'" aria-label="Edit">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
                 </button>
               </div>
@@ -643,7 +643,7 @@ onMounted(() => {
             Replying to <strong>{{ replyingTo.fromName }}</strong>: {{ replyingTo.text }}
           </template>
         </div>
-        <button class="chat-icon-btn ctx-cancel" @click="cancelCompose" aria-label="Cancel" title="Cancel">
+        <button class="chat-icon-btn ctx-cancel" @click="cancelCompose" aria-label="Cancel" v-tooltip="'Cancel'">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
       </div>
@@ -653,7 +653,7 @@ onMounted(() => {
       <div v-else-if="reactPickerFor" class="chat-react-picker">
         <div class="chat-react-picker-head">
           <span>Pick a reaction</span>
-          <button class="chat-icon-btn" @click="closePopovers" aria-label="Cancel" title="Cancel">
+          <button class="chat-icon-btn" @click="closePopovers" aria-label="Cancel" v-tooltip="'Cancel'">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
           </button>
         </div>
@@ -667,7 +667,7 @@ onMounted(() => {
           :class="{ active: showEmoji }"
           @click="showEmoji = !showEmoji"
           aria-label="Emoji"
-          title="Emoji"
+          v-tooltip="'Emoji'"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -680,7 +680,7 @@ onMounted(() => {
           class="chat-icon-btn chat-attach"
           @click="pickImage"
           aria-label="Attach image"
-          title="Attach image"
+          v-tooltip="'Attach image'"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

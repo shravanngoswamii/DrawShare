@@ -373,7 +373,7 @@ function removeSnapshot() {
       <button
         class="dock-btn dock-expand"
         @click="emit('toggle')"
-        :title="`Open ${editor.project?.name ?? 'panel'} · ${editor.pages.length} page${editor.pages.length === 1 ? '' : 's'}`"
+        v-tooltip="`Open ${editor.project?.name ?? 'panel'} · ${editor.pages.length} page${editor.pages.length === 1 ? '' : 's'}`"
         aria-label="Expand pages panel"
       >
         <svg width="20" height="20" fill="none" viewBox="0 0 24 24" aria-hidden="true">
@@ -385,7 +385,7 @@ function removeSnapshot() {
       <button
         class="dock-btn"
         @click="toggleTheme()"
-        :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
+        v-tooltip="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
         :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
       >
         <svg v-if="isDark" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -398,7 +398,7 @@ function removeSnapshot() {
       <button
         class="dock-btn"
         @click="settingsOpen = true"
-        title="Settings"
+        v-tooltip="'Settings'"
         aria-label="Settings"
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -411,7 +411,7 @@ function removeSnapshot() {
         class="dock-btn dock-live"
         :class="{ live: live.isHosting }"
         @click="emit('share')"
-        :title="live.isHosting ? `Live session · ${live.code}` : 'Start a live session'"
+        v-tooltip="live.isHosting ? `Live session · ${live.code}` : 'Start a live session'"
         :aria-label="live.isHosting ? `Live session active, code ${live.code}` : 'Start a live session'"
       >
         <span v-if="live.isHosting" class="live-dot" aria-hidden="true"></span>
@@ -423,7 +423,7 @@ function removeSnapshot() {
         v-if="live.isHosting || props.guest"
         class="dock-btn dock-chat"
         @click="emit('chat')"
-        title="Session chat (C)"
+        v-tooltip="'Session chat (C)'"
         aria-label="Open session chat"
       >
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -450,7 +450,7 @@ function removeSnapshot() {
         <span v-else class="save-chip" :class="{ saving: editor.saving > 0 }" role="status" aria-live="polite">{{ saveStatus }}</span>
         <ThemeMenu />
         <div class="head-menu-wrap">
-          <button class="head-icon" @click="menuOpen = !menuOpen" :aria-expanded="menuOpen" aria-haspopup="true" title="More" aria-label="More options">
+          <button class="head-icon" @click="menuOpen = !menuOpen" :aria-expanded="menuOpen" aria-haspopup="true" v-tooltip="'More'" aria-label="More options">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />
             </svg>
@@ -477,7 +477,7 @@ function removeSnapshot() {
             </button>
           </div>
         </div>
-        <button class="head-icon desktop-toggle" @click="emit('toggle')" title="Collapse panel" aria-label="Collapse panel">
+        <button class="head-icon desktop-toggle" @click="emit('toggle')" v-tooltip="'Collapse panel'" aria-label="Collapse panel">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24" aria-hidden="true">
             <path fill="currentColor" fill-rule="evenodd" d="M10 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-8zM9 7H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3zM4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" clip-rule="evenodd"/>
           </svg>
@@ -499,7 +499,7 @@ function removeSnapshot() {
         <section class="film-section" data-tour="pages">
           <div class="section-head">
             <span class="section-title">Pages</span>
-            <button v-if="!props.guest" class="btn-icon" @click="editor.addPage()" title="Add page" aria-label="Add new page">
+            <button v-if="!props.guest" class="btn-icon" @click="editor.addPage()" v-tooltip="'Add page'" aria-label="Add new page">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
             </button>
           </div>
@@ -509,7 +509,7 @@ function removeSnapshot() {
                 class="film-thumb"
                 :class="{ active: editor.currentPageId === page.id }"
                 @click="select(page.id)"
-                :title="page.name"
+                v-tooltip="page.name"
                 :aria-label="`Go to ${page.name}`"
                 :aria-current="editor.currentPageId === page.id ? 'page' : undefined"
               >
@@ -540,7 +540,7 @@ function removeSnapshot() {
             @keydown.enter="($event.target as HTMLInputElement).blur()"
             :placeholder="editor.currentPage?.name ?? 'Page'"
           />
-          <button v-if="editor.pages.length > 1 && !props.guest" class="head-icon" @click="removeCurrentPage" title="Delete page" aria-label="Delete this page">
+          <button v-if="editor.pages.length > 1 && !props.guest" class="head-icon" @click="removeCurrentPage" v-tooltip="'Delete page'" aria-label="Delete this page">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
             </svg>
@@ -551,7 +551,7 @@ function removeSnapshot() {
       <div v-if="!props.guest && flags.layers" class="section layers-section">
         <div class="section-head">
           <span class="section-title layers-title">Layers</span>
-          <button class="btn-icon" @click="editor.addLayer()" title="Add layer" aria-label="Add layer">
+          <button class="btn-icon" @click="editor.addLayer()" v-tooltip="'Add layer'" aria-label="Add layer">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M5 12h14" /><path d="M12 5v14" />
@@ -569,7 +569,7 @@ function removeSnapshot() {
             <button
               class="layer-icon-btn"
               @click.stop="editor.toggleLayerVisibility(layer.id)"
-              :title="layer.visible ? 'Hide layer' : 'Show layer'"
+              v-tooltip="layer.visible ? 'Hide layer' : 'Show layer'"
               :aria-label="layer.visible ? 'Hide layer' : 'Show layer'"
               :aria-pressed="layer.visible"
             >
@@ -587,7 +587,7 @@ function removeSnapshot() {
             <button
               class="layer-icon-btn"
               @click.stop="editor.toggleLayerLock(layer.id)"
-              :title="layer.locked ? 'Unlock layer' : 'Lock layer'"
+              v-tooltip="layer.locked ? 'Unlock layer' : 'Lock layer'"
               :aria-label="layer.locked ? 'Unlock layer' : 'Lock layer'"
               :aria-pressed="layer.locked"
             >
@@ -622,7 +622,7 @@ function removeSnapshot() {
                 class="layer-icon-btn"
                 @click.stop="editor.moveLayerUp(layer.id)"
                 :disabled="layer.index >= editor.layers.length - 1"
-                title="Move layer up"
+                v-tooltip="'Move layer up'"
                 aria-label="Move layer up"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -634,7 +634,7 @@ function removeSnapshot() {
                 class="layer-icon-btn"
                 @click.stop="editor.moveLayerDown(layer.id)"
                 :disabled="layer.index <= 0"
-                title="Move layer down"
+                v-tooltip="'Move layer down'"
                 aria-label="Move layer down"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -647,7 +647,7 @@ function removeSnapshot() {
               v-if="editor.layers.length > 1"
               class="layer-icon-btn layer-delete"
               @click.stop="removeLayer(layer.id)"
-              title="Delete layer"
+              v-tooltip="'Delete layer'"
               aria-label="Delete layer"
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -693,7 +693,7 @@ function removeSnapshot() {
         </button>
         <div v-if="showActions" class="group-body">
           <!-- Live session -->
-          <button v-if="live.available && flags.liveShare" class="share-btn" data-tour="share" :class="{ live: live.isHosting }" @click="emit('share')" :title="live.isHosting ? `Live session: ${live.code}` : 'Start a live session'" :aria-label="live.isHosting ? `Live session active, code: ${live.code}` : 'Start a live session'">
+          <button v-if="live.available && flags.liveShare" class="share-btn" data-tour="share" :class="{ live: live.isHosting }" @click="emit('share')" v-tooltip="live.isHosting ? `Live session: ${live.code}` : 'Start a live session'" :aria-label="live.isHosting ? `Live session active, code: ${live.code}` : 'Start a live session'">
             <span v-if="live.isHosting" class="live-dot" aria-hidden="true"></span>
             <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9" /><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5" /><circle cx="12" cy="12" r="2" /><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5" /><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1" />
@@ -706,14 +706,14 @@ function removeSnapshot() {
             <div class="collab-head">Let viewers draw</div>
             <ul class="collab-list">
               <li v-for="v in live.viewers" :key="v.id" class="collab-row">
-                <span class="collab-name" :title="v.name">{{ v.name }}</span>
+                <span class="collab-name" v-tooltip="v.name">{{ v.name }}</span>
                 <button
                   class="collab-toggle"
                   :class="{ on: v.canEdit }"
                   role="switch"
                   :aria-checked="v.canEdit"
                   @click="v.canEdit ? live.revokeEdit(v.id) : live.grantEdit(v.id)"
-                  :title="v.canEdit ? `Stop ${v.name} drawing` : `Let ${v.name} draw`"
+                  v-tooltip="v.canEdit ? `Stop ${v.name} drawing` : `Let ${v.name} draw`"
                 >
                   <span class="knob" aria-hidden="true"></span>
                   <span class="collab-state">{{ v.canEdit ? 'On' : 'Off' }}</span>
@@ -724,19 +724,19 @@ function removeSnapshot() {
 
           <!-- Export / clear -->
           <div class="page-tools">
-            <button class="tool-btn" @click="exportCurrentPage" title="Export page as PNG" aria-label="Export page as PNG">
+            <button class="tool-btn" @click="exportCurrentPage" v-tooltip="'Export page as PNG'" aria-label="Export page as PNG">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
               </svg>
               <span>Export PNG</span>
             </button>
-            <button class="tool-btn" @click="exportPdf" :title="editor.notebookMode !== 'off' ? 'Export all pages as PDF' : 'Export as PDF'" aria-label="Export as PDF">
+            <button class="tool-btn" @click="exportPdf" v-tooltip="editor.notebookMode !== 'off' ? 'Export all pages as PDF' : 'Export as PDF'" aria-label="Export as PDF">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6M9 18h4"/>
               </svg>
               <span>Export PDF</span>
             </button>
-            <button class="tool-btn" @click="clearPage" title="Clear all strokes" aria-label="Clear all strokes on this page">
+            <button class="tool-btn" @click="clearPage" v-tooltip="'Clear all strokes'" aria-label="Clear all strokes on this page">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
               </svg>

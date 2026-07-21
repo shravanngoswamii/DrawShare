@@ -89,16 +89,16 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown, true));
 <template>
   <div class="lb-backdrop" @click.self="emit('close')" role="dialog" aria-modal="true" aria-label="Image viewer">
     <div class="lb-tools">
-      <button class="lb-btn" @click="zoomBy(1 / 1.4)" aria-label="Zoom out" title="Zoom out">
+      <button class="lb-btn" @click="zoomBy(1 / 1.4)" aria-label="Zoom out" v-tooltip="'Zoom out'">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3M8 11h6"/></svg>
       </button>
-      <button class="lb-btn" @click="zoomBy(1.4)" aria-label="Zoom in" title="Zoom in">
+      <button class="lb-btn" @click="zoomBy(1.4)" aria-label="Zoom in" v-tooltip="'Zoom in'">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/></svg>
       </button>
-      <a class="lb-btn" :href="props.src" download="image" aria-label="Download" title="Download" @click.stop>
+      <a class="lb-btn" :href="props.src" download="image" aria-label="Download" v-tooltip="'Download'" @click.stop>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>
       </a>
-      <button class="lb-btn" @click="emit('close')" aria-label="Close" title="Close">
+      <button class="lb-btn" @click="emit('close')" aria-label="Close" v-tooltip="'Close'">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>
     </div>
