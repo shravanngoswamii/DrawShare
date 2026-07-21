@@ -74,6 +74,22 @@ const categories: Category[] = [
     ],
   },
   {
+    id: "interface",
+    title: "Interface",
+    rows: [
+      {
+        key: "backButton",
+        label: "Back button",
+        description: "Top-left button to leave the editor and return to projects",
+      },
+      {
+        key: "zoomControls",
+        label: "Zoom controls",
+        description: "Bottom-left zoom in/out buttons (Ctrl+scroll and pinch still work)",
+      },
+    ],
+  },
+  {
     id: "panels",
     title: "Panels",
     rows: [

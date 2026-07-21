@@ -21,6 +21,8 @@ export interface FeatureFlags {
   onboarding: boolean;
   devMode: boolean;
   backupRestore: boolean;
+  backButton: boolean;
+  zoomControls: boolean;
 }
 
 const KEY = "drawshare:features";
@@ -41,6 +43,8 @@ const DEFAULTS: FeatureFlags = {
   onboarding: true,
   devMode: true,
   backupRestore: true,
+  backButton: true,
+  zoomControls: true,
 };
 
 function stored(): FeatureFlags {
