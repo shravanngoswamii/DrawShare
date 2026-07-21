@@ -15,12 +15,38 @@ import { useLiveStore } from "@/stores/live";
 import { useProjectsStore } from "@/stores/projects";
 
 const props = defineProps<{ open?: boolean; collapsed?: boolean; guest?: boolean }>();
-const emit = defineEmits<{ close: []; toggle: []; share: []; chat: [] }>();
+const emit = defineEmits<{ close: []; toggle: []; share: []; chat: []; overlap: [boolean] }>();
 
 const editor = useEditorStore();
 const live = useLiveStore();
 const { flags } = useFeatures();
 const settingsOpen = ref(false);
+
+// The panel now shrinks to fit its content instead of always spanning the
+// full height, so the bottom-right FABs (help/chat/replay) only need to
+// dodge it when it's actually tall enough to reach down that far.
+const panelEl = ref<HTMLElement | null>(null);
+const FAB_ROW_CLEARANCE = 72;
+let panelResizeObserver: ResizeObserver | undefined;
+
+function checkPanelOverlap() {
+  const el = panelEl.value;
+  if (!el) {
+    emit("overlap", false);
+    return;
+  }
+  emit("overlap", el.getBoundingClientRect().bottom > window.innerHeight - FAB_ROW_CLEARANCE);
+}
+
+watch(panelEl, (el) => {
+  panelResizeObserver?.disconnect();
+  panelResizeObserver = undefined;
+  if (el) {
+    panelResizeObserver = new ResizeObserver(checkPanelOverlap);
+    panelResizeObserver.observe(el);
+  }
+  checkPanelOverlap();
+});
 
 // Live-viewer (guest) connection status, shown in the header in place of the
 // host's save indicator.
@@ -156,6 +182,12 @@ function onFullscreenChange() {
 }
 onMounted(() => document.addEventListener("fullscreenchange", onFullscreenChange));
 onBeforeUnmount(() => document.removeEventListener("fullscreenchange", onFullscreenChange));
+
+onMounted(() => window.addEventListener("resize", checkPanelOverlap));
+onBeforeUnmount(() => {
+  window.removeEventListener("resize", checkPanelOverlap);
+  panelResizeObserver?.disconnect();
+});
 
 function toggleFullscreen() {
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -391,7 +423,7 @@ function removeSnapshot() {
         v-if="live.isHosting || props.guest"
         class="dock-btn dock-chat"
         @click="emit('chat')"
-        title="Session chat"
+        title="Session chat (C)"
         aria-label="Open session chat"
       >
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -401,7 +433,7 @@ function removeSnapshot() {
       </button>
     </div>
 
-    <aside v-if="!collapsed" class="panel" :class="{ quiet: editor.isDrawing }" aria-label="Pages and settings">
+    <aside v-if="!collapsed" ref="panelEl" class="panel" :class="{ quiet: editor.isDrawing }" aria-label="Pages and settings">
 
       <!-- ── Header ── -->
       <div class="panel-head">
