@@ -1,11 +1,23 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onBeforeUnmount, ref, watch } from "vue";
 import type { FeatureFlags } from "@/composables/useFeatures";
 import { useFeatures } from "@/composables/useFeatures";
 import { useEditorStore } from "@/stores/editor";
 
-defineProps<{ open: boolean }>();
+const props = defineProps<{ open: boolean }>();
 const emit = defineEmits<{ close: [] }>();
+
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape") emit("close");
+}
+watch(
+  () => props.open,
+  (isOpen) => {
+    if (isOpen) window.addEventListener("keydown", onKeydown);
+    else window.removeEventListener("keydown", onKeydown);
+  },
+);
+onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 
 const { flags, setFeature, resetFeatures } = useFeatures();
 const editor = useEditorStore();
@@ -124,18 +136,18 @@ const active = () => categories.find((c) => c.id === activeId.value) ?? categori
 </script>
 
 <template>
-  <div v-if="open" class="backdrop" @click.self="emit('close')">
-    <div class="modal" role="dialog" aria-label="Settings" aria-modal="true">
-      <header class="head">
-        <h2 class="title">Settings</h2>
-        <button class="close" @click="emit('close')" aria-label="Close settings">
+  <div v-if="open" class="settings-backdrop" @click.self="emit('close')">
+    <div class="settings-modal" role="dialog" aria-label="Settings" aria-modal="true">
+      <header class="settings-head">
+        <h2 class="settings-title">Settings</h2>
+        <button class="settings-close" @click="emit('close')" aria-label="Close settings">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M18 6 6 18" /><path d="m6 6 12 12" />
           </svg>
         </button>
       </header>
 
-      <div class="body">
+      <div class="settings-body">
         <nav class="settings-nav" aria-label="Settings categories">
           <button
             v-for="c in categories"
@@ -169,7 +181,7 @@ const active = () => categories.find((c) => c.id === activeId.value) ?? categori
         </div>
       </div>
 
-      <footer class="foot">
+      <footer class="settings-foot">
         <button class="reset-btn" @click="resetFeatures">Reset to defaults</button>
       </footer>
     </div>
@@ -177,7 +189,14 @@ const active = () => categories.find((c) => c.id === activeId.value) ?? categori
 </template>
 
 <style scoped>
-.backdrop {
+/* Class names in this component are all prefixed with "settings-" (rather
+   than the generic .backdrop/.modal/.head used elsewhere) because Vue stamps
+   a parent's scoped-style attribute onto a child component's root element —
+   when this modal is mounted from inside PagesPanel.vue, a generic root
+   class name here would collide with PagesPanel's own same-named rule (it
+   has its own unrelated .backdrop for its mobile drawer) and get hidden by
+   it silently. */
+.settings-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(15, 23, 42, 0.4);
@@ -195,7 +214,7 @@ const active = () => categories.find((c) => c.id === activeId.value) ?? categori
   to { opacity: 1; }
 }
 
-.modal {
+.settings-modal {
   background: var(--color-surface);
   border-radius: var(--radius-lg);
   border: 1px solid var(--color-border);
@@ -212,7 +231,7 @@ const active = () => categories.find((c) => c.id === activeId.value) ?? categori
   to { transform: translateY(0); opacity: 1; }
 }
 
-.head {
+.settings-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -221,14 +240,14 @@ const active = () => categories.find((c) => c.id === activeId.value) ?? categori
   flex-shrink: 0;
 }
 
-.title {
+.settings-title {
   font-size: var(--text-md);
   font-weight: 600;
   margin: 0;
   letter-spacing: -0.01em;
 }
 
-.close {
+.settings-close {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -238,9 +257,9 @@ const active = () => categories.find((c) => c.id === activeId.value) ?? categori
   color: var(--color-text-muted);
   transition: background 80ms ease, color 80ms ease;
 }
-.close:hover { background: var(--color-surface-2); color: var(--color-text); }
+.settings-close:hover { background: var(--color-surface-2); color: var(--color-text); }
 
-.body {
+.settings-body {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -335,7 +354,7 @@ const active = () => categories.find((c) => c.id === activeId.value) ?? categori
   transform: translateX(16px);
 }
 
-.foot {
+.settings-foot {
   display: flex;
   justify-content: flex-end;
   padding: var(--space-3) var(--space-5);
@@ -356,12 +375,12 @@ const active = () => categories.find((c) => c.id === activeId.value) ?? categori
 .reset-btn:hover { background: var(--color-surface-2); color: var(--color-text); }
 
 @media (max-width: 767px) {
-  .backdrop {
+  .settings-backdrop {
     padding: 0;
     align-items: flex-end;
   }
 
-  .modal {
+  .settings-modal {
     width: 100%;
     max-height: 85vh;
     border-bottom-left-radius: 0;
@@ -375,7 +394,7 @@ const active = () => categories.find((c) => c.id === activeId.value) ?? categori
     to { transform: translateY(0); }
   }
 
-  .body {
+  .settings-body {
     flex-direction: column;
   }
 
@@ -394,7 +413,7 @@ const active = () => categories.find((c) => c.id === activeId.value) ?? categori
     white-space: nowrap;
   }
 
-  .foot {
+  .settings-foot {
     padding-bottom: calc(var(--space-3) + var(--safe-bottom));
   }
 }
