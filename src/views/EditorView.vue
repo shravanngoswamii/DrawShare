@@ -88,6 +88,23 @@ const pagesCollapsed = ref(false);
 const shareOpen = ref(false);
 const helpOpen = ref(false);
 const chatOpen = ref(false);
+// Whether the expanded pages panel is tall enough to actually reach the
+// bottom-right corner FABs — only then do they need to shift out of its way.
+const panelOverlapsFabs = ref(false);
+const fabsShifted = computed(() => !pagesCollapsed.value && panelOverlapsFabs.value);
+
+// Zen mode: hide every overlay so only the canvas remains, driven entirely by
+// keyboard shortcuts. Closes any open panels rather than leaving them behind
+// the hidden chrome.
+const zenMode = ref(false);
+function toggleZenMode() {
+  zenMode.value = !zenMode.value;
+  if (zenMode.value) {
+    helpOpen.value = false;
+    shareOpen.value = false;
+    chatOpen.value = false;
+  }
+}
 
 // Whether the collapsed mini-dock is showing (mirrors PagesPanel). When it is,
 // the chat icon lives in the dock; when not, it sits by the help button.
@@ -272,7 +289,9 @@ function onKey(e: KeyboardEvent) {
     editor.setPresenterMode(editor.presenterMode === "laser" ? "off" : "laser");
   } else if (key === "c" && inSession.value) chatOpen.value = !chatOpen.value;
   else if (key === "q") onBack();
+  else if (key === "z") toggleZenMode();
   else if (key === "Escape") {
+    if (zenMode.value) zenMode.value = false;
     panelOpen.value = false;
     helpOpen.value = false;
   }
@@ -302,9 +321,9 @@ onBeforeUnmount(() => removeProbe?.());
     <a href="#canvas-main" class="skip-link">Skip to canvas</a>
     <div class="body">
       <!-- Toolbar: always for the host; for a guest only once the host grants drawing. -->
-      <Toolbar v-if="!isGuest || live.viewerCanEdit" :guest="isGuest" :collapsed="toolbarCollapsed" :panel-open="!pagesCollapsed" @toggle="toolbarCollapsed = !toolbarCollapsed" @image-import="canvasStage?.triggerFileImport()" />
+      <Toolbar v-if="(!isGuest || live.viewerCanEdit) && !zenMode" :guest="isGuest" :collapsed="toolbarCollapsed" :panel-open="!pagesCollapsed" @toggle="toolbarCollapsed = !toolbarCollapsed" @image-import="canvasStage?.triggerFileImport()" />
       <main id="canvas-main" class="stage-wrap" aria-label="Drawing canvas" @pointerdown="helpOpen = false">
-        <CanvasStage v-if="editor.currentPage && !guestBlocked" ref="canvasStage" :page="editor.currentPage" />
+        <CanvasStage v-if="editor.currentPage && !guestBlocked" ref="canvasStage" :page="editor.currentPage" :zen="zenMode" />
         <!-- Guest connection states (joining / disconnected / error). -->
         <div v-else-if="isGuest" class="guest-state">
           <div v-if="live.status === 'error'" class="state-card">
@@ -333,15 +352,15 @@ onBeforeUnmount(() => removeProbe?.());
         </div>
         <div v-else class="loading muted" aria-live="polite">Loading.</div>
       </main>
-      <PagesPanel :open="panelOpen" :collapsed="pagesCollapsed" :guest="isGuest" @close="panelOpen = false" @toggle="onPanelToggle" @share="shareOpen = true" @chat="chatOpen = !chatOpen" />
+      <PagesPanel v-if="!zenMode" :open="panelOpen" :collapsed="pagesCollapsed" :guest="isGuest" @close="panelOpen = false" @toggle="onPanelToggle" @share="shareOpen = true" @chat="chatOpen = !chatOpen" @overlap="panelOverlapsFabs = $event" />
       <!-- Back to projects (top-left); a guest leaves the session first. -->
-      <button v-if="flags.backButton" class="back-fab" :class="{ quiet: editor.isDrawing }" @click="onBack" :title="isGuest ? 'Leave session' : 'Back to projects'" :aria-label="isGuest ? 'Leave session' : 'Back to projects'">
+      <button v-if="flags.backButton && !zenMode" class="back-fab" :class="{ quiet: editor.isDrawing }" @click="onBack" :title="(isGuest ? 'Leave session' : 'Back to projects') + ' (Q)'" :aria-label="isGuest ? 'Leave session' : 'Back to projects'">
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="m12 19-7-7 7-7" /><path d="M19 12H5" />
         </svg>
       </button>
       <!-- Sidebar re-open pills -->
-      <button v-if="toolbarCollapsed && (!isGuest || live.viewerCanEdit)" class="pencil-fab" :class="{ quiet: editor.isDrawing }" @click="toolbarCollapsed = false" title="Show tools" aria-label="Show tools">
+      <button v-if="toolbarCollapsed && (!isGuest || live.viewerCanEdit) && !zenMode" class="pencil-fab" :class="{ quiet: editor.isDrawing }" @click="toolbarCollapsed = false" title="Show tools" aria-label="Show tools">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
           <path d="m15 5 4 4" />
@@ -349,9 +368,9 @@ onBeforeUnmount(() => removeProbe?.());
       </button>
       <!-- Replay FAB: host-only, shown when the page has content and replay isn't active -->
       <button
-        v-if="hasContent && !replay.active && !isGuest"
+        v-if="flags.replayRecording && hasContent && !replay.active && !isGuest && !zenMode"
         class="replay-fab"
-        :class="{ quiet: editor.isDrawing, shifted: !pagesCollapsed }"
+        :class="{ quiet: editor.isDrawing, shifted: fabsShifted }"
         title="Replay how this page was drawn"
         aria-label="Replay how this page was drawn"
         @click="startReplay()"
@@ -364,11 +383,11 @@ onBeforeUnmount(() => removeProbe?.());
       <ReplayControls v-if="replay.active" />
       <!-- Chat sits in the dock when collapsed; by the help button when open. -->
       <button
-        v-if="inSession && !dockVisible"
+        v-if="inSession && !dockVisible && !zenMode"
         class="chat-fab"
-        :class="{ quiet: editor.isDrawing, active: chatOpen, shifted: !pagesCollapsed }"
+        :class="{ quiet: editor.isDrawing, active: chatOpen, shifted: fabsShifted }"
         @click="chatOpen = !chatOpen"
-        title="Session chat"
+        title="Session chat (C)"
         aria-label="Open session chat"
         :aria-expanded="chatOpen"
       >
@@ -379,13 +398,28 @@ onBeforeUnmount(() => removeProbe?.());
         <span v-if="live.unreadChat > 0" class="chat-fab-badge" aria-hidden="true"></span>
       </button>
       <button
+        v-if="!zenMode"
         class="help-fab"
-        :class="{ quiet: editor.isDrawing, active: helpOpen, shifted: !pagesCollapsed }"
+        :class="{ quiet: editor.isDrawing, active: helpOpen, shifted: fabsShifted }"
         @click="helpOpen = !helpOpen"
         title="Help"
         aria-label="Help"
         :aria-expanded="helpOpen"
       >?</button>
+      <!-- Zen mode hides every overlay; this is the one thing that stays so a
+           touch-only user isn't stranded without a keyboard to press Z/Esc. -->
+      <button
+        v-if="zenMode"
+        class="zen-exit-fab"
+        :class="{ quiet: editor.isDrawing }"
+        @click="toggleZenMode"
+        title="Exit zen mode (Z or Esc)"
+        aria-label="Exit zen mode"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 3v3a2 2 0 0 1-2 2H3" /><path d="M21 8h-3a2 2 0 0 1-2-2V3" /><path d="M3 16h3a2 2 0 0 1 2 2v3" /><path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+        </svg>
+      </button>
     </div>
   </div>
   <HelpPanel :open="helpOpen" @close="helpOpen = false" />
@@ -625,6 +659,30 @@ onBeforeUnmount(() => removeProbe?.());
 .help-fab:hover { box-shadow: var(--shadow-md); color: var(--color-text); }
 .help-fab.active { background: var(--color-accent-soft); color: var(--color-accent); border-color: var(--color-accent); }
 .help-fab.quiet { opacity: 0.06; pointer-events: none; }
+
+/* Deliberately understated — the whole point of zen mode is nothing else on
+   screen — but never fully invisible, so it's still reachable without a keyboard. */
+.zen-exit-fab {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  z-index: 20;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--color-glass-bg-strong);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-glass-border);
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.35;
+  transition: opacity 150ms ease;
+}
+.zen-exit-fab:hover { opacity: 1; }
+.zen-exit-fab.quiet { opacity: 0.06; pointer-events: none; }
 
 /* Chat FAB: same glass pill as help, sitting just to its left. */
 .chat-fab {
