@@ -467,8 +467,8 @@ onMounted(() => {
           <div v-if="popover === 'fill-opacity'" class="popover" :class="`pop-${dock}`" role="dialog" aria-label="Fill opacity">
             <div class="pop-title">Fill opacity</div>
             <div class="size-row">
-              <input class="range" type="range" min="10" max="100" :value="Math.round(editor.opacity * 100)" aria-label="Fill opacity slider" @input="editor.setOpacity(Number(($event.target as HTMLInputElement).value) / 100)" />
-              <span class="opacity-value">{{ Math.round(editor.opacity * 100) }}%</span>
+              <input class="range" type="range" min="10" max="100" :value="Math.round(editor.fillOpacity * 100)" aria-label="Fill opacity slider" @input="editor.setFillOpacity(Number(($event.target as HTMLInputElement).value) / 100)" />
+              <span class="opacity-value">{{ Math.round(editor.fillOpacity * 100) }}%</span>
             </div>
           </div>
         </div>

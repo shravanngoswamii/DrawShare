@@ -96,6 +96,7 @@ interface EditorState {
   color: string;
   toolSizes: Record<Tool, number>;
   opacity: number;
+  fillOpacity: number;
   eraserMode: "stroke" | "area";
   eraserShape: "circle" | "square";
   saving: number;
@@ -141,6 +142,7 @@ export const useEditorStore = defineStore("editor", {
       arrow: 2,
     },
     opacity: 1,
+    fillOpacity: 1,
     eraserMode: "area",
     eraserShape: "circle",
     saving: 0,
@@ -1055,6 +1057,9 @@ export const useEditorStore = defineStore("editor", {
     },
     setOpacity(o: number) {
       this.opacity = o;
+    },
+    setFillOpacity(o: number) {
+      this.fillOpacity = o;
     },
     setEraserMode(mode: "stroke" | "area") {
       this.eraserMode = mode;

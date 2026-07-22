@@ -1586,7 +1586,7 @@ async function handleUp(sample?: InputSample) {
       fp.offX,
       fp.offY,
       isDark.value,
-      editor.opacity,
+      editor.fillOpacity,
     );
     if (result) {
       const img: ImageItem = {
