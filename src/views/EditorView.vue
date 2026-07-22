@@ -352,7 +352,7 @@ onBeforeUnmount(() => removeProbe?.());
         </div>
         <div v-else class="loading muted" aria-live="polite">Loading.</div>
       </main>
-      <PagesPanel v-if="!zenMode" :open="panelOpen" :collapsed="pagesCollapsed" :guest="isGuest" @close="panelOpen = false" @toggle="onPanelToggle" @share="shareOpen = true" @chat="chatOpen = !chatOpen" @overlap="panelOverlapsFabs = $event" />
+      <PagesPanel v-if="!zenMode" :open="panelOpen" :collapsed="pagesCollapsed" :guest="isGuest" @close="panelOpen = false" @toggle="onPanelToggle" @share="shareOpen = true" @chat="chatOpen = !chatOpen" @zen="toggleZenMode" @overlap="panelOverlapsFabs = $event" />
       <!-- Back to projects (top-left); a guest leaves the session first. -->
       <button v-if="flags.backButton && !zenMode" class="back-fab" :class="{ quiet: editor.isDrawing }" @click="onBack" v-tooltip="(isGuest ? 'Leave session' : 'Back to projects') + ' (Q)'" :aria-label="isGuest ? 'Leave session' : 'Back to projects'">
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
