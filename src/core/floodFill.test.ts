@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findFillBounds, scanlineFill } from "./floodFill";
+import { dilateFillMask, findFillBounds, scanlineFill } from "./floodFill";
 
 // Builds an RGBA buffer from a grid of '#' (black boundary) / '.' (white) rows.
 function grid(rows: string[]): { data: Uint8ClampedArray; width: number; height: number } {
@@ -57,6 +57,34 @@ describe("scanlineFill", () => {
     scanlineFill(data, width, height, 2, 1, FR, FG, FB, FA);
     const result = scanlineFill(data, width, height, 2, 1, FR, FG, FB, FA);
     expect(result).toEqual({ filled: false, edgeTouched: false });
+  });
+});
+
+describe("dilateFillMask", () => {
+  it("grows the filled region into its immediate neighbours", () => {
+    const { data, width, height } = grid(["#####", "#...#", "#...#", "#...#", "#####"]);
+    scanlineFill(data, width, height, 2, 2, FR, FG, FB, FA);
+    dilateFillMask(data, width, height, FR, FG, FB, FA, 1);
+
+    const at = (x: number, y: number) => [
+      ...data.slice((y * width + x) * 4, (y * width + x) * 4 + 4),
+    ];
+    // A pixel that was boundary colour, adjacent to the fill, is now covered.
+    expect(at(1, 0)).toEqual(FILL);
+    // The far corner, two pixels from any filled pixel, is untouched.
+    expect(at(0, 0)).toEqual([0, 0, 0, 255]);
+  });
+
+  it("does not touch pixels outside the given iteration radius", () => {
+    const { data, width, height } = grid(["#######", "#.....#", "#.....#", "#.....#", "#######"]);
+    scanlineFill(data, width, height, 3, 2, FR, FG, FB, FA);
+    dilateFillMask(data, width, height, FR, FG, FB, FA, 1);
+
+    const at = (x: number, y: number) => [
+      ...data.slice((y * width + x) * 4, (y * width + x) * 4 + 4),
+    ];
+    // Corner boundary pixel, far from the fill, stays the boundary colour.
+    expect(at(0, 0)).toEqual([0, 0, 0, 255]);
   });
 });
 

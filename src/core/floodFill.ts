@@ -101,6 +101,62 @@ export function scanlineFill(
   return { filled: true, edgeTouched };
 }
 
+// Canvas anti-aliases stroke edges, so the pixels right against a boundary are
+// a grey blend rather than pure white/black — scanlineFill's exact colour
+// match leaves them unfilled, showing up as a thin gap between the fill and
+// the ink. Grow the filled region by a couple of raster pixels to cover that
+// blend; the fill image renders behind strokes/shapes (z <= 0), so bleeding
+// slightly under the ink is invisible.
+export function dilateFillMask(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  fillR: number,
+  fillG: number,
+  fillB: number,
+  fillA: number,
+  iterations = 2,
+): void {
+  const isFilled = (i: number) => {
+    const idx = i * 4;
+    return (
+      data[idx] === fillR &&
+      data[idx + 1] === fillG &&
+      data[idx + 2] === fillB &&
+      data[idx + 3] === fillA
+    );
+  };
+
+  let mask = new Uint8Array(width * height);
+  for (let i = 0; i < mask.length; i++) mask[i] = isFilled(i) ? 1 : 0;
+
+  for (let iter = 0; iter < iterations; iter++) {
+    const next = Uint8Array.from(mask);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = y * width + x;
+        if (mask[i]) continue;
+        const grown =
+          (x > 0 && mask[i - 1]) ||
+          (x < width - 1 && mask[i + 1]) ||
+          (y > 0 && mask[i - width]) ||
+          (y < height - 1 && mask[i + width]);
+        if (grown) next[i] = 1;
+      }
+    }
+    mask = next;
+  }
+
+  for (let i = 0; i < mask.length; i++) {
+    if (!mask[i]) continue;
+    const idx = i * 4;
+    data[idx] = fillR;
+    data[idx + 1] = fillG;
+    data[idx + 2] = fillB;
+    data[idx + 3] = fillA;
+  }
+}
+
 export function findFillBounds(
   data: Uint8ClampedArray,
   width: number,
@@ -202,11 +258,51 @@ function renderShapes(
   }
 }
 
+interface Bounds {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+function strokeBounds(s: Stroke): Bounds {
+  let x1 = Number.POSITIVE_INFINITY;
+  let y1 = Number.POSITIVE_INFINITY;
+  let x2 = Number.NEGATIVE_INFINITY;
+  let y2 = Number.NEGATIVE_INFINITY;
+  for (const p of s.points) {
+    if (p.x < x1) x1 = p.x;
+    if (p.x > x2) x2 = p.x;
+    if (p.y < y1) y1 = p.y;
+    if (p.y > y2) y2 = p.y;
+  }
+  return { x1, y1, x2, y2 };
+}
+
+function shapeBounds(sh: Shape): Bounds {
+  return {
+    x1: Math.min(sh.x1, sh.x2),
+    y1: Math.min(sh.y1, sh.y2),
+    x2: Math.max(sh.x1, sh.x2),
+    y2: Math.max(sh.y1, sh.y2),
+  };
+}
+
+function intersects(a: Bounds, b: Bounds): boolean {
+  return a.x1 <= b.x2 && a.x2 >= b.x1 && a.y1 <= b.y2 && a.y2 >= b.y1;
+}
+
 // Fill the enclosed region at (worldX, worldY) with fillColor, bounded by the
 // given strokes/shapes (already filtered to the target page/layer by the
 // caller). Rasterizes them as black outlines on white, flood-fills from the
 // click point, and returns just the filled pixels as a cropped PNG placed at
 // its world position — the caller commits it as a regular image item.
+//
+// Only strokes/shapes near the click are rasterized, in a search box that
+// grows if the fill escapes it (edgeTouched) — a page can accumulate content
+// far from the click over a long session, and sizing the raster to the whole
+// page's extent would blow past MAX_W/MAX_H (and silently fail) even for a
+// small, fully enclosed shape right at the click point.
 export async function floodFill(
   worldX: number,
   worldY: number,
@@ -221,115 +317,96 @@ export async function floodFill(
   const SCALE = 2;
   const MAX_W = 3000;
   const MAX_H = 3000;
-  const PADDING = 200;
+  // World-unit half-extents to search around the click, largest last (chosen
+  // so 2 * radius * SCALE never exceeds MAX_W/MAX_H).
+  const RADII = [400, 750];
 
   const lx = worldX - pageOffsetX;
   const ly = worldY - pageOffsetY;
-
-  let minBX = Number.POSITIVE_INFINITY;
-  let minBY = Number.POSITIVE_INFINITY;
-  let maxBX = Number.NEGATIVE_INFINITY;
-  let maxBY = Number.NEGATIVE_INFINITY;
-
-  for (const s of strokes) {
-    for (const p of s.points) {
-      if (p.x < minBX) minBX = p.x;
-      if (p.x > maxBX) maxBX = p.x;
-      if (p.y < minBY) minBY = p.y;
-      if (p.y > maxBY) maxBY = p.y;
-    }
-  }
-  for (const sh of shapes) {
-    const x1 = Math.min(sh.x1, sh.x2);
-    const x2 = Math.max(sh.x1, sh.x2);
-    const y1 = Math.min(sh.y1, sh.y2);
-    const y2 = Math.max(sh.y1, sh.y2);
-    if (x1 < minBX) minBX = x1;
-    if (x2 > maxBX) maxBX = x2;
-    if (y1 < minBY) minBY = y1;
-    if (y2 > maxBY) maxBY = y2;
-  }
-
-  if (!Number.isFinite(minBX)) {
-    minBX = lx - PADDING;
-    minBY = ly - PADDING;
-    maxBX = lx + PADDING;
-    maxBY = ly + PADDING;
-  }
-
-  minBX = Math.min(minBX, lx) - PADDING;
-  minBY = Math.min(minBY, ly) - PADDING;
-  maxBX = Math.max(maxBX, lx) + PADDING;
-  maxBY = Math.max(maxBY, ly) + PADDING;
-
-  const bw = Math.max(1, Math.ceil((maxBX - minBX) * SCALE));
-  const bh = Math.max(1, Math.ceil((maxBY - minBY) * SCALE));
-
-  if (bw > MAX_W || bh > MAX_H) return null;
-
-  const canvas = new OffscreenCanvas(bw, bh);
-  const ctx = canvas.getContext("2d")!;
-  const cw = canvas.width;
-  const ch = canvas.height;
-
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, cw, ch);
-
-  renderStrokes(ctx, strokes, minBX, minBY, SCALE);
-  renderShapes(ctx, shapes, minBX, minBY, SCALE);
-
-  const imageData = ctx.getImageData(0, 0, cw, ch);
-  const data = imageData.data;
-
-  const px = Math.round((lx - minBX) * SCALE);
-  const py = Math.round((ly - minBY) * SCALE);
-  if (px < 0 || px >= cw || py < 0 || py >= ch) return null;
 
   const adapted = adaptInk(fillColor, isDark);
   const [fr, fg, fb] = cssColorToRgb(adapted);
   const fa = Math.round(Math.max(0, Math.min(1, opacity)) * 255);
 
-  const fillResult = scanlineFill(data, cw, ch, px, py, fr, fg, fb, fa);
-  if (!fillResult.filled || fillResult.edgeTouched) return null;
+  for (const radius of RADII) {
+    const minBX = lx - radius;
+    const minBY = ly - radius;
+    const maxBX = lx + radius;
+    const maxBY = ly + radius;
+    const aoi: Bounds = { x1: minBX, y1: minBY, x2: maxBX, y2: maxBY };
 
-  const bounds = findFillBounds(data, cw, ch, fr, fg, fb);
-  if (!bounds) return null;
+    const localStrokes = strokes.filter(
+      (s) => s.points.length > 0 && intersects(strokeBounds(s), aoi),
+    );
+    const localShapes = shapes.filter((sh) => intersects(shapeBounds(sh), aoi));
 
-  const cropW = bounds.maxX - bounds.minX + 1;
-  const cropH = bounds.maxY - bounds.minY + 1;
+    const bw = Math.max(1, Math.ceil((maxBX - minBX) * SCALE));
+    const bh = Math.max(1, Math.ceil((maxBY - minBY) * SCALE));
+    if (bw > MAX_W || bh > MAX_H) continue;
 
-  const cropCanvas = new OffscreenCanvas(cropW, cropH);
-  const cropCtx = cropCanvas.getContext("2d")!;
-  const cropData = cropCtx.createImageData(cropW, cropH);
-  for (let y = 0; y < cropH; y++) {
-    for (let x = 0; x < cropW; x++) {
-      const srcIdx = ((bounds.minY + y) * cw + (bounds.minX + x)) * 4;
-      const dstIdx = (y * cropW + x) * 4;
-      const isFill = data[srcIdx] === fr && data[srcIdx + 1] === fg && data[srcIdx + 2] === fb;
-      if (isFill) {
-        cropData.data[dstIdx] = data[srcIdx];
-        cropData.data[dstIdx + 1] = data[srcIdx + 1];
-        cropData.data[dstIdx + 2] = data[srcIdx + 2];
-        cropData.data[dstIdx + 3] = data[srcIdx + 3];
-      } else {
-        cropData.data[dstIdx + 3] = 0;
+    const canvas = new OffscreenCanvas(bw, bh);
+    const ctx = canvas.getContext("2d")!;
+
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, bw, bh);
+
+    renderStrokes(ctx, localStrokes, minBX, minBY, SCALE);
+    renderShapes(ctx, localShapes, minBX, minBY, SCALE);
+
+    const imageData = ctx.getImageData(0, 0, bw, bh);
+    const data = imageData.data;
+
+    const px = Math.round((lx - minBX) * SCALE);
+    const py = Math.round((ly - minBY) * SCALE);
+    if (px < 0 || px >= bw || py < 0 || py >= bh) continue;
+
+    const fillResult = scanlineFill(data, bw, bh, px, py, fr, fg, fb, fa);
+    if (!fillResult.filled) return null;
+    if (fillResult.edgeTouched) continue;
+
+    dilateFillMask(data, bw, bh, fr, fg, fb, fa);
+
+    const bounds = findFillBounds(data, bw, bh, fr, fg, fb);
+    if (!bounds) return null;
+
+    const cropW = bounds.maxX - bounds.minX + 1;
+    const cropH = bounds.maxY - bounds.minY + 1;
+
+    const cropCanvas = new OffscreenCanvas(cropW, cropH);
+    const cropCtx = cropCanvas.getContext("2d")!;
+    const cropData = cropCtx.createImageData(cropW, cropH);
+    for (let y = 0; y < cropH; y++) {
+      for (let x = 0; x < cropW; x++) {
+        const srcIdx = ((bounds.minY + y) * bw + (bounds.minX + x)) * 4;
+        const dstIdx = (y * cropW + x) * 4;
+        const isFill = data[srcIdx] === fr && data[srcIdx + 1] === fg && data[srcIdx + 2] === fb;
+        if (isFill) {
+          cropData.data[dstIdx] = data[srcIdx];
+          cropData.data[dstIdx + 1] = data[srcIdx + 1];
+          cropData.data[dstIdx + 2] = data[srcIdx + 2];
+          cropData.data[dstIdx + 3] = data[srcIdx + 3];
+        } else {
+          cropData.data[dstIdx + 3] = 0;
+        }
       }
     }
+    cropCtx.putImageData(cropData, 0, 0);
+
+    const blob = await cropCanvas.convertToBlob({ type: "image/png" });
+    const dataURL = await new Promise<string>((resolve) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result as string);
+      r.readAsDataURL(blob);
+    });
+
+    return {
+      dataURL,
+      x: minBX + bounds.minX / SCALE,
+      y: minBY + bounds.minY / SCALE,
+      width: cropW / SCALE,
+      height: cropH / SCALE,
+    };
   }
-  cropCtx.putImageData(cropData, 0, 0);
 
-  const blob = await cropCanvas.convertToBlob({ type: "image/png" });
-  const dataURL = await new Promise<string>((resolve) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result as string);
-    r.readAsDataURL(blob);
-  });
-
-  return {
-    dataURL,
-    x: minBX + bounds.minX / SCALE,
-    y: minBY + bounds.minY / SCALE,
-    width: cropW / SCALE,
-    height: cropH / SCALE,
-  };
+  return null;
 }
